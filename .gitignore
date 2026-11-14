@@ -1,0 +1,12 @@
+# Secretos de desarrollo local -- nunca en el repo, nunca en lo que se despliega.
+# Producción usa variables de entorno inyectadas por la plataforma (ver
+# docs/arquitectura-flujos-mogewe.md, sección "Secretos y configuración"), no estos archivos.
+.env
+.env.*
+*.token
+.earthdata_token
+.netrc
+
+__pycache__/
+*.pyc
+.DS_Store
