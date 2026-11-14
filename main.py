@@ -5,7 +5,8 @@ bloque de auth.
 """
 from __future__ import annotations
 
-from datetime import date
+import os
+from datetime import date, timedelta
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -13,11 +14,17 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import services.cliente_clsoilmaps as cliente_clsoilmaps
 import services.cliente_copernicus as cliente_copernicus
+import services.cliente_cr2met as cliente_cr2met
 import services.cliente_solar as cliente_solar
 from services.auth import crear_token, decodificar_token, hash_password, verificar_password
 from services.db import obtener_sesion
 from services.repositorio_clima import guardar_consulta_grilla
+
+_CACHE_CR2MET = os.environ.get("CR2MET_CACHE_DIR", "/tmp/cr2met_cache")
+_CACHE_CLSOILMAPS = os.environ.get("CLSOILMAPS_CACHE_DIR", "/tmp/clsoilmaps_cache")
+_CLSOILMAPS_ARCHIVO_INTERNO = "ROSETTA_MEAN/Total_AWC_0_200cm.tif"
 
 app = FastAPI(title="Mogewe")
 
@@ -151,6 +158,33 @@ async def ingesta_solar(id_parcela: int, session: AsyncSession = Depends(obtener
             "guardado_en_cache_consulta_grilla": guardado, "datos_completos": datos}
 
 
+@app.post("/api/admin/parcelas/{id_parcela}/ingesta/suelo")
+async def ingesta_suelo(id_parcela: int, session: AsyncSession = Depends(obtener_sesion),
+                         _admin: dict = Depends(requerir_admin)):
+    """CLSoilMaps -- agua disponible total (0-200cm). La primera llamada en un
+    despliegue nuevo tarda ~20 min (extrae 328MB comprimidos del zip remoto de Zenodo,
+    ver cliente_clsoilmaps.py); las siguientes son instantaneas (archivo ya en cache)."""
+    centroide = (await session.execute(
+        text("SELECT ST_Y(ST_Centroid(geometria)) AS lat, ST_X(ST_Centroid(geometria)) AS lon "
+             "FROM parcela WHERE id = :id"), {"id": id_parcela},
+    )).mappings().first()
+    if not centroide:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+    lat, lon = centroide["lat"], centroide["lon"]
+
+    os.makedirs(_CACHE_CLSOILMAPS, exist_ok=True)
+    destino = os.path.join(_CACHE_CLSOILMAPS, "Total_AWC_0_200cm.tif")
+    archivo = cliente_clsoilmaps.extraer_archivo(_CLSOILMAPS_ARCHIVO_INTERNO, destino)
+    valor = cliente_clsoilmaps.leer_valor_punto(archivo, lat, lon)
+
+    # Sin dimension temporal real (mapa estatico) -- se usa el periodo de publicacion
+    # (Zenodo, dic-2022) como marca, igual que el 2004-2016 del Explorador Solar.
+    await guardar_consulta_grilla(session, id_parcela, "clsoilmaps_awc_total_mm",
+                                   date(2022, 1, 1), date(2022, 12, 31), valor,
+                                   "100m", "CLSoilMaps_v1", "sin_dato" if valor is None else "completa")
+    return {"parcela": id_parcela, "lat": lat, "lon": lon, "agua_disponible_total_mm": valor}
+
+
 @app.get("/api/admin/copernicus/sentinel2/disponibilidad")
 async def disponibilidad_sentinel2(lat: float, lon: float, dias: int = 30, nube_max: float = 30.0,
                                     _admin: dict = Depends(requerir_admin)):
@@ -169,3 +203,77 @@ async def disponibilidad_sentinel1(lat: float, lon: float, dias: int = 14,
     escenas = cliente_copernicus.buscar_sentinel1(lat, lon, desde.isoformat(), hoy.isoformat())
     return {"lat": lat, "lon": lon, "desde": desde.isoformat(), "hasta": hoy.isoformat(),
             "escenas_encontradas": len(escenas), "escenas": escenas}
+
+
+@app.post("/api/admin/parcelas/{id_parcela}/ingesta/cr2met")
+async def ingesta_cr2met(id_parcela: int, dias: int = 90, session: AsyncSession = Depends(obtener_sesion),
+                          _admin: dict = Depends(requerir_admin)):
+    """Un dia de clima = una fila (mismo patron que POWER/AppEEARS, ver comentario en
+    database/schema.sql sobre cache_consulta_grilla) -- no un solo valor agregado."""
+    centroide = (await session.execute(
+        text("SELECT ST_Y(ST_Centroid(geometria)) AS lat, ST_X(ST_Centroid(geometria)) AS lon "
+             "FROM parcela WHERE id = :id"), {"id": id_parcela},
+    )).mappings().first()
+    if not centroide:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+    lat, lon = centroide["lat"], centroide["lon"]
+
+    hoy = date.today()
+    desde = hoy - timedelta(days=dias)
+    clima = cliente_cr2met.consultar_cr2met(lat, lon, desde.isoformat(), hoy.isoformat(), _CACHE_CR2MET)
+
+    filas_escritas = 0
+    for fecha, fila in clima.iterrows():
+        dia = fecha.date()
+        for capa, valor in (("cr2met_tmin", fila["tmin"]), ("cr2met_tmax", fila["tmax"]),
+                             ("cr2met_lluvia", fila["lluvia"])):
+            if valor != valor:  # NaN real (dia todavia sin dato por la latencia del NRT)
+                continue
+            await guardar_consulta_grilla(session, id_parcela, capa, dia, dia,
+                                           float(valor), "0.05deg_~5km", "cr2met_v2.5_nrt", "completa")
+            filas_escritas += 1
+    return {"parcela": id_parcela, "lat": lat, "lon": lon, "dias_con_dato": len(clima),
+            "filas_escritas_en_cache": filas_escritas, "ultimo_dia_real": str(clima.index.max().date())}
+
+
+@app.post("/api/admin/parcelas/{id_parcela}/ingesta/copernicus")
+async def ingesta_copernicus(id_parcela: int, dias: int = 30, intervalo_dias: int = 10,
+                              session: AsyncSession = Depends(obtener_sesion),
+                              _admin: dict = Depends(requerir_admin)):
+    """NDVI (Sentinel-2, enmascarado por nubes) + backscatter VV (Sentinel-1, sin nubes)
+    via Statistical API -- necesita COPERNICUS_CLIENT_ID/COPERNICUS_CLIENT_SECRET en el
+    entorno (OAuth client de dataspace.copernicus.eu, no el usuario/clave de la cuenta)."""
+    client_id, client_secret = os.environ.get("COPERNICUS_CLIENT_ID"), os.environ.get("COPERNICUS_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                             "Faltan COPERNICUS_CLIENT_ID/COPERNICUS_CLIENT_SECRET en el entorno")
+
+    fila_parcela = (await session.execute(
+        text("SELECT ST_XMin(geometria) AS xmin, ST_YMin(geometria) AS ymin, "
+             "ST_XMax(geometria) AS xmax, ST_YMax(geometria) AS ymax FROM parcela WHERE id = :id"),
+        {"id": id_parcela},
+    )).mappings().first()
+    if not fila_parcela:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+    bbox = [fila_parcela["xmin"], fila_parcela["ymin"], fila_parcela["xmax"], fila_parcela["ymax"]]
+
+    hoy = date.today()
+    desde = hoy - timedelta(days=dias)
+    token = cliente_copernicus.obtener_token_oauth(client_id, client_secret)
+    ndvi = cliente_copernicus.ndvi_estadistico(token, bbox, desde.isoformat(), hoy.isoformat(), intervalo_dias)
+    vv = cliente_copernicus.backscatter_estadistico(token, bbox, desde.isoformat(), hoy.isoformat(), "VV", intervalo_dias)
+
+    filas_escritas = 0
+    for capa, serie in (("sentinel2_ndvi", ndvi), ("sentinel1_vv", vv)):
+        for intervalo in serie:
+            sin_dato = intervalo["noDataCount"] == intervalo["sampleCount"]
+            await guardar_consulta_grilla(
+                session, id_parcela, capa, date.fromisoformat(intervalo["desde"][:10]),
+                date.fromisoformat(intervalo["hasta"][:10]),
+                None if sin_dato else float(intervalo["mean"]), "10m",
+                "sentinel-2-l2a" if capa == "sentinel2_ndvi" else "sentinel-1-grd",
+                "sin_dato" if sin_dato else "completa",
+            )
+            filas_escritas += 1
+    return {"parcela": id_parcela, "bbox": bbox, "filas_escritas_en_cache": filas_escritas,
+            "ndvi": ndvi, "backscatter_vv": vv}

@@ -10,15 +10,24 @@ por escena (permite filtrar nubes ANTES de descargar, a diferencia de AppEEARS d
 dato nublado solo se sabe despues de bajarlo -- es la mitad del problema de nubosidad
 persistente de Chiloe que ya encontramos con MOD13Q1).
 
-NO VERIFICADO / BLOQUEADO: la DESCARGA real de un producto (`descargar_producto`,
-`Nodes(...)/$value` u objeto S3 en `S3Path`) necesita una cuenta gratuita de Copernicus
-Data Space Ecosystem (OAuth2 client credentials o claves S3) -- no se tiene todavia.
-Mismo patron que con AppEEARS/Earthdata: la funcion esta escrita contra la documentacion
-real de la API pero no se puede probar sin esa cuenta. Pedir credenciales antes de confiar
-en `descargar_producto()`.
+ACTUALIZACION (credenciales OAuth reales obtenidas): se agrego `obtener_token_oauth()`
+(client_credentials, VERIFICADO contra una cuenta real) y `ndvi_estadistico()`/
+`backscatter_estadistico()`, que usan la Statistical API de Sentinel Hub en vez de bajar
+y procesar bandas crudas -- la API calcula NDVI/backscatter YA enmascarado por nubes
+(via SCL) del lado del servidor, para el poligono exacto de la parcela. Esto reemplaza
+el plan original de `descargar_producto()` + banda-matematica local -- no hace falta
+procesar rasters nosotros mismos para esto.
 
-Sentinel-1 es radar (SAR) -- no tiene nubes que filtrar, por eso buscar_sentinel1() no
-tiene parametro nube_max.
+VERIFICADO EN VIVO sobre la parcela de prueba de Chiloe (poligono real, no solo un punto):
+el periodo 25-oct a 4-nov salio 100% enmascarado por nubes en Sentinel-2 (NDVI, confirma
+el problema cronico de nubosidad de Chiloe) pero el MISMO periodo en Sentinel-1 (VV) dio
+cobertura completa, cero pixeles sin dato -- la prueba concreta de que el radar resuelve
+exactamente el hueco que la nubosidad deja en el optico.
+
+`obtener_token()`/`descargar_producto()` (mas abajo) quedan igual que antes -- escritos
+contra la documentacion de la OData API para descarga de producto crudo (.SAFE completo),
+sin verificar todavia porque ya no son el camino principal: la Statistical API cubre el
+caso de uso real (NDVI/backscatter agregado por parcela) sin necesitar el archivo entero.
 """
 from __future__ import annotations
 
@@ -28,6 +37,95 @@ import requests
 
 URL_CATALOGO = "https://catalogue.dataspace.copernicus.eu/odata/v1/Products"
 URL_AUTH = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
+URL_STATISTICS = "https://sh.dataspace.copernicus.eu/api/v1/statistics"
+
+
+def obtener_token_oauth(client_id: str, client_secret: str, timeout: int = 20) -> str:
+    """VERIFICADO contra una cuenta real de dataspace.copernicus.eu -- OAuth2
+    client_credentials (no password grant: un 'OAuth client' se crea aparte en el
+    perfil de la cuenta, nunca es el usuario/clave de login). Token valido 1800s (30 min)
+    -- quien lo use en un job largo tiene que renovarlo, no asumir que dura toda la sesion."""
+    r = requests.post(URL_AUTH, data={
+        "grant_type": "client_credentials", "client_id": client_id, "client_secret": client_secret,
+    }, timeout=timeout)
+    r.raise_for_status()
+    return r.json()["access_token"]
+
+
+def _evalscript_ndvi() -> str:
+    # SCL 3/8/9 = sombra de nube/nube media probabilidad/nube alta probabilidad (Sen2Cor) --
+    # se descartan antes de promediar, no despues -- un NDVI "promedio" que mezclara pixeles
+    # nublados con limpios seria un numero sin significado agronomico.
+    return (
+        '//VERSION=3\n'
+        'function setup() { return { input: [{bands: ["B04","B08","SCL","dataMask"]}], '
+        'output: [{id:"ndvi",bands:1,sampleType:"FLOAT32"},{id:"dataMask",bands:1}] }; }\n'
+        'function evaluatePixel(s) {\n'
+        '  let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04);\n'
+        '  let nublado = (s.SCL == 3 || s.SCL == 8 || s.SCL == 9);\n'
+        '  return { ndvi: [ndvi], dataMask: [nublado ? 0 : s.dataMask] };\n'
+        '}'
+    )
+
+
+def _evalscript_backscatter(polarizacion: str) -> str:
+    return (
+        '//VERSION=3\n'
+        f'function setup() {{ return {{ input: [{{bands: ["{polarizacion}","dataMask"]}}], '
+        f'output: [{{id:"{polarizacion.lower()}",bands:1,sampleType:"FLOAT32"}},{{id:"dataMask",bands:1}}] }}; }}\n'
+        f'function evaluatePixel(s) {{ return {{ {polarizacion.lower()}: [s.{polarizacion}], dataMask: [s.dataMask] }}; }}'
+    )
+
+
+def _estadistica_agregada(token: str, coleccion: str, evalscript: str, bbox: list[float],
+                           fecha_inicio: str, fecha_fin: str, intervalo_dias: int,
+                           data_filter: dict | None, timeout: int) -> list[dict]:
+    cuerpo = {
+        "input": {"bounds": {"bbox": bbox},
+                   "data": [{"type": coleccion, **({"dataFilter": data_filter} if data_filter else {})}]},
+        "aggregation": {
+            "timeRange": {"from": f"{fecha_inicio}T00:00:00Z", "to": f"{fecha_fin}T23:59:59Z"},
+            "aggregationInterval": {"of": f"P{intervalo_dias}D"},
+            "evalscript": evalscript,
+        },
+        "calculations": {"default": {}},
+    }
+    r = requests.post(URL_STATISTICS, json=cuerpo, headers={"Authorization": f"Bearer {token}"}, timeout=timeout)
+    r.raise_for_status()
+    return r.json()["data"]
+
+
+def ndvi_estadistico(token: str, bbox: list[float], fecha_inicio: str, fecha_fin: str,
+                      intervalo_dias: int = 10, timeout: int = 60) -> list[dict]:
+    """bbox: [lon_min, lat_min, lon_max, lat_max] -- el poligono de la parcela, no un punto.
+    VERIFICADO: devuelve NDVI medio por intervalo, con los pixeles nublados (SCL) ya
+    excluidos del promedio -- 'noDataCount' en cada intervalo dice cuantos pixeles del
+    poligono quedaron fuera por nubes (65536/65536 = intervalo entero inservible, visto
+    en vivo para Chiloe en un periodo real)."""
+    datos = _estadistica_agregada(token, "sentinel-2-l2a", _evalscript_ndvi(), bbox,
+                                   fecha_inicio, fecha_fin, intervalo_dias, None, timeout)
+    return [{"desde": d["interval"]["from"], "hasta": d["interval"]["to"],
+              **d["outputs"]["ndvi"]["bands"]["B0"]["stats"]} for d in datos]
+
+
+def backscatter_estadistico(token: str, bbox: list[float], fecha_inicio: str, fecha_fin: str,
+                             polarizacion: str = "VV", intervalo_dias: int = 10, timeout: int = 60) -> list[dict]:
+    """Igual que ndvi_estadistico() pero Sentinel-1 (SAR) -- sin mascara de nubes porque
+    no la necesita. VERIFICADO: en el mismo periodo donde ndvi_estadistico() dio el
+    intervalo entero sin dato (nublado), esto devolvio cobertura completa -- es la
+    confirmacion concreta de que resuelve el hueco de nubosidad persistente."""
+    datos = _estadistica_agregada(token, "sentinel-1-grd", _evalscript_backscatter(polarizacion), bbox,
+                                   fecha_inicio, fecha_fin, intervalo_dias,
+                                   {"acquisitionMode": "IW"}, timeout)
+    return [{"desde": d["interval"]["from"], "hasta": d["interval"]["to"],
+              **d["outputs"][polarizacion.lower()]["bands"]["B0"]["stats"]} for d in datos]
+
+
+# ---------------------------------------------------------------- catalogo crudo (sin auth)
+# NO VERIFICADO / sin uso principal hoy: descarga del .SAFE completo. Las funciones de
+# arriba (Statistical API) cubren el caso de uso real sin necesitar esto -- se deja
+# escrito por si algun dia hace falta el archivo crudo completo (ej. para Fase 6 avanzada
+# con bandas que la Statistical API no calcule).
 
 
 def _punto_wkt(lat: float, lon: float) -> str:
