@@ -261,7 +261,7 @@ async def ingesta_incendios(id_parcela: int, dias: int = 5, radio_grados: float 
 
 
 @app.get("/api/admin/parcelas/{id_parcela}/idoneidad")
-async def idoneidad_parcela(id_parcela: int, especies: str = "papa,ajo_chilote,haba",
+async def idoneidad_parcela(id_parcela: int, especies: str | None = None, limite: int = 50,
                              session: AsyncSession = Depends(obtener_sesion),
                              _admin: dict = Depends(requerir_admin)):
     """catalogo_especies.calcular_idoneidad() real -- pH real (SoilGrids), agua
@@ -272,7 +272,15 @@ async def idoneidad_parcela(id_parcela: int, especies: str = "papa,ajo_chilote,h
     separada por coma, cada entrada 'especie' o 'especie:variedad_local' (ej.
     'papa,solanum_tuberosum:yagana') -- BUG REAL corregido: antes esto siempre consultaba
     la fila generica (variedad_local NULL), sin forma de pedir una variedad especifica
-    aunque requisitos_especie/regla_dano_especie si tienen esa columna."""
+    aunque requisitos_especie/regla_dano_especie si tienen esa columna.
+
+    Sin `especies`: BUG REAL corregido, otro -- antes el default (3 nombres a mano) era
+    lo UNICO que se podia evaluar sin que alguien ya supiera de antemano el nombre
+    cientifico exacto a escribir; las 2068 especies de EcoCrop quedaban invisibles para
+    cualquier consulta real. Ahora recorre el catalogo real via
+    `repo.listar_especies()` -- `limite` (default 50) por el costo real de evaluar cada
+    una (una consulta a Postgres por especie, no instantaneo sobre 2071 filas); pasar
+    `limite=0` corre el catalogo completo, mas lento pero sin tope."""
     centroide = (await session.execute(
         text("SELECT ST_Y(ST_Centroid(geometria)) AS lat FROM parcela WHERE id = :id"), {"id": id_parcela},
     )).mappings().first()
@@ -312,17 +320,22 @@ async def idoneidad_parcela(id_parcela: int, especies: str = "papa,ajo_chilote,h
         clima.index = pd.to_datetime(clima.index)
         clima = clima.rename(columns={"cr2met_tmin": "tmin", "cr2met_tmax": "tmax", "cr2met_lluvia": "lluvia"})
 
-    lista_especies = []
-    for entrada in especies.split(","):
-        if ":" in entrada:
-            especie, variedad = entrada.split(":", 1)
-        else:
-            especie, variedad = entrada, None
-        lista_especies.append((especie.strip(), variedad.strip() if variedad else None))
-
     repo = RepositorioPostgres(session)
+    if especies is None:
+        lista_especies = await repo.listar_especies()
+        if limite > 0:
+            lista_especies = lista_especies[:limite]
+    else:
+        lista_especies = []
+        for entrada in especies.split(","):
+            if ":" in entrada:
+                especie, variedad = entrada.split(":", 1)
+            else:
+                especie, variedad = entrada, None
+            lista_especies.append((especie.strip(), variedad.strip() if variedad else None))
+
     resultado = await catalogo_especies.calcular_idoneidad(sitio, lista_especies, repo, clima=clima, lat=lat)
-    return {"parcela": id_parcela, "sitio": sitio,
+    return {"parcela": id_parcela, "sitio": sitio, "especies_evaluadas": len(lista_especies),
             "clima_dias_reales_usados": len(clima) if clima is not None else 0, "idoneidad": resultado}
 
 

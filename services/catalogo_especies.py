@@ -53,6 +53,7 @@ class RepositorioEspecies(Protocol):
     async def umbrales_fenologicos(self, especie: str, variedad_local: str | None) -> list[dict]: ...
     async def rasgos_rotacion(self, especie: str) -> dict | None: ...
     async def reglas_dano(self, especie: str, variedad_local: str | None) -> list[dict]: ...
+    async def listar_especies(self) -> list[tuple[str, str | None]]: ...
 
 
 TRANSICIONES_EN_ORDEN = ("siembra_BBCH09", "BBCH09_BBCH65", "BBCH65_BBCH97")
@@ -324,3 +325,12 @@ class RepositorioEnMemoria:
     async def reglas_dano(self, especie, variedad_local):
         return [f for f in self.reglas_rows
                 if f["especie"] == especie and f["variedad_local"] in (variedad_local, None)]
+
+    async def listar_especies(self):
+        vistos, out = set(), []
+        for r in self.requisitos_rows:
+            clave = (r["especie"], r["variedad_local"])
+            if clave not in vistos:
+                vistos.add(clave)
+                out.append(clave)
+        return out

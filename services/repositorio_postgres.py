@@ -87,6 +87,19 @@ class RepositorioPostgres:
             return columna.is_(None)
         return or_(columna == variedad_local, columna.is_(None))
 
+    async def listar_especies(self) -> list[tuple[str, str | None]]:
+        """Todas las (especie, variedad_local) con al menos una fila en requisitos_especie
+        -- el piso minimo real para llegar a 'perfil_generico' (ver catalogo_especies.
+        nivel_madurez()). BUG REAL que esto corrige: antes no existia ningun metodo para
+        listar el catalogo -- calcular_idoneidad() solo podia evaluar las especies que el
+        llamador ya supiera nombrar de antemano, dejando las 2068 especies de EcoCrop
+        invisibles para cualquier consulta real salvo que alguien escribiera su nombre
+        cientifico exacto a mano. No filtra por nivel de madurez mas alto aqui -- eso ya
+        lo decide nivel_madurez() por especie, no se duplica esa logica en SQL."""
+        q = select(requisitos_especie.c.especie, requisitos_especie.c.variedad_local).distinct()
+        filas = (await self._s.execute(q)).all()
+        return [(f.especie, f.variedad_local) for f in filas]
+
     async def requisitos(self, especie: str, variedad_local: str | None) -> dict | None:
         # variedad_local especifica primero; si no hay fila para esa variedad, cae a la
         # fila generica de la especie (variedad_local IS NULL) -- mismo principio de
