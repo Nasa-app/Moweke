@@ -4,6 +4,8 @@ Base: el modelo conceptual en `modelo-conceptual-phenoshield.md`. Este documento
 
 **Decisión de ingesta**: DAACs directos (AppEEARS / `earthaccess` / REST propio de cada fuente), no Google Earth Engine. El backend siempre tiene internet; el teléfono del agricultor nunca llama directo a ninguna fuente externa, solo sincroniza con nuestro backend (offline-first, sin cambios por esta decisión).
 
+**Estado real vs. lo que describe este documento**: los Flujos 1-7 de abajo son el diseño objetivo. Lo que existe hoy en `main.py` son 14 endpoints bajo `/api/admin/parcelas/{id}/ingesta/*` e `idoneidad` — **síncronos, disparados a mano, no el Flujo 2 (job nocturno/cron) ni la API pública de Flujo 1/3/4/5/6/7**. Cada fuente real (CR2MET, Explorador Solar, CLSoilMaps, SoilGrids, AppEEARS, Copernicus, FIRMS) tiene su propio endpoint de ingesta que un admin llama por parcela, escribe a `cache_consulta_grilla`, y devuelve el resultado en la misma respuesta HTTP. Esto fue deliberado para poder verificar cada fuente contra datos reales antes de construir el scheduler/worker de Flujo 2 — ver `docs/plan-construccion.md` para el detalle de qué falta para llegar de esto a los Flujos reales.
+
 ---
 
 ## Flujo 1 — Onboarding de usuario, parcela y primer cultivo
@@ -232,7 +234,14 @@ Flujo 6 (alertas) → puede modificar el catálogo de especies que consume Flujo
 
 **El secreto correcto para AppEEARS en producción es usuario/clave de una cuenta de servicio de Earthdata, no un token de usuario.** Un "user token" de EDL es para uso personal — hasta 2 activos a la vez, pensado para que una persona lo copie y lo use, no para que un job nocturno desatendido corra indefinidamente sin que nadie lo renueve. Con usuario/clave, `services/cliente_appeears.iniciar_sesion()` genera un token de AppEEARS nuevo cada vez que corre el job (válido 48h) — se regenera solo, nadie tiene que intervenir cada dos días.
 
-**Dónde vive ese usuario/clave**: en el almacén de variables de entorno/secretos de la plataforma de hosting (cifrado, separado del código), nunca en el repo ni en ningún archivo que se despliega. El proceso del backend lo lee en runtime vía variable de entorno (`EARTHDATA_USER`, `EARTHDATA_PASSWORD`). Mismo patrón para las credenciales de Postgres y cualquier otra API con login (NASS, OpenET, eBird, etc., si se llegan a usar).
+**Dónde vive ese usuario/clave**: en el almacén de variables de entorno/secretos de la plataforma de hosting (cifrado, separado del código), nunca en el repo ni en ningún archivo que se despliega. El proceso del backend lo lee en runtime vía variable de entorno. Mismo patrón para las credenciales de Postgres y cualquier otra API con login.
+
+**Credenciales reales en uso hoy** (todas leídas vía `os.environ` en `main.py`, ninguna en el repo):
+- `EARTHDATA_USUARIO`/`EARTHDATA_CLAVE` — AppEEARS. Tiene que ser el **username real de Earthdata, no el email** (con email el backend de AppEEARS se cuelga sin responder en vez de dar 401 — bug real encontrado, no documentado por NASA).
+- `COPERNICUS_CLIENT_ID`/`COPERNICUS_CLIENT_SECRET` — Sentinel Hub (Copernicus Data Space). Es un "OAuth client" creado en el perfil de la cuenta, no el usuario/clave de login de la cuenta misma. Token de 1800s, se renueva solo en cada llamada.
+- `FIRMS_MAP_KEY` — NASA FIRMS. Clave de un solo valor, gratuita, pedida por email (sin contraseña asociada).
+- `JWT_SECRET_KEY` — firma de los tokens de sesión de la API (`services/auth.py`).
+- `DATABASE_URL` — la inyecta Railway automáticamente para el servicio Postgres.
 
 **Desarrollo local es distinto, y no se confunde con esto**: un archivo local (`.env`, o un archivo de un solo secreto como `~/.earthdata_token`) sirve para que alguien pruebe código en su máquina — cubierto por `.gitignore`, nunca llega al repo ni se despliega. Es una conveniencia de desarrollo, no el diseño de producción.
 
@@ -246,7 +255,7 @@ Hay dos corrientes de datos distintas, y el diseño entero depende de que ningun
 
 ### Corriente 1 — dato satelital/climático (NASA y fuentes regionales)
 
-**Entrada**: Flujo 2, job nocturno. Nunca entra por pedido directo del agricultor — su teléfono no tiene ni necesita saber que existen SMAP, POWER o HLS.
+**Entrada**: Flujo 2, job nocturno (diseño objetivo) — hoy, los 7 endpoints reales de `/ingesta/*` listados arriba. Nunca entra por pedido directo del agricultor — su teléfono no tiene ni necesita saber que existen SMAP, POWER, CR2MET, HLS, Sentinel, SoilGrids, CLSoilMaps o FIRMS.
 
 **Transformación, paso a paso**:
 1. Llega como gránulo crudo o respuesta de API (`job_extraccion`, con `proveedor`/`producto`/`estado` — asíncrono porque AppEEARS puede tardar horas, no se puede hacer esperar a nadie).

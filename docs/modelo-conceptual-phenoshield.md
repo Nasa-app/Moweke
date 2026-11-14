@@ -78,6 +78,26 @@ Lo que NO agrega valor: confirmarle al agricultor lo que él mismo reportó, o d
 
 HLS combina Landsat (NASA/USGS) con Sentinel-2 (ESA). El producto lo procesa y distribuye NASA — aceptable como "dato NASA" en el contexto de Space Apps — pero su mejor revisit depende en parte del sensor ESA. Versión purista (solo Landsat) existe, con revisit de 8-16 días en vez de 1-3.
 
+### 4.4 Estado real de implementación — verificado en código, no solo en catálogo
+
+Esta sección existe porque el catálogo de 4.1/10.1 describe lo que se investigó como viable; no todo lo investigado terminó implementado, y varias fuentes reales que SÍ se implementaron no estaban en el catálogo original. Lista real, por archivo:
+
+| Fuente | Cliente real | Estado |
+|---|---|---|
+| NASA POWER | `services/cliente_power.py` | ✅ Verificado — incluye `radiacion` (ALLSKY_SFC_SW_DWN), agregada tras encontrar que nunca se pedía |
+| CR2MET (CR2/U. de Chile) | `services/cliente_cr2met.py` | ✅ Verificado — reemplaza/complementa a POWER para clima diario de Chile, mejor calibrado localmente, ~9 días de latencia real medida |
+| AppEEARS (HLS, SMAP, ECOSTRESS, Landsat nativo) | `services/cliente_appeears.py` | ✅ Verificado — login por usuario/clave real (el "user token" de EDL NO funciona federado, da 403); NDVI/NDMI/EVI/SAVI/NBR/índices minerales desde bandas HLS reales; LST de Landsat 8/9 dio vacío real para Chiloé (sin gránulos válidos, no es bug) |
+| Copernicus Data Space / Sentinel Hub (Sentinel-1/2) | `services/cliente_copernicus.py` | ✅ Verificado — OAuth client_credentials real; Statistical API da NDVI/backscatter agregados sobre el polígono real de la parcela (única fuente que usa el polígono, no el centroide) |
+| CLSoilMaps (agua disponible de suelo) | `services/cliente_clsoilmaps.py` | ✅ Verificado — extrae solo el archivo necesario (328MB) de un zip remoto de 10GB vía HTTP Range, sin descargar el resto |
+| SoilGrids (pH, textura, carbono orgánico) | `services/cliente_soilgrids.py` | ✅ Verificado — reemplaza al rol que 10.1 le daba a CHLSOC/SoilGrids conceptualmente; API de consulta puntual real, sin descarga |
+| Explorador Solar (MinEnergía Chile) | `services/cliente_solar.py` | ✅ Verificado — endpoint no documentado públicamente, encontrado inspeccionando el mapa interactivo |
+| NASA FIRMS (focos de calor) | `services/cliente_firms.py` | ✅ Verificado con clave real — 0 focos reales en Chiloé (primavera), focos reales con FRP>0 confirmados en otra zona/fecha |
+| FAO EcoCrop | `database/importar_ecocrop.py` | ✅ Verificado — 2068 especies reales importadas, ver 8.3 |
+| **FAO GAEZ** | — | ❌ **Investigado extensamente (ver 10.1.1), nunca implementado en código.** La decisión real de este proyecto fue cubrir el rol de "escenario climático"/terreno con CR2MET + Sentinel-1/2 + SoilGrids + CLSoilMaps en su lugar, no con GAEZ. Si se retoma GAEZ, falta todo: `services/cliente_gaez.py` no existe. |
+| **CHLSOC** | — | ❌ Mencionado en 10.1 como preferible a SoilGrids para Chile; nunca se implementó, se usó SoilGrids directo. |
+| **WWF Terrestrial Ecoregions** | — | ❌ Solo conceptual. `ecoregion_wwf` existe en el schema pero vacía a propósito (MVP fija `bioma_tipo='templado_costero'`, ver 10.2). |
+| GRACE/GRACE-FO, GEDI, GLDAS, MCD12Q2, VNP13A1 | — | ❌ Solo conceptuales, sin cliente real todavía. |
+
 ---
 
 ## 5. Grilla de análisis — referencia de consulta, no raster fusionado
@@ -224,6 +244,8 @@ calcular_idoneidad(especie, predio, ventana) -> {
 
 Pesos por defecto (humedad > luz, ~60/40) son supuesto razonable, no calibrado — viven en `umbral_fenologico_config`, no fijos en código.
 
+**Implementación real: `catalogo_especies.calcular_idoneidad()`, no el pseudocódigo de arriba.** Difiere del diseño conceptual en un punto importante: para una especie con `umbral_fenologico_config` (nivel `perfil_fenologico_regional`+), NO compara un promedio de temperatura del sitio contra `tb`/`tc` — corre la simulación real (`pheno_engine.simular()` + `motor_estres.evaluar()`) con la serie diaria de clima real, para que la supervivencia ante un evento dependa de EN QUÉ FASE ocurre (`regla_dano_especie.fase`), no de si el promedio cruza el umbral en algún momento. Esto se corrigió tras un bug real: papa daba "no apta" por una helada puntual que en la simulación real solo causa un atraso de 14 días, no la mata. El chequeo por promedio (pH, tmin/tmax, y ahora también `humedad_suelo_minima/maxima` contra el agua disponible real del sitio) queda como respaldo solo para especies sin datos de fase (la mayoría de EcoCrop) o cuando el rango de clima disponible no alcanza para simular un ciclo completo. Acepta `(especie, variedad_local)`, no solo el nombre de especie — aunque hoy (verificado) ninguna fila real tiene `variedad_local` poblado todavía.
+
 ### 8.3 Madurez de la especie — separa "¿calza aquí?" de "¿cuándo se siembra?"
 
 ```
@@ -295,7 +317,7 @@ Se descartó el modelo original de banco de semillas con rol de "guardadora" des
 
 ### 10.1 Resueltos o mejorados
 
-- **Tipo de suelo y pH**: **SoilGrids (ISRIC)** — abierto, CC BY 4.0, 250m global, pH/textura/carbono orgánico/N/CEC en seis profundidades estándar. Advertencia operativa: la REST API de 2017 está descontinuada; la v2.0 está en beta — verificar el endpoint vigente antes de integrar, no asumir documentación antigua. Complemento Chile-específico: **CHLSOC** (Chilean Soil Organic Carbon database), abierto, 13.612 puntos reales en Chile, apoyado por la Alianza Mundial por el Suelo de la FAO — preferible a SoilGrids donde haya cobertura, por ser ground truth chileno en vez de modelo global. `match_suelo` deja de ser `"no_evaluado"` por default; pasa a `"no_evaluado"` solo si no hay cobertura de ninguna de las dos fuentes para ese punto.
+- **Tipo de suelo y pH**: **SoilGrids (ISRIC) — implementado y verificado** (`services/cliente_soilgrids.py`, v2.0 REST real, sin auth). pH/textura/carbono orgánico confirmados para la parcela de prueba de Chiloé (pH 5.3, franco-arenoso, 22.5% carbono orgánico — plausible para andisol volcánico). **CHLSOC nunca se implementó** — quedó como mención conceptual, se usó SoilGrids directo. `match_suelo` deja de ser `"no_evaluado"` por default cuando hay cobertura de SoilGrids para ese punto (confirmado: responde `null` explícito, no un error, en puntos fuera de cobertura — ej. océano).
 - **Corrección taxonómica**: "ajo chilote" **no es Allium sativum** — es *Allium ampeloprasum* (ajo Blandino). No afecta el rol agronómico en rotación (sigue siendo familia Allium para ruptura de ciclo de solanáceas), pero cualquier búsqueda de literatura adicional debe usar el nombre correcto. Ficha INIA (vía Portal Frutícola) da datos reales: ciclo 210-230 días, T° mínima 7°C, máxima 30°C, óptima 15-20°C, suelos franco a franco-arcillosos, pH 5,6-8,0. `umbral_fenologico_config` para ajo pasa de `placeholder_sin_validar` a `fuente='INIA_ficha_tecnica'`.
 - **Haba**: ficha técnica de **CIREN (Haba.pdf)** — temperatura base 5°C, óptimo 15-20°C, máximo 28°C, suma térmica 450-650 GDD desde siembra hasta cosecha (grano seco). Nota: esto NO resuelve el vacío de suelo de CIREN (es un documento de cultivo, no el sistema de datos de suelo) — son dos cosas separadas. Otros modelos (CROPGRO-faba bean, estudio de Mendoza) dan temperaturas base muy distintas (-3,8°C a 4,47°C) según método y cultivar — no hay consenso universal, la ficha de CIREN es la referencia chilena más directa disponible, no la única posible.
 - **WWF Terrestrial Ecoregions**: confirmado accesible vía espejos académicos (Stanford, Columbia, NYU, MIT), basado en Olson et al. 2001. No se confirmó en la búsqueda (solo por conocimiento general, sin verificar línea por línea en el shapefile) que la ecorregión "Valdivian temperate rain forests" esté correctamente delimitada para Chiloé — hay que confirmarlo al momento de implementar, no asumirlo.
