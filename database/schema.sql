@@ -99,18 +99,26 @@ CREATE TABLE manejo_predio (
 -- Calibración fenológica y requisitos agronómicos
 -- ============================================================
 
+-- Una fila = una etapa fenologica de una especie (o de una variedad). Cada especie define
+-- cuantas etapas tiene y como se llaman: papa (emergencia, tuberizacion, madurez), ajo
+-- (emergencia, bulbificacion, madurez), haba (emergencia, floracion, madurez). gdd_* son
+-- los grados-dia que separan la etapa de la anterior (la primera, de la siembra). Una
+-- variedad con filas propias reemplaza completo el juego de etapas de la especie.
+-- Las reglas de regla_dano_especie nombran sus fases con estos nombres ('a->b').
 CREATE TABLE umbral_fenologico_config (
   id SERIAL PRIMARY KEY,
   especie VARCHAR NOT NULL,
   variedad_local VARCHAR,
-  transicion VARCHAR NOT NULL CHECK (transicion IN
-    ('siembra_BBCH09', 'BBCH09_BBCH65', 'BBCH65_BBCH97')),
+  orden INT NOT NULL,
+  etapa VARCHAR NOT NULL,
+  transicion VARCHAR,              -- referencia opcional al tramo BBCH, ej. 'BBCH09_BBCH65'
   gdd_minimo FLOAT NOT NULL,
   gdd_maximo FLOAT NOT NULL,
-  horas_luz_criticas FLOAT,
+  horas_luz_criticas FLOAT,        -- si no es NULL, la etapa avanza mas lento bajo ese fotoperiodo
   fuente VARCHAR NOT NULL DEFAULT 'placeholder_sin_validar',
   fecha_ultima_calibracion DATE,
-  UNIQUE (especie, variedad_local, transicion)
+  CONSTRAINT umbral_fenologico_etapa_unica UNIQUE NULLS NOT DISTINCT (especie, variedad_local, orden),
+  CONSTRAINT umbral_fenologico_nombre_unico UNIQUE NULLS NOT DISTINCT (especie, variedad_local, etapa)
 );
 
 CREATE TABLE requisitos_especie (

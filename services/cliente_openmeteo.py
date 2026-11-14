@@ -29,6 +29,7 @@ MAPEO_COLUMNAS = {
 }
 
 DIAS_PRONOSTICO_MAX = 16  # tope real de la API
+DIAS_PASADOS_MAX = 92     # idem, para `past_days` (probado en vivo: devuelve los 92)
 
 
 def consultar_pronostico(lat: float, lon: float, dias: int = DIAS_PRONOSTICO_MAX, dias_pasados: int = 5,

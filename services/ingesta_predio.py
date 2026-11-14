@@ -9,14 +9,20 @@ dispararse a mano por los endpoints /api/admin/.../ingesta/*.
   clsoilmaps        agua disponible total del suelo (0-200 cm)
 
 Y las dos que alimentan el seguimiento diario de un cultivo
-(catalogo_especies.seguimiento_cultivo). A diferencia de las de arriba, vencen: se
-vuelven a correr cuando su ultimo dato tiene mas de HORAS_VIGENCIA_DIARIA.
+(catalogo_especies.seguimiento_cultivo). Vencen: se vuelven a correr cuando su ultimo
+dato tiene mas de HORAS_VIGENCIA_DIARIA.
 
   power             tmin/tmax/lluvia/humedad relativa/radiacion diarios hasta hace ~3 dias
   open_meteo        los ultimos dias segun modelo y el pronostico a 16 dias
 
+CR2MET tambien vence, una vez al mes: la ventana de doce meses se corre el dia 1 y el
+mes recien terminado solo queda completo hacia el dia 10 (ver estado_ingesta).
+
 AppEEARS, Copernicus y FIRMS quedan fuera a proposito: no entran a ninguno de los dos
 calculos.
+
+Quien dispara esto: el propio agricultor al crear una parcela o consultar (encolar +
+tarea en segundo plano de la API), y services/tarea_refresco_clima.py desde un cron.
 
 Cada fuente deja una fila en job_extraccion por intento (pendiente -> en_proceso ->
 completo | error). Una fuente que falla no detiene a las demas, y el detalle del error
@@ -57,6 +63,7 @@ PRODUCTOS = {
 }
 FUENTES = tuple(PRODUCTOS)
 FUENTES_DIARIAS = frozenset({"power", "open_meteo"})
+FUENTES_DE_SITIO = tuple(f for f in FUENTES if f not in FUENTES_DIARIAS)
 HORAS_VIGENCIA_DIARIA = 12
 # POWER corrige sus ultimos dias: cada refresco vuelve a pedir este tramo ya guardado.
 DIAS_REVISION_POWER = 10
@@ -181,7 +188,10 @@ async def _power(session: AsyncSession, id_parcela: int, lat: float, lon: float)
 
 
 async def _open_meteo(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
-    clima = await asyncio.to_thread(cliente_openmeteo.consultar_pronostico, *_celda(lat, lon))
+    # Los dias pasados no entran a la serie del predio (ahi manda lo observado): se
+    # guardan para medir el sesgo del modelo contra CR2MET (repositorio_clima._sesgo_modelo).
+    clima = await asyncio.to_thread(cliente_openmeteo.consultar_pronostico, *_celda(lat, lon),
+                                     cliente_openmeteo.DIAS_PRONOSTICO_MAX, cliente_openmeteo.DIAS_PASADOS_MAX)
     filas = _filas_diarias(id_parcela, clima, "openmeteo", "celda_de_modelo", "open-meteo_forecast_v1")
     await guardar_consultas_grilla(session, filas)
     return None if filas else "sin_cobertura"
@@ -201,7 +211,12 @@ async def estado_ingesta(session: AsyncSession, id_parcela: int) -> dict:
         SELECT DISTINCT ON (proveedor) proveedor, estado, detalle,
                fecha_solicitud < now() - make_interval(mins => CAST(:vigente AS integer)) AS viejo,
                fecha_solicitud < now() - make_interval(mins => CAST(:espera AS integer)) AS enfriado,
-               fecha_completado < now() - make_interval(hours => CAST(:horas AS integer)) AS vencido
+               fecha_completado < now() - make_interval(hours => CAST(:horas AS integer)) AS vencido,
+               -- CR2MET: vence al cambiar de mes (la ventana se corre) y otra vez el dia 10
+               -- (el mes anterior ya quedo completo pese a los ~9 dias de atraso del producto).
+               fecha_completado < date_trunc('month', now())
+                 OR (extract(day FROM now()) >= 10
+                     AND fecha_completado < date_trunc('month', now()) + interval '9 days') AS mes_vencido
         FROM job_extraccion WHERE id_parcela = :id ORDER BY proveedor, id DESC
     """), {"id": id_parcela, "vigente": MINUTOS_JOB_VIGENTE, "espera": MINUTOS_ENTRE_REINTENTOS,
            "horas": HORAS_VIGENCIA_DIARIA})).mappings().all()
@@ -210,29 +225,36 @@ async def estado_ingesta(session: AsyncSession, id_parcela: int) -> dict:
     for fuente in FUENTES:
         f = ultimo.get(fuente)
         if f is None:
-            out[fuente] = {"estado": "sin_iniciar", "detalle": None, "reintentable": True}
+            out[fuente] = {"estado": "sin_iniciar", "detalle": None, "reintentable": True, "con_error": False}
             continue
         estado = f["estado"]
         if estado in ("pendiente", "en_proceso") and f["viejo"]:
             estado = "interrumpida"
-        elif estado == "completo" and fuente in FUENTES_DIARIAS and f["vencido"]:
+        elif estado == "completo" and ((fuente in FUENTES_DIARIAS and f["vencido"])
+                                        or (fuente == "cr2met" and f["mes_vencido"])):
             estado = "vencida"
         out[fuente] = {"estado": estado,
                        "detalle": "sin_cobertura" if f["detalle"] == "sin_cobertura" else None,
                        "reintentable": estado in ("interrumpida", "vencida")
-                                       or (estado == "error" and bool(f["enfriado"]))}
+                                       or (estado == "error" and bool(f["enfriado"])),
+                       "con_error": estado == "error"}
     return out
 
 
-async def encolar(session: AsyncSession, id_parcela: int) -> dict[str, int]:
+async def encolar(session: AsyncSession, id_parcela: int, fuentes: tuple[str, ...] = FUENTES,
+                  reintentar_errores_ya: bool = False) -> dict[str, int]:
     """Deja en 'pendiente' cada fuente reintentable (nunca corrida, interrumpida, vencida,
     o con un error de hace mas de MINUTOS_ENTRE_REINTENTOS) y devuelve {fuente: id_job}. Las
     completas y las que ya estan en curso no se tocan -- llamar esto dos veces seguidas
-    no duplica descargas."""
+    no duplica descargas.
+
+    fuentes: subconjunto a considerar. reintentar_errores_ya: salta la espera entre
+    reintentos -- solo para la tarea programada, que trae su propia espera; la espera
+    existe para acotar los reintentos que dispara un agricultor."""
     estado = await estado_ingesta(session, id_parcela)
     jobs = {}
-    for fuente in FUENTES:
-        if estado[fuente]["reintentable"]:
+    for fuente in fuentes:
+        if estado[fuente]["reintentable"] or (reintentar_errores_ya and estado[fuente]["con_error"]):
             jobs[fuente] = (await session.execute(text("""
                 INSERT INTO job_extraccion (id_parcela, proveedor, producto, estado)
                 VALUES (:id, :proveedor, :producto, 'pendiente') RETURNING id

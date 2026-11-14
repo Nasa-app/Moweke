@@ -20,6 +20,8 @@ Atacama, Patagonia austral) no se verifico aqui -- Chiloe esta lejos de esos ext
 from __future__ import annotations
 
 import os
+import time
+from datetime import date, timedelta
 
 import pandas as pd
 import requests
@@ -41,12 +43,29 @@ def _ruta_cache(directorio_cache: str, variable: str, anio: int, mes: int) -> st
     return os.path.join(directorio_cache, f"cr2met_{variable}_{anio}_{mes:02d}.nc")
 
 
+# El producto NRT llega con ~9 dias de atraso: el archivo de un mes solo queda completo
+# unos dias despues de que el mes termina.
+DIAS_HASTA_MES_DEFINITIVO = 10
+
+
+def _cache_vencido(ruta: str, anio: int, mes: int) -> bool:
+    """BUG REAL que esto corrige: un .nc en cache se reusaba para siempre, aunque se
+    hubiera bajado con el mes a medias -- el mes en curso (y el anterior, durante sus
+    primeros dias) nunca se completaba. Un archivo es definitivo si se bajo despues de
+    que su mes quedo completo; mientras no lo sea, se vuelve a bajar una vez al dia."""
+    fin_mes = (date(anio, mes, 28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    bajado = os.path.getmtime(ruta)
+    if date.fromtimestamp(bajado) >= fin_mes + timedelta(days=DIAS_HASTA_MES_DEFINITIVO):
+        return False
+    return time.time() - bajado > 24 * 3600
+
+
 def descargar_mes(variable: str, anio: int, mes: int, directorio_cache: str, timeout: int = 60) -> str:
     """variable: 'pr' | 'txn'. Reusa el archivo si ya esta en cache -- los .nc de meses
     pasados no cambian (solo el mes en curso se reescribe, y aun asi solo agrega dias,
     no corrige retroactivo segun lo observado)."""
     destino = _ruta_cache(directorio_cache, variable, anio, mes)
-    if os.path.exists(destino):
+    if os.path.exists(destino) and not _cache_vencido(destino, anio, mes):
         return destino
     url = _PATRON_ARCHIVO[variable].format(base=URL_BASE, anio=anio, mes=mes)
     r = requests.get(url, timeout=timeout)

@@ -13,8 +13,10 @@
 -- ============================================================
 
 INSERT INTO requisitos_especie (especie, variedad_local, tb, t_optima, tc, foto_sens, vern_req, fuente) VALUES
-  -- tb reconciliado entre dos placeholders previos (4 y 6) sin fuente — sigue sin validar.
-  ('papa', NULL, 6.0, 20, 30, 0, 0, 'placeholder_sin_validar'),
+  -- INIA Remehue, Boletin INIA 396 (https://hdl.handle.net/20.500.14001/6763): base 4 C para
+  -- grados-dia; desarrollo optimo 17,5-24 C y detenido a 35 C. t_optima guarda el FIN de la
+  -- meseta optima (24): el motor crece lineal hasta ahi, igual que el metodo de INIA.
+  ('papa', NULL, 4.0, 24, 35, 0, 0, 'INIA_Boletin_396'),
   -- tb/to/tc SI tienen fuente: ficha tecnica INIA (Allium ampeloprasum, via Portal Fruticola) —
   -- minima 7C, optima 15-20C, maxima 30C. El reparto de GDD entre etapas (mas abajo) no viene
   -- de esa ficha, es particion propia calibrada contra la duracion total de ciclo (210-230 dias).
@@ -24,25 +26,30 @@ INSERT INTO requisitos_especie (especie, variedad_local, tb, t_optima, tc, foto_
   -- pradera no tiene fila aqui: es perenne, no se simula con reloj de GDD.
 
 -- ============================================================
--- umbral_fenologico_config: GDD por transicion (rango, no punto — el punto medio es lo
--- que usaba el Cultivo hardcodeado; el rango es lo que permite mostrar incertidumbre real)
+-- umbral_fenologico_config: una fila por etapa de cada especie, con su nombre real y su
+-- posicion. gdd_* = grados-dia que la separan de la etapa anterior (rango, no punto: el
+-- motor usa el punto medio; el rango es lo que permite mostrar incertidumbre real).
 -- ============================================================
 
-INSERT INTO umbral_fenologico_config (especie, variedad_local, transicion, gdd_minimo, gdd_maximo, fuente) VALUES
-  ('papa', NULL, 'siembra_BBCH09', 250, 250, 'placeholder_sin_validar'),
-  ('papa', NULL, 'BBCH09_BBCH65', 350, 350, 'placeholder_sin_validar'),  -- "tuberizacion" mapeada a BBCH65
-  ('papa', NULL, 'BBCH65_BBCH97', 1100, 1100, 'placeholder_sin_validar'),
+INSERT INTO umbral_fenologico_config (especie, variedad_local, orden, etapa, transicion, gdd_minimo, gdd_maximo, fuente) VALUES
+  -- Papa: INIA Remehue, Boletin INIA 396, base 4 C. El total plantacion-madurez (1300-1500
+  -- grados-dia) esta en el texto; el reparto por etapa se leyo del Grafico 3 (ocho
+  -- variedades, error +-10): minimo y maximo entre variedades. Ver el detalle y la
+  -- verificacion contra clima real en database/migracion_calibracion_papa.sql.
+  ('papa', NULL, 1, 'emergencia', 'siembra_BBCH09', 215, 262, 'INIA_Boletin_396'),
+  ('papa', NULL, 2, 'tuberizacion', NULL, 232, 293, 'INIA_Boletin_396'),
+  ('papa', NULL, 3, 'madurez', NULL, 812, 1026, 'INIA_Boletin_396'),
   -- Totales (80+250+170=500) calibrados contra la duracion real de ciclo de INIA (210-230
   -- dias) bajo clima sintetico de referencia — el reparto entre etapas sigue sin validar,
   -- solo el total tiene respaldo indirecto.
-  ('ajo_chilote', NULL, 'siembra_BBCH09', 80, 80, 'placeholder_sin_validar'),
-  ('ajo_chilote', NULL, 'BBCH09_BBCH65', 250, 250, 'placeholder_sin_validar'),  -- "bulbificacion"
-  ('ajo_chilote', NULL, 'BBCH65_BBCH97', 170, 170, 'placeholder_sin_validar'),
+  ('ajo_chilote', NULL, 1, 'emergencia', 'siembra_BBCH09', 80, 80, 'placeholder_sin_validar'),
+  ('ajo_chilote', NULL, 2, 'bulbificacion', NULL, 250, 250, 'placeholder_sin_validar'),
+  ('ajo_chilote', NULL, 3, 'madurez', NULL, 170, 170, 'placeholder_sin_validar'),
   -- Suma total (150+250+150=550) cae dentro del rango 450-650 GDD que SI da CIREN para
   -- siembra-cosecha de grano seco. El reparto entre etapas no viene de la ficha.
-  ('haba', NULL, 'siembra_BBCH09', 150, 150, 'placeholder_sin_validar'),
-  ('haba', NULL, 'BBCH09_BBCH65', 250, 250, 'placeholder_sin_validar'),
-  ('haba', NULL, 'BBCH65_BBCH97', 150, 150, 'placeholder_sin_validar');
+  ('haba', NULL, 1, 'emergencia', 'siembra_BBCH09', 150, 150, 'placeholder_sin_validar'),
+  ('haba', NULL, 2, 'floracion', 'BBCH09_BBCH65', 250, 250, 'placeholder_sin_validar'),
+  ('haba', NULL, 3, 'madurez', 'BBCH65_BBCH97', 150, 150, 'placeholder_sin_validar');
 
 -- ============================================================
 -- rasgos_rotacion_especie
@@ -58,29 +65,28 @@ INSERT INTO rasgos_rotacion_especie (especie, fija_nitrogeno, familia_botanica, 
 -- regla_dano_especie — ninguna tiene fuente citable, todas placeholder_sin_validar
 -- ============================================================
 
--- Nombres de fase alineados con catalogo_especies.construir_cultivo, que SIEMPRE usa
--- emergencia/floracion/madurez (ver NOMBRE_ETAPA en ese archivo) -- no con el nombre
--- biológico específico (tuberización, bulbificación). Se encontró como bug real al
--- probar contra Postgres (Fase 3 del plan de MVP): con los nombres específicos, las
--- reglas de la etapa media nunca coincidían con las fases que el motor calcula,
--- dejando inactivas justo las reglas de helada en el período más sensible del cultivo.
+-- Los nombres de fase ('a->b') son los de las etapas de cada especie en
+-- umbral_fenologico_config. Deben coincidir exactos: una regla con una fase que no existe
+-- entre las etapas de su especie nunca se evalua (ya paso una vez, con las reglas de
+-- helada de la etapa media). catalogo_especies.seguimiento_cultivo() las reporta en
+-- `reglas_con_fase_desconocida`.
 INSERT INTO regla_dano_especie (especie, variedad_local, fase, peligro, umbral, minimo, efecto, valor) VALUES
-  ('papa', NULL, 'emergencia->floracion', 'helada', -1, 1, 'atraso', 14),
-  ('papa', NULL, 'emergencia->floracion', 'helada', -4, 1, 'total', 0),
-  ('papa', NULL, 'floracion->madurez', 'helada', -1, 1, 'parcial', 0.3),
-  ('papa', NULL, 'floracion->madurez', 'calor', 28, 5, 'parcial', 0.25),
-  ('papa', NULL, 'floracion->madurez', 'sequia', 0.4, 0, 'parcial', 0.4),
+  ('papa', NULL, 'emergencia->tuberizacion', 'helada', -1, 1, 'atraso', 14),
+  ('papa', NULL, 'emergencia->tuberizacion', 'helada', -4, 1, 'total', 0),
+  ('papa', NULL, 'tuberizacion->madurez', 'helada', -1, 1, 'parcial', 0.3),
+  ('papa', NULL, 'tuberizacion->madurez', 'calor', 28, 5, 'parcial', 0.25),
+  ('papa', NULL, 'tuberizacion->madurez', 'sequia', 0.4, 0, 'parcial', 0.4),
   ('papa', NULL, 'siembra->emergencia', 'anegamiento', 20, 3, 'total', 0),
-  ('papa', NULL, 'floracion->madurez', 'anegamiento', 20, 3, 'parcial', 0.4),
-  ('papa', NULL, 'floracion->madurez', 'tizon', 90, 3, 'parcial', 0.3),
+  ('papa', NULL, 'tuberizacion->madurez', 'anegamiento', 20, 3, 'parcial', 0.4),
+  ('papa', NULL, 'tuberizacion->madurez', 'tizon', 90, 3, 'parcial', 0.3),
   ('papa', NULL, '*', 'ceniza', 0, 0, 'parcial', 0.3),
 
-  ('ajo_chilote', NULL, 'emergencia->floracion', 'helada', -3, 1, 'parcial', 0.3),
-  ('ajo_chilote', NULL, 'emergencia->floracion', 'helada', -6, 1, 'total', 0),
-  ('ajo_chilote', NULL, 'floracion->madurez', 'helada', -2, 1, 'parcial', 0.3),
-  ('ajo_chilote', NULL, 'floracion->madurez', 'calor', 30, 5, 'parcial', 0.2),
+  ('ajo_chilote', NULL, 'emergencia->bulbificacion', 'helada', -3, 1, 'parcial', 0.3),
+  ('ajo_chilote', NULL, 'emergencia->bulbificacion', 'helada', -6, 1, 'total', 0),
+  ('ajo_chilote', NULL, 'bulbificacion->madurez', 'helada', -2, 1, 'parcial', 0.3),
+  ('ajo_chilote', NULL, 'bulbificacion->madurez', 'calor', 30, 5, 'parcial', 0.2),
   ('ajo_chilote', NULL, 'siembra->emergencia', 'anegamiento', 20, 3, 'parcial', 0.3),
-  ('ajo_chilote', NULL, 'floracion->madurez', 'anegamiento', 20, 3, 'parcial', 0.35),
+  ('ajo_chilote', NULL, 'bulbificacion->madurez', 'anegamiento', 20, 3, 'parcial', 0.35),
   ('ajo_chilote', NULL, 'cosecha', 'lluvia_cosecha', 50, 0, 'parcial', 0.2),
   ('ajo_chilote', NULL, '*', 'ceniza', 0, 0, 'parcial', 0.3),
 

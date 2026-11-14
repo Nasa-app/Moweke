@@ -261,7 +261,8 @@ async def reintentar_ingesta(id_parcela: int, tareas: BackgroundTasks,
 
 
 @app.get("/api/parcelas/{id_parcela}/candidatas_siembra")
-async def candidatas_siembra(id_parcela: int, limite: int = Query(20, ge=1, le=200),
+async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
+                              limite: int = Query(20, ge=1, le=200),
                               categorias: str | None = Query(None, max_length=300),
                               incluir_no_aptas: bool = False,
                               session: AsyncSession = Depends(obtener_sesion),
@@ -272,6 +273,11 @@ async def candidatas_siembra(id_parcela: int, limite: int = Query(20, ge=1, le=2
     de categorias de EcoCrop (ej. 'vegetables,roots/tubers'); sin ella se dejan fuera
     forestales, ornamentales y malezas. Responde 409 mientras no haya clima del predio."""
     parcela = await _parcela_autorizada(id_parcela, usuario, session)
+    # Solo las fuentes de sitio: CR2MET vence cada mes y, si la tarea programada no
+    # corrio, esta consulta lo deja refrescandose.
+    jobs = await ingesta_predio.encolar(session, id_parcela, ingesta_predio.FUENTES_DE_SITIO)
+    if jobs:
+        tareas.add_task(ingesta_predio.ingerir_predio, id_parcela, jobs)
     estado = await ingesta_predio.estado_ingesta(session, id_parcela)
     sitio = await leer_sitio(session, id_parcela)
     normales = catalogo_especies.normales_mensuales(sitio["clima"])
@@ -339,12 +345,15 @@ async def declarar_cultivo(id_parcela: int, datos: CultivoNuevo, tareas: Backgro
     await session.commit()
 
     nivel = await catalogo_especies.nivel_madurez(datos.especie, datos.variedad_local, repo)
+    etapas = catalogo_especies.elegir_etapas(
+        await repo.umbrales_fenologicos(datos.especie, datos.variedad_local), datos.variedad_local)
     jobs = await ingesta_predio.encolar(session, id_parcela)  # refresca el clima diario si esta vencido
     if jobs:
         tareas.add_task(ingesta_predio.ingerir_predio, id_parcela, jobs)
     return {"id": id_cultivo, "id_parcela": id_parcela, "especie": datos.especie,
             "variedad_local": datos.variedad_local, "fecha_siembra": datos.fecha_siembra.isoformat(),
-            "nivel_madurez": nivel, "fenologia_disponible": nivel in _NIVELES_CON_FENOLOGIA}
+            "nivel_madurez": nivel, "fenologia_disponible": nivel in _NIVELES_CON_FENOLOGIA,
+            "etapas": [u["etapa"] for u in etapas]}
 
 
 @app.get("/api/parcelas/{id_parcela}/cultivos")
@@ -407,7 +416,8 @@ async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
     except ValueError:
         raise HTTPException(status.HTTP_409_CONFLICT, sin_clima)
     return {"id_cultivo": id_cultivo, "id_parcela": id_parcela, "especie": cultivo["especie"],
-            "variedad_local": cultivo["variedad_local"], **resultado, "estado_ingesta": estado}
+            "variedad_local": cultivo["variedad_local"], **resultado,
+            "correccion_sesgo": clima.attrs.get("correccion_sesgo"), "estado_ingesta": estado}
 
 
 # ---------------------------------------------------------------- fuentes nuevas (extension

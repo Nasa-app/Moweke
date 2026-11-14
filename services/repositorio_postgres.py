@@ -61,7 +61,8 @@ equivalencia_luz_ghi = Table(
 umbral_fenologico_config = Table(
     "umbral_fenologico_config", metadata,
     Column("id", Integer, primary_key=True),
-    Column("especie", String), Column("variedad_local", String), Column("transicion", String),
+    Column("especie", String), Column("variedad_local", String),
+    Column("orden", Integer), Column("etapa", String), Column("transicion", String),
     Column("gdd_minimo", Float), Column("gdd_maximo", Float),
     Column("horas_luz_criticas", Float), Column("fuente", String),
     Column("fecha_ultima_calibracion", Date),
@@ -157,7 +158,7 @@ class RepositorioPostgres:
         q = select(umbral_fenologico_config).where(
             umbral_fenologico_config.c.especie == especie,
             self._coincide_variedad(umbral_fenologico_config.c.variedad_local, variedad_local),
-        )
+        ).order_by(umbral_fenologico_config.c.orden)
         filas = (await self._s.execute(q)).mappings().all()
         return [dict(f) for f in filas]
 

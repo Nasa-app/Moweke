@@ -61,13 +61,6 @@ class RepositorioEspecies(Protocol):
     async def equivalencias_luz(self) -> list[dict]: ...
 
 
-TRANSICIONES_EN_ORDEN = ("siembra_BBCH09", "BBCH09_BBCH65", "BBCH65_BBCH97")
-# Nombre de etapa que CIERRA cada transicion -- BBCH09/BBCH65/BBCH97 son los nombres
-# canonicos del proyecto (ver schema.sql, umbral_fenologico_config.transicion); se
-# traducen a nombres libres porque Cultivo.etapas no esta atado a esa nomenclatura.
-NOMBRE_ETAPA = {"siembra_BBCH09": "emergencia", "BBCH09_BBCH65": "floracion", "BBCH65_BBCH97": "madurez"}
-
-
 async def nivel_madurez(especie: str, variedad_local: str | None, repo: RepositorioEspecies) -> str:
     umbrales = await repo.umbrales_fenologicos(especie, variedad_local)
     if umbrales:
@@ -560,7 +553,10 @@ async def seguimiento_cultivo(especie: str, variedad_local: str | None, repo: Re
         "perdida_con_pronostico": _perdida_de(con_pronostico),
         "perdida_proyectada": _perdida_de(eventos) if resultado["ciclo_completo"] else None,
         "atraso_dias": int(resultado["atraso_dias"]),
-        "reglas_evaluadas": len(reglas), "capacidad_agua_mm": cap_mm if cap_mm else 100.0,
+        "reglas_evaluadas": len(reglas),
+        # Reglas cuya fase no existe entre las etapas de esta especie: nunca se cumplen.
+        "reglas_con_fase_desconocida": sorted({r.fase for r in reglas} - fases_validas(c)),
+        "capacidad_agua_mm": cap_mm if cap_mm else 100.0,
         "humedad_relativa_disponible": bool(numerico["rh"].notna().any()),
     }
 
@@ -581,27 +577,44 @@ async def construir_cultivo(especie: str, variedad_local: str | None, repo: Repo
             "en requisitos_especie -- no se puede calcular el reloj termico."
         )
 
-    por_transicion = {u["transicion"]: u for u in umbrales}
-    etapas = tuple(
-        (NOMBRE_ETAPA[t], (por_transicion[t]["gdd_minimo"] + por_transicion[t]["gdd_maximo"]) / 2)
-        for t in TRANSICIONES_EN_ORDEN
-        if t in por_transicion
-    )
-    if not etapas:
-        raise EspecieSinPerfilFenologico(f"{especie}/{variedad_local}: umbral_fenologico_config vacio.")
-
-    ultima_transicion = por_transicion.get("BBCH65_BBCH97")
-    horas_luz = ultima_transicion.get("horas_luz_criticas") if ultima_transicion else None
+    filas = elegir_etapas(umbrales, variedad_local)
+    if not filas:
+        raise EspecieSinPerfilFenologico(f"{especie}/{variedad_local}: sin etapas para esta variedad ni genericas.")
+    etapas = tuple((u["etapa"], (u["gdd_minimo"] + u["gdd_maximo"]) / 2) for u in filas)
+    # Una etapa con horas_luz_criticas avanza mas lento bajo ese fotoperiodo. Cultivo
+    # admite un solo fotoperiodo critico: si hay varias etapas moduladas, manda la ultima.
+    moduladas = tuple(u["etapa"] for u in filas if u.get("horas_luz_criticas"))
+    horas_luz = next((u["horas_luz_criticas"] for u in reversed(filas) if u.get("horas_luz_criticas")), None)
 
     return Cultivo(
         nombre=f"{especie}:{variedad_local or 'generica'}",
         tb=req["tb"], to=req["t_optima"], tc=req["tc"],
         etapas=etapas,
-        moduladas=("madurez",) if horas_luz else (),
+        moduladas=moduladas,
         foto_critico=horas_luz or 0,
         foto_sens=req.get("foto_sens") or (0.05 if horas_luz else 0),
         vern_req=req.get("vern_req") or 0,
     )
+
+
+def elegir_etapas(umbrales: list[dict], variedad_local: str | None) -> list[dict]:
+    """Las etapas de una especie son datos, no codigo: cada fila de umbral_fenologico_config
+    es una etapa con su nombre (`etapa`), su posicion (`orden`) y los grados-dia que la
+    separan de la anterior. Cada especie define cuantas tiene y como se llaman (papa:
+    emergencia, tuberizacion, madurez; ajo: emergencia, bulbificacion, madurez).
+
+    Si la variedad pedida tiene etapas propias se usan solo esas, completas -- una variedad
+    puede tener otro numero de etapas que la especie generica, no se mezclan fila a fila."""
+    propias = [u for u in umbrales if variedad_local is not None and u["variedad_local"] == variedad_local]
+    filas = propias or [u for u in umbrales if u["variedad_local"] is None]
+    return sorted(filas, key=lambda u: u["orden"])
+
+
+def fases_validas(c: Cultivo) -> set[str]:
+    """Nombres de fase que una regla de dano puede usar para este cultivo -- los mismos
+    que arma motor_estres.fases(). Una regla con otra fase nunca se evalua."""
+    nombres = ["siembra", *(n for n, _ in c.etapas)]
+    return {f"{a}->{b}" for a, b in zip(nombres, nombres[1:])} | {"cosecha", "*"}
 
 
 async def construir_perfil(especie: str, repo: RepositorioEspecies) -> dict:

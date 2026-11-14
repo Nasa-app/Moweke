@@ -108,6 +108,78 @@ async def leer_sitio(session: AsyncSession, id_parcela: int, hoy: date | None = 
 
 DIAS_ESTIMADOS_MAX = 365  # hasta donde se extiende la serie con el ano anterior
 
+# Correccion de sesgo de celda. POWER (~55 km) y Open-Meteo (celda de modelo) promedian
+# mar, tierra y relieve: medido contra CR2MET (5 km) en tres puntos, POWER da minimas
+# 1,4-2,5 C mas altas, la mitad de la lluvia y casi ninguna helada. Se corrige cada
+# predio contra su propio CR2MET, con los dias en que ambas fuentes coinciden. Es un
+# ajuste de un solo ano de traslape: reduce el sesgo medio, no reconstruye los extremos.
+MIN_DIAS_TRASLAPE = 30   # con menos dias en comun no se corrige nada
+MIN_DIAS_MES = 10        # con menos dias de un mes, ese mes usa el sesgo de todo el traslape
+FACTOR_LLUVIA = (0.5, 3.0)
+
+
+def _sesgo_power(cr2met: pd.DataFrame, power: pd.DataFrame) -> dict | None:
+    """Sesgo de POWER contra CR2MET: diferencia media de tmin y tmax por mes calendario
+    (se resta) y un solo cociente de lluvia acumulada para todo el traslape (se multiplica).
+
+    Medido ajustando con dias pares y probando en impares, en tres puntos: el sesgo de
+    temperatura baja de 1,5-2,8 C a menos de 0,2 C y el error absoluto medio cae a cerca
+    de la mitad; la lluvia anual queda a menos de 15 % de CR2MET. Lo que NO arregla: las
+    heladas. POWER ve 1 de 9, 1 de 18 y 0 de 5; corregido ve 4, 4 y 0 -- restar una media
+    no devuelve los extremos que la celda aplana.
+
+    La lluvia lleva un cociente unico y no uno por mes: el de un mes seco sale de muy
+    pocos milimetros (nov-2025 en Quemchi: 31 contra 15) y, aplicado al mismo mes del ano
+    siguiente, duplico una lluvia que POWER ya traia bien."""
+    comun = cr2met[["tmin", "tmax", "lluvia"]].join(power[["tmin", "tmax", "lluvia"]], rsuffix="_p").dropna()
+    if len(comun) < MIN_DIAS_TRASLAPE:
+        return None
+    total = {"tmin": float((comun.tmin_p - comun.tmin).mean()), "tmax": float((comun.tmax_p - comun.tmax).mean()),
+             "lluvia": float(comun.lluvia.sum() / comun.lluvia_p.sum()) if comun.lluvia_p.sum() > 0 else 1.0}
+    sesgo = {"dias_traslape": len(comun), "tmin": {}, "tmax": {},
+             "lluvia": min(max(total["lluvia"], FACTOR_LLUVIA[0]), FACTOR_LLUVIA[1])}
+    for mes in range(1, 13):
+        m = comun[comun.index.month == mes]
+        hay = len(m) >= MIN_DIAS_MES
+        sesgo["tmin"][mes] = float((m.tmin_p - m.tmin).mean()) if hay else total["tmin"]
+        sesgo["tmax"][mes] = float((m.tmax_p - m.tmax).mean()) if hay else total["tmax"]
+    # El sesgo de un mes sale de ~30 dias de un solo ano: se suaviza con sus dos meses
+    # vecinos (pesos 1-2-1, circular) para no arrastrar el ruido de un mes atipico. El
+    # ciclo estacional del sesgo (en Chiloe, de -4 C en enero a -0,2 C en agosto) se conserva.
+    for variable in ("tmin", "tmax"):
+        crudo = sesgo[variable]
+        sesgo[variable] = {mes: (crudo[(mes - 2) % 12 + 1] + 2 * crudo[mes] + crudo[mes % 12 + 1]) / 4
+                           for mes in range(1, 13)}
+    return sesgo
+
+
+def _sesgo_modelo(cr2met: pd.DataFrame, modelo: pd.DataFrame) -> dict | None:
+    """Sesgo de Open-Meteo: una sola diferencia media de tmin y de tmax con los dias
+    recientes en comun (su historia guardada es de ~3 meses, no alcanza para un sesgo por
+    mes). La lluvia NO se corrige: ensayado, el cociente de un tramo corto no se sostiene
+    en el tramo siguiente (en San Fernando empeoro de 252 a 148 mm contra 228 reales)."""
+    comun = cr2met[["tmin", "tmax"]].join(modelo[["tmin", "tmax"]], rsuffix="_m").dropna()
+    if len(comun) < MIN_DIAS_TRASLAPE:
+        return None
+    return {"dias_traslape": len(comun), "tmin": float((comun.tmin_m - comun.tmin).mean()),
+            "tmax": float((comun.tmax_m - comun.tmax).mean())}
+
+
+def _corregir(bloque: pd.DataFrame, sesgo: dict | None) -> pd.DataFrame:
+    if sesgo is None:
+        return bloque
+    out = bloque.copy()
+    por_mes = isinstance(sesgo["tmin"], dict)
+    meses = out.index.month
+    for variable in ("tmin", "tmax"):
+        resta = meses.map(sesgo[variable]) if por_mes else sesgo[variable]
+        out[variable] = out[variable] - resta
+    if "lluvia" in sesgo:
+        out["lluvia"] = out["lluvia"] * sesgo["lluvia"]
+    # Corregir minima y maxima por separado puede cruzarlas en un dia de poca amplitud.
+    out["tmin"] = out[["tmin", "tmax"]].min(axis=1).where(out["tmin"].notna())
+    return out
+
 
 async def leer_clima_diario(session: AsyncSession, id_parcela: int, desde: date,
                              hoy: date | None = None) -> pd.DataFrame | None:
@@ -118,6 +190,11 @@ async def leer_clima_diario(session: AsyncSession, id_parcela: int, desde: date,
                   humedad relativa siempre es de POWER (CR2MET no la trae).
       pronostico  Open-Meteo: los dias recientes que todavia no tienen dato observado
                   (analisis del modelo) y los 16 dias hacia adelante.
+
+    POWER y Open-Meteo entran corregidos por su sesgo contra el CR2MET del mismo predio
+    (ver _sesgo_power/_sesgo_modelo); `fuente` lo dice ('power_corregido',
+    'open_meteo_corregido') y serie.attrs['correccion_sesgo'] trae los valores aplicados.
+    La humedad relativa no se corrige: no hay contra que medirla.
       estimado    Mas alla del pronostico: el mismo dia del ano anterior, tomado de lo
                   observado. Es una referencia para completar el ciclo, no un pronostico.
 
@@ -141,6 +218,8 @@ async def leer_clima_diario(session: AsyncSession, id_parcela: int, desde: date,
             ["tmin", "tmax", "lluvia", "rh"], axis=1)
 
     cr2met, power, modelo = de("cr2met"), de("power"), de("openmeteo")
+    sesgo_power, sesgo_modelo = _sesgo_power(cr2met, power), _sesgo_modelo(cr2met, modelo)
+    power, modelo = _corregir(power, sesgo_power), _corregir(modelo, sesgo_modelo)
     observado = cr2met.combine_first(power)       # CR2MET manda; POWER rellena dias y la rh
     observado["rh"] = power["rh"]
     hay_observado = observado[["tmin", "tmax"]].notna().all(axis=1)
@@ -156,7 +235,7 @@ async def leer_clima_diario(session: AsyncSession, id_parcela: int, desde: date,
 
     for bloque, vale, fuente, horizonte in (
         (observado, hay_observado, None, "observado"),
-        (modelo, hay_modelo, "open_meteo", "pronostico"),
+        (modelo, hay_modelo, "open_meteo_corregido" if sesgo_modelo else "open_meteo", "pronostico"),
         (anterior, pd.Series(True, index=anterior.index), "ano_anterior", "estimado"),
     ):
         dias = serie.index[serie["horizonte"].isna()].intersection(bloque.index[vale.reindex(bloque.index, fill_value=False)])
@@ -165,7 +244,8 @@ async def leer_clima_diario(session: AsyncSession, id_parcela: int, desde: date,
         serie.loc[dias, ["tmin", "tmax", "lluvia", "rh"]] = bloque.loc[dias, ["tmin", "tmax", "lluvia", "rh"]]
         serie.loc[dias, "horizonte"] = horizonte
         if fuente is None:
-            serie.loc[dias, "fuente"] = ["cr2met" if d in cr2met.index and pd.notna(cr2met.at[d, "tmin"]) else "power"
+            respaldo = "power_corregido" if sesgo_power else "power"
+            serie.loc[dias, "fuente"] = ["cr2met" if d in cr2met.index and pd.notna(cr2met.at[d, "tmin"]) else respaldo
                                          for d in dias]
         else:
             serie.loc[dias, "fuente"] = fuente
@@ -179,4 +259,10 @@ async def leer_clima_diario(session: AsyncSession, id_parcela: int, desde: date,
     huecos = serie.index[serie[["tmin", "tmax", "lluvia"]].isna().any(axis=1)]
     if len(huecos):
         serie = serie.loc[:huecos[0] - pd.Timedelta(days=1)]
-    return serie if len(serie) else None
+    if not len(serie):
+        return None
+    redondo = lambda v: {k: round(x, 2) for k, x in v.items()} if isinstance(v, dict) else round(v, 2)
+    serie.attrs["correccion_sesgo"] = {
+        fuente: None if sesgo is None else {k: v if k == "dias_traslape" else redondo(v) for k, v in sesgo.items()}
+        for fuente, sesgo in (("power", sesgo_power), ("open_meteo", sesgo_modelo))}
+    return serie
