@@ -45,12 +45,23 @@ def solicitar_extraccion_puntual(token: str, nombre_tarea: str, producto: str, c
     fechas: 'MM-DD-YYYY' (formato que pide la API, distinto al de POWER -- confirmar
     contra la documentacion vigente antes de usar, no asumir que no cambio).
     Devuelve task_id. No bloquea -- el trabajo queda corriendo del lado de AppEEARS."""
+    return solicitar_extraccion_multicapa(token, nombre_tarea, [(producto, capa)],
+                                           puntos, fecha_inicio, fecha_fin, timeout)
+
+
+def solicitar_extraccion_multicapa(token: str, nombre_tarea: str, capas: list[tuple[str, str]],
+                                    puntos: list[dict], fecha_inicio: str, fecha_fin: str,
+                                    timeout: int = 20) -> str:
+    """capas: [(producto, capa), ...] -- varias bandas/productos en UNA sola tarea (ej.
+    B04+B05+B06 de HLSL30.020 para poder armar NDVI/NDMI del mismo pase, sin tres tareas
+    separadas con posible desfase de fecha entre ellas). Mismo endpoint que
+    solicitar_extraccion_puntual(), que ahora es el caso de una sola capa de este."""
     tarea = {
         "task_type": "point",
         "task_name": nombre_tarea,
         "params": {
             "dates": [{"startDate": fecha_inicio, "endDate": fecha_fin}],
-            "layers": [{"product": producto, "layer": capa}],
+            "layers": [{"product": p, "layer": c} for p, c in capas],
             "coordinates": puntos,
         },
     }
@@ -118,3 +129,62 @@ VALOR_SIN_DATOS = -3000.0  # relleno real observado (pixel nublado/sin cobertura
 # antes de usar, no es un EVI valido (EVI real esta acotado aprox. [-1, 1]). Fechas del CSV
 # de resultados vienen 'YYYY-MM-DD' (columna 'Date') -- distinto al formato de ENVIO de la
 # tarea ('MM-DD-YYYY', ver solicitar_extraccion_puntual), no asumir que son el mismo formato.
+# NO aplica a HLS -- HLSL30/HLSS30 no rellenan con -3000, las filas sin dato por nube
+# quedan marcadas en el Fmask (bit 'Cloud'), ver filtrar_nubes_hls() mas abajo.
+
+
+def consultar_punto_sincrono(token: str, nombre_tarea: str, capas: list[tuple[str, str]],
+                              lat: float, lon: float, fecha_inicio: str, fecha_fin: str,
+                              destino_csv: str, intervalo_s: int = 15, max_intentos: int = 40):
+    """Version sincrona para una tarea 'point' -- estas tardan minutos, no horas (a
+    diferencia de una tarea 'area'), asi que esperar en el mismo request es razonable
+    para un endpoint de administracion/diagnostico. VERIFICADO (extension post-MVP):
+    Landsat (HLSL30.020) corrio completo en menos de 5 minutos para un punto real.
+    No usar este patron para una tarea 'area' ni dentro de un endpoint que un agricultor
+    espere en pantalla -- para eso sigue siendo valido esperar_y_descargar() + job_extraccion."""
+    import pandas as pd
+
+    punto = [{"latitude": lat, "longitude": lon, "id": "consulta", "category": "parcela"}]
+    task_id = solicitar_extraccion_multicapa(token, nombre_tarea, capas, punto, fecha_inicio, fecha_fin)
+    for _ in range(max_intentos):
+        estado = estado_tarea(token, task_id)
+        if estado == "done":
+            _descargar_bundle(token, task_id, destino_csv)
+            return pd.read_csv(destino_csv)
+        if estado == "error":
+            raise RuntimeError(f"tarea {task_id} ({nombre_tarea}) termino en error")
+        time.sleep(intervalo_s)
+    raise TimeoutError(f"tarea {task_id} ({nombre_tarea}) no termino tras {max_intentos * intervalo_s}s")
+
+
+def filtrar_nubes_hls(df, columna_fmask: str):
+    """VERIFICADO contra una extraccion real de HLSL30.020: el bit 'Cloud' del Fmask
+    marca la fila como nublada -- un valor de reflectancia bajo nube no es un dato real,
+    aunque el CSV no lo rellene con un centinela como MOD13Q1. df debe tener la columna
+    '{col_fmask}_Cloud'. BUG REAL encontrado al probar: esa columna NO es 0/1 entero --
+    es el string "0b0"/"0b1" (igual que los demas campos de bitmask de AppEEARS, ej.
+    VI_Quality de MOD13Q1). Comparar contra el entero 0 nunca matchea -- filtraba las 6
+    de 6 filas de una extraccion real, descartando tambien el unico dia realmente
+    despejado (2026-09-07, 'No' en la Description)."""
+    columna_nube = f"{columna_fmask}_Cloud"
+    if columna_nube not in df.columns:
+        return df
+    return df[df[columna_nube] == "0b0"].copy()
+
+
+def calcular_ndvi_ndmi(df_b04, df_b05, df_b06, producto: str = "HLSL30.020"):
+    """Combina tres extracciones de banda (roja/B04, NIR/B05, SWIR1/B06) por fecha real
+    -- NDVI = (NIR-roja)/(NIR+roja) (vegetacion/reflectancia), NDMI = (NIR-SWIR1)/(NIR+SWIR1)
+    (humedad de dosel/sequedad). Las tres vienen de tareas separadas (mismo producto,
+    punto y rango de fechas) -- se cruzan por 'Date', no se asume que vengan en el mismo
+    orden de filas (AppEEARS puede devolver pases distintos si una banda tuvo mas o menos
+    cobertura util)."""
+    import pandas as pd
+
+    b04 = nombre_columna_valor(producto, "B04")
+    b05 = nombre_columna_valor(producto, "B05")
+    b06 = nombre_columna_valor(producto, "B06")
+    m = df_b04[["Date", b04]].merge(df_b05[["Date", b05]], on="Date").merge(df_b06[["Date", b06]], on="Date")
+    m["ndvi"] = (m[b05] - m[b04]) / (m[b05] + m[b04])
+    m["ndmi"] = (m[b05] - m[b06]) / (m[b05] + m[b06])
+    return m[["Date", "ndvi", "ndmi"]]

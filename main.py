@@ -6,6 +6,7 @@ bloque de auth.
 from __future__ import annotations
 
 import os
+import sys
 from datetime import date, timedelta
 
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -14,15 +15,27 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# catalogo_especies.py (y lo que importa: pheno_engine/motor_estres) usa imports planos
+# (`from pheno_engine import ...`), no `services.pheno_engine` -- mismo patron que todas
+# las verificaciones de este proyecto (`sys.path.insert(0, 'services')` + import plano).
+# Sin esto, `import services.catalogo_especies` revienta con ModuleNotFoundError al
+# intentar resolver su `from pheno_engine import Cultivo` interno.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "services"))
+
+import services.catalogo_especies as catalogo_especies
+import services.cliente_appeears as cliente_appeears
 import services.cliente_clsoilmaps as cliente_clsoilmaps
 import services.cliente_copernicus as cliente_copernicus
 import services.cliente_cr2met as cliente_cr2met
+import services.cliente_soilgrids as cliente_soilgrids
 import services.cliente_solar as cliente_solar
 from services.auth import crear_token, decodificar_token, hash_password, verificar_password
 from services.db import obtener_sesion
 from services.repositorio_clima import guardar_consulta_grilla
+from services.repositorio_postgres import RepositorioPostgres
 
 _CACHE_CR2MET = os.environ.get("CR2MET_CACHE_DIR", "/tmp/cr2met_cache")
+_CACHE_APPEEARS = os.environ.get("APPEEARS_CACHE_DIR", "/tmp/appeears_cache")
 _CACHE_CLSOILMAPS = os.environ.get("CLSOILMAPS_CACHE_DIR", "/tmp/clsoilmaps_cache")
 _CLSOILMAPS_ARCHIVO_INTERNO = "ROSETTA_MEAN/Total_AWC_0_200cm.tif"
 
@@ -183,6 +196,174 @@ async def ingesta_suelo(id_parcela: int, session: AsyncSession = Depends(obtener
                                    date(2022, 1, 1), date(2022, 12, 31), valor,
                                    "100m", "CLSoilMaps_v1", "sin_dato" if valor is None else "completa")
     return {"parcela": id_parcela, "lat": lat, "lon": lon, "agua_disponible_total_mm": valor}
+
+
+@app.post("/api/admin/parcelas/{id_parcela}/ingesta/suelo_quimico")
+async def ingesta_suelo_quimico(id_parcela: int, session: AsyncSession = Depends(obtener_sesion),
+                                 _admin: dict = Depends(requerir_admin)):
+    """SoilGrids (ISRIC) -- pH, textura, carbono organico. Complementa a CLSoilMaps
+    (/ingesta/suelo), que no tiene pH -- ver cliente_soilgrids.py. Sin dimension temporal
+    (mapa estatico, igual tratamiento que CLSoilMaps/Explorador Solar)."""
+    centroide = (await session.execute(
+        text("SELECT ST_Y(ST_Centroid(geometria)) AS lat, ST_X(ST_Centroid(geometria)) AS lon "
+             "FROM parcela WHERE id = :id"), {"id": id_parcela},
+    )).mappings().first()
+    if not centroide:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+    lat, lon = centroide["lat"], centroide["lon"]
+
+    datos = cliente_soilgrids.consultar_suelo(lat, lon)
+    periodo_inicio, periodo_fin = date(2020, 1, 1), date(2020, 12, 31)  # version de SoilGrids v2.0 (2020)
+    guardado = {}
+    for capa, valor in (("soilgrids_ph", datos["ph"]), ("soilgrids_arcilla_pct", datos["arcilla_pct"]),
+                         ("soilgrids_arena_pct", datos["arena_pct"]), ("soilgrids_limo_pct", datos["limo_pct"]),
+                         ("soilgrids_carbono_organico_g_kg", datos["carbono_organico_g_kg"])):
+        await guardar_consulta_grilla(session, id_parcela, capa, periodo_inicio, periodo_fin, valor,
+                                       "250m", "SoilGrids_v2.0", "sin_dato" if valor is None else "completa")
+        guardado[capa] = valor
+    return {"parcela": id_parcela, "lat": lat, "lon": lon, "guardado_en_cache_consulta_grilla": guardado}
+
+
+@app.get("/api/admin/parcelas/{id_parcela}/idoneidad")
+async def idoneidad_parcela(id_parcela: int, especies: str = "papa,ajo_chilote,haba",
+                             session: AsyncSession = Depends(obtener_sesion),
+                             _admin: dict = Depends(requerir_admin)):
+    """catalogo_especies.calcular_idoneidad() real -- pH real (SoilGrids), agua
+    disponible real (CLSoilMaps), y la serie DIARIA real de clima (hoy CR2MET) para
+    correr la simulacion real por fase en las especies que ya tienen perfil fenologico
+    (ver _idoneidad_simulada en catalogo_especies.py) -- no solo el promedio ciego de
+    tmin/tmax, que es lo unico que se podia hacer antes de esto. `especies`: lista
+    separada por coma de los nombres exactos en requisitos_especie."""
+    centroide = (await session.execute(
+        text("SELECT ST_Y(ST_Centroid(geometria)) AS lat FROM parcela WHERE id = :id"), {"id": id_parcela},
+    )).mappings().first()
+    if not centroide:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+    lat = centroide["lat"]
+
+    fila = (await session.execute(text("""
+        SELECT
+          avg(valor) FILTER (WHERE capa = 'soilgrids_ph') AS ph,
+          avg(valor) FILTER (WHERE capa = 'clsoilmaps_awc_total_mm') AS awc_mm,
+          avg(valor) FILTER (WHERE capa LIKE '%tmin%') AS tmin,
+          avg(valor) FILTER (WHERE capa LIKE '%tmax%') AS tmax
+        FROM cache_consulta_grilla WHERE id_parcela = :id
+    """), {"id": id_parcela})).mappings().first()
+    if fila is None or all(v is None for v in fila.values()):
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                             "Parcela sin datos en cache_consulta_grilla todavia -- correr las ingestas primero")
+    sitio = dict(fila)
+
+    filas_clima = (await session.execute(text("""
+        SELECT periodo_inicio AS fecha, capa, valor FROM cache_consulta_grilla
+        WHERE id_parcela = :id AND capa IN ('cr2met_tmin', 'cr2met_tmax', 'cr2met_lluvia')
+        ORDER BY periodo_inicio
+    """), {"id": id_parcela})).mappings().all()
+    clima = None
+    if filas_clima:
+        import pandas as pd
+        df = pd.DataFrame(filas_clima)
+        clima = df.pivot(index="fecha", columns="capa", values="valor")
+        clima.index = pd.to_datetime(clima.index)
+        clima = clima.rename(columns={"cr2met_tmin": "tmin", "cr2met_tmax": "tmax", "cr2met_lluvia": "lluvia"})
+
+    repo = RepositorioPostgres(session)
+    resultado = await catalogo_especies.calcular_idoneidad(sitio, especies.split(","), repo, clima=clima, lat=lat)
+    return {"parcela": id_parcela, "sitio": sitio,
+            "clima_dias_reales_usados": len(clima) if clima is not None else 0, "idoneidad": resultado}
+
+
+@app.post("/api/admin/parcelas/{id_parcela}/ingesta/appeears")
+async def ingesta_appeears(id_parcela: int, dias: int = 60, session: AsyncSession = Depends(obtener_sesion),
+                            _admin: dict = Depends(requerir_admin)):
+    """Landsat (HLS, reflectancia + NDVI/NDMI, filtrado por nube real), SMAP (humedad de
+    suelo superficial) y ECOSTRESS (temperatura de superficie, estres termico) -- las tres
+    tareas 'point' se piden primero y se esperan despues, no una por una, para no sumar
+    los minutos de las tres en serie. Necesita EARTHDATA_USUARIO/EARTHDATA_CLAVE en el
+    entorno (cuenta real de Earthdata Login -- ver Fase 4: el login debe ser por
+    usuario/clave reales, no por email ni por el token de usuario de EDL, que no
+    funciona federado contra esta API)."""
+    usuario, clave = os.environ.get("EARTHDATA_USUARIO"), os.environ.get("EARTHDATA_CLAVE")
+    if not usuario or not clave:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Faltan EARTHDATA_USUARIO/EARTHDATA_CLAVE en el entorno")
+
+    centroide = (await session.execute(
+        text("SELECT ST_Y(ST_Centroid(geometria)) AS lat, ST_X(ST_Centroid(geometria)) AS lon "
+             "FROM parcela WHERE id = :id"), {"id": id_parcela},
+    )).mappings().first()
+    if not centroide:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+    lat, lon = centroide["lat"], centroide["lon"]
+
+    token = cliente_appeears.iniciar_sesion(usuario, clave)
+    os.makedirs(_CACHE_APPEEARS, exist_ok=True)
+    punto = [{"latitude": lat, "longitude": lon, "id": f"parcela_{id_parcela}", "category": "parcela"}]
+    hoy, desde = date.today(), date.today() - timedelta(days=dias)
+    rango = (desde.strftime("%m-%d-%Y"), hoy.strftime("%m-%d-%Y"))
+
+    # Las tres se piden de entrada -- corren en paralelo del lado de AppEEARS, esperar
+    # una antes de pedir la siguiente desperdiciaria los minutos de cola de cada una.
+    tareas = {
+        "landsat": cliente_appeears.solicitar_extraccion_multicapa(
+            token, f"mogewe_p{id_parcela}_landsat", [("HLSL30.020", "B04"), ("HLSL30.020", "B05"), ("HLSL30.020", "B06")],
+            punto, *rango),
+        "smap": cliente_appeears.solicitar_extraccion_puntual(
+            token, f"mogewe_p{id_parcela}_smap", "SPL4SMGP.008", "Geophysical_Data_sm_surface", punto, *rango),
+        "ecostress": cliente_appeears.solicitar_extraccion_puntual(
+            token, f"mogewe_p{id_parcela}_ecostress", "ECO_L2_LSTE.002", "LST", punto, *rango),
+    }
+
+    resultados, filas_escritas = {}, 0
+    for nombre, task_id in tareas.items():
+        destino = os.path.join(_CACHE_APPEEARS, f"p{id_parcela}_{nombre}.csv")
+        archivo = cliente_appeears.esperar_y_descargar(token, task_id, destino, intervalo_s=15, max_intentos=40)
+        if archivo is None:
+            resultados[nombre] = {"estado": "no_disponible"}
+            continue
+        import pandas as pd
+        df = pd.read_csv(archivo)
+
+        if nombre == "landsat":
+            df = cliente_appeears.filtrar_nubes_hls(df, "HLSL30_020_Fmask")
+            if df.empty:
+                resultados[nombre] = {"dias_sin_nube": 0}
+                continue
+            b04 = cliente_appeears.nombre_columna_valor("HLSL30.020", "B04")
+            b05 = cliente_appeears.nombre_columna_valor("HLSL30.020", "B05")
+            b06 = cliente_appeears.nombre_columna_valor("HLSL30.020", "B06")
+            ndvi = (df[b05] - df[b04]) / (df[b05] + df[b04])
+            ndmi = (df[b05] - df[b06]) / (df[b05] + df[b06])
+            for fecha, v_ndvi, v_ndmi in zip(df["Date"], ndvi, ndmi):
+                dia = date.fromisoformat(fecha)
+                await guardar_consulta_grilla(session, id_parcela, "landsat_ndvi", dia, dia,
+                                               float(v_ndvi), "30m", "HLSL30.020", "completa")
+                await guardar_consulta_grilla(session, id_parcela, "landsat_ndmi", dia, dia,
+                                               float(v_ndmi), "30m", "HLSL30.020", "completa")
+                filas_escritas += 2
+            resultados[nombre] = {"dias_sin_nube": len(df), "ndvi_ultimo": float(ndvi.iloc[-1]), "ndmi_ultimo": float(ndmi.iloc[-1])}
+
+        elif nombre == "smap":
+            col = cliente_appeears.nombre_columna_valor("SPL4SMGP.008", "Geophysical_Data_sm_surface")
+            df["dia"] = df["Date"].str[:10]
+            diario = df.groupby("dia")[col].mean()
+            for dia_str, valor in diario.items():
+                dia = date.fromisoformat(dia_str)
+                await guardar_consulta_grilla(session, id_parcela, "smap_humedad_superficial", dia, dia,
+                                               float(valor), "9km", "SPL4SMGP.008", "completa")
+                filas_escritas += 1
+            resultados[nombre] = {"dias": len(diario), "humedad_promedio": float(diario.mean())}
+
+        elif nombre == "ecostress":
+            col = cliente_appeears.nombre_columna_valor("ECO_L2_LSTE.002", "LST")
+            for _, fila in df.iterrows():
+                dia = date.fromisoformat(str(fila["Date"])[:10])
+                await guardar_consulta_grilla(session, id_parcela, "ecostress_lst", dia, dia,
+                                               float(fila[col]), "70m", "ECO_L2_LSTE.002", "completa")
+                filas_escritas += 1
+            resultados[nombre] = {"pases": len(df)}
+
+    return {"parcela": id_parcela, "lat": lat, "lon": lon, "filas_escritas_en_cache": filas_escritas,
+            "resultados": resultados}
 
 
 @app.get("/api/admin/copernicus/sentinel2/disponibilidad")
