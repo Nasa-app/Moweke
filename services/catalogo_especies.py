@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import date, timedelta
+from statistics import median
 from typing import Protocol
 
 import pandas as pd
@@ -384,8 +386,14 @@ async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.Da
 
     Una especie curada con perfil fenologico (papa) y su fila de EcoCrop (solanum_tuberosum)
     salen una sola vez, con el nombre curado. Si la simulacion por fase del perfil curado
-    corre, manda ella (es el nivel mas especifico): puntaje = 1 - perdida simulada, y los
-    factores de EcoCrop quedan como referencia. Si no corre, queda el puntaje de EcoCrop."""
+    corre, ella pone el puntaje (1 - perdida simulada) y los factores de EcoCrop quedan
+    como referencia. Si no corre, queda el puntaje de EcoCrop.
+
+    Una excepcion: la simulacion no puede declarar apta a una especie que queda fuera de
+    los rangos absolutos de EcoCrop. Las reglas de dano curadas se escribieron para una
+    zona (ajo chilote y haba no tienen regla de sequia porque Chiloe es de exceso de agua)
+    y fuera de ella no ven lo que falta: BUG REAL, en Copiapo (74 mm de lluvia al ano)
+    ambas salian con puntaje 1,0."""
     requisitos = await repo.requisitos_genericos()
     identidades = await repo.identidades()
     luz = await repo.equivalencias_luz()
@@ -425,10 +433,13 @@ async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.Da
                 except ClimaIncompleto:
                     simulacion = None
             if simulacion is not None:
+                fuera_de_rango = resultado["apta"] is False
                 resultado.update(
-                    simulacion=simulacion, apta=simulacion["apta"], metodo="simulacion_por_fase",
+                    simulacion=simulacion, metodo="simulacion_por_fase",
+                    apta=simulacion["apta"] and not fuera_de_rango,
+                    fuera_de_rangos_ecocrop=fuera_de_rango,
                     # Sin 'perdida_simulada' la simulacion no completo el ciclo: puntaje 0.
-                    puntaje=round(1 - simulacion.get("perdida_simulada", 1.0), 3))
+                    puntaje=0.0 if fuera_de_rango else round(1 - simulacion.get("perdida_simulada", 1.0), 3))
 
         out.append({"especie": nombre, "especie_ecocrop": clave if clave != nombre else None,
                     "nombre_cientifico": identidad.get("nombre_cientifico"),
@@ -559,6 +570,74 @@ async def seguimiento_cultivo(especie: str, variedad_local: str | None, repo: Re
         "capacidad_agua_mm": cap_mm if cap_mm else 100.0,
         "humedad_relativa_disponible": bool(numerico["rh"].notna().any()),
     }
+
+
+# ---------------------------------------------------------------- curva optica del satelite
+# Contraste independiente de la simulacion: cuando reverdece de verdad el poligono, segun
+# el NDVI de Sentinel-2, contra la fecha en que el motor dice que el cultivo emerge.
+# Los cuatro numeros son criterio propio, sin validar contra cultivos con fecha conocida:
+# el umbral del 20 % de la amplitud es de uso comun en fenologia satelital, no un
+# estandar calibrado para estas especies.
+AMPLITUD_NDVI_MIN = 0.2    # con menos subida que esto no hay senal de un cultivo creciendo
+UMBRAL_VERDOR = 0.2        # el verdor "empieza" al cruzar base + 20 % de la amplitud
+SALTO_RUIDO_NDVI = 0.15    # una caida mayor que esta respecto de sus dos vecinos es nube residual
+DIAS_BASE_ANTES, DIAS_BASE_DESPUES = 30, 10   # ventana alrededor de la siembra que define la linea de base
+
+
+def _sin_ruido(obs: list[dict]) -> list[dict]:
+    """Quita las caidas aisladas: una nube o una sombra que la mascara dejo pasar baja el
+    NDVI de un intervalo, nunca lo sube (visto en datos reales: 0,03 entre dos 0,33)."""
+    return [o for i, o in enumerate(obs)
+            if not (0 < i < len(obs) - 1
+                    and obs[i - 1]["ndvi"] - o["ndvi"] > SALTO_RUIDO_NDVI
+                    and obs[i + 1]["ndvi"] - o["ndvi"] > SALTO_RUIDO_NDVI)]
+
+
+def curva_optica(observaciones: list[dict], siembra: date, emergencia_simulada: date | None = None) -> dict:
+    """observaciones: repositorio_clima.leer_ndvi() -- [{'fecha', 'ndvi', 'visible'}].
+
+    Devuelve en que estado esta la senal ('con_senal', 'sin_senal_de_crecimiento',
+    'sin_linea_de_base', 'sin_observaciones_tras_la_siembra') y, si hay senal, la fecha
+    en que empezo el verdor y su distancia en dias a la emergencia simulada.
+
+    Dos cosas que este numero NO es: no es un error del modelo (el verdor se ve desde el
+    satelite cuando el follaje ya cubre parte del suelo, dias o semanas despues de emerger:
+    un desfase positivo moderado es lo esperable) y no es mas preciso que el hueco entre
+    las dos observaciones que lo encierran (`incertidumbre_dias`)."""
+    obs = _sin_ruido(sorted(observaciones, key=lambda o: o["fecha"]))
+    previas = [o for o in obs if siembra - timedelta(days=DIAS_BASE_ANTES) <= o["fecha"]
+               <= siembra + timedelta(days=DIAS_BASE_DESPUES)]
+    posteriores = [o for o in obs if o["fecha"] > siembra]
+    out = {"observaciones_validas": len(obs), "metodo": "umbral_20pct_de_amplitud_sin_validar"}
+    if not posteriores:
+        return {**out, "estado": "sin_observaciones_tras_la_siembra"}
+    if not previas:
+        return {**out, "estado": "sin_linea_de_base"}
+
+    base = median(o["ndvi"] for o in previas)
+    pico = max(posteriores, key=lambda o: o["ndvi"])
+    amplitud = pico["ndvi"] - base
+    out.update(ndvi_base=round(base, 3), ndvi_maximo=round(pico["ndvi"], 3), fecha_maximo=pico["fecha"].isoformat(),
+               amplitud=round(amplitud, 3),
+               # Si el maximo es la ultima observacion, la curva sigue subiendo: la amplitud
+               # real sera mayor y la fecha de inicio puede correrse.
+               provisional=pico is obs[-1])
+    if amplitud < AMPLITUD_NDVI_MIN:
+        return {**out, "estado": "sin_senal_de_crecimiento"}
+
+    umbral = base + UMBRAL_VERDOR * amplitud
+    cruce = next(o for o in posteriores if o["ndvi"] >= umbral)
+    anterior = next((o for o in reversed(obs) if o["fecha"] < cruce["fecha"]), None)
+    if anterior is None or anterior["ndvi"] >= umbral:
+        inicio, incertidumbre = cruce["fecha"], None
+    else:
+        fraccion = (umbral - anterior["ndvi"]) / (cruce["ndvi"] - anterior["ndvi"])
+        dias = (cruce["fecha"] - anterior["fecha"]).days
+        inicio, incertidumbre = anterior["fecha"] + timedelta(days=round(fraccion * dias)), dias
+    out.update(estado="con_senal", inicio_verdor=inicio.isoformat(), incertidumbre_dias=incertidumbre,
+               verdor_anterior_a_la_siembra=inicio < siembra,
+               desfase_con_emergencia_dias=(inicio - emergencia_simulada).days if emergencia_simulada else None)
+    return out
 
 
 async def construir_cultivo(especie: str, variedad_local: str | None, repo: RepositorioEspecies) -> Cultivo:

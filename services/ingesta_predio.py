@@ -7,13 +7,21 @@ dispararse a mano por los endpoints /api/admin/.../ingesta/*.
   soilgrids         pH, textura, carbono organico
   cr2met            tmin/tmax/lluvia diarios de los ultimos doce meses completos
   clsoilmaps        agua disponible total del suelo (0-200 cm)
+  sentinel2_nubes   cuantas pasadas despejadas de Sentinel-2 hubo en 24 meses (catalogo
+                    publico, sin credenciales): decide si en el predio vale la pena
+                    seguir el cultivo con la curva optica del satelite
 
-Y las dos que alimentan el seguimiento diario de un cultivo
+Y las que alimentan el seguimiento diario de un cultivo
 (catalogo_especies.seguimiento_cultivo). Vencen: se vuelven a correr cuando su ultimo
 dato tiene mas de HORAS_VIGENCIA_DIARIA.
 
   power             tmin/tmax/lluvia/humedad relativa/radiacion diarios hasta hace ~3 dias
   open_meteo        los ultimos dias segun modelo y el pronostico a 16 dias
+  firms             focos de calor de los ultimos 5 dias cerca del predio (solo si hay
+                    FIRMS_MAP_KEY en el entorno; sin clave la fuente queda 'sin_configurar')
+  sentinel2_ndvi    NDVI del poligono cada 5 dias, con la fraccion del predio que se vio.
+                    Necesita COPERNICUS_CLIENT_ID/SECRET, y solo corre donde sentinel2_nubes
+                    midio cielo suficientemente despejado ('no_aplica' en el resto)
 
 CR2MET tambien vence, una vez al mes: la ventana de doce meses se corre el dia 1 y el
 mes recien terminado solo queda completo hacia el dia 10 (ver estado_ingesta).
@@ -35,15 +43,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
+import numpy as np
+import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services import (cliente_clsoilmaps, cliente_cr2met, cliente_openmeteo, cliente_power,
-                      cliente_soilgrids, cliente_solar, db)
-from services.repositorio_clima import CAPAS_GHI_MENSUAL, guardar_consultas_grilla, ventana_clima
+from services import (cliente_clsoilmaps, cliente_copernicus, cliente_cr2met, cliente_firms, cliente_openmeteo,
+                      cliente_power, cliente_soilgrids, cliente_solar, db)
+from services.repositorio_clima import (CAPAS_GHI_MENSUAL, CAPAS_DISPONIBILIDAD_OPTICA, NUBOSIDAD_ESCENA_MAX_PCT,
+                                        RADIO_INCENDIO_KM, VENTANA_OPTICA_DIAS, guardar_consultas_grilla,
+                                        leer_disponibilidad_optica, ventana_clima)
 
 log = logging.getLogger("ingesta_predio")
 
@@ -59,12 +72,24 @@ PRODUCTOS = {
     "cr2met": "v2.5_nrt_diario",
     "power": "diario_ag",
     "open_meteo": "pronostico_16d",
+    "firms": "VIIRS_NOAA20_NOAA21_NRT_5d",
+    "sentinel2_nubes": "catalogo_L2A_24_meses",
+    "sentinel2_ndvi": "L2A_ndvi_5d",
     "clsoilmaps": "awc_total_0_200cm",
 }
 FUENTES = tuple(PRODUCTOS)
-FUENTES_DIARIAS = frozenset({"power", "open_meteo"})
+FUENTES_DIARIAS = frozenset({"power", "open_meteo", "firms", "sentinel2_ndvi"})
+DIAS_FIRMS = 5  # tope real de la API para productos _NRT
+# Un sensor cuyo ultimo dato es mas viejo que esto se da por caido: su "cero focos" no
+# vale como "sin incendios" (asi fallo en silencio VIIRS_SNPP_NRT desde el 2-nov-2026).
+DIAS_SENSOR_VIGENTE = 3
 FUENTES_DE_SITIO = tuple(f for f in FUENTES if f not in FUENTES_DIARIAS)
 HORAS_VIGENCIA_DIARIA = 12
+# Sentinel-2 pasa cada ~5 dias: refrescar su NDVI dos veces al dia solo gastaria cuota.
+HORAS_VIGENCIA = {"sentinel2_ndvi": 72}
+DIAS_NDVI_INICIAL = 400      # primera carga: una temporada completa mas su linea de base
+DIAS_NDVI_REVISION = 15      # refrescos: el tramo que todavia puede recibir pasadas nuevas
+INTERVALO_NDVI_DIAS = 5
 # POWER corrige sus ultimos dias: cada refresco vuelve a pedir este tramo ya guardado.
 DIAS_REVISION_POWER = 10
 
@@ -197,32 +222,196 @@ async def _open_meteo(session: AsyncSession, id_parcela: int, lat: float, lon: f
     return None if filas else "sin_cobertura"
 
 
+def _distancia_km(lat1: float, lon1: float, lat2, lon2):
+    """Haversine. lat2/lon2 pueden ser columnas de pandas."""
+    p1, p2 = math.radians(lat1), np.radians(lat2)
+    a = np.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * np.cos(p2) * np.sin(np.radians(lon2 - lon1) / 2) ** 2
+    return 6371.0 * 2 * np.arcsin(np.sqrt(a))
+
+
+def resumir_focos(focos, lat: float, lon: float, hoy: date, radio_km: float = RADIO_INCENDIO_KM,
+                  dias: int = DIAS_FIRMS) -> list[dict]:
+    """Las detecciones de FIRMS (un DataFrame con latitude, longitude, acq_date,
+    confidence, frp) reducidas a una fila por dia de la ventana consultada: cuantas hubo
+    dentro del radio, a que distancia quedo la mas cercana y la potencia radiativa mas
+    alta. Un dia sin detecciones sale con focos = 0 -- 'se reviso y no habia' es un dato,
+    no un hueco. Se descartan las de confianza baja ('l' en VIIRS), en su mayoria falsas.
+    `hoy` y acq_date van en fecha UTC. Con dos satelites, una misma quema puede contarse
+    mas de una vez: `focos` son detecciones, no incendios distintos."""
+    ventana = [hoy - timedelta(days=d) for d in range(dias - 1, -1, -1)]
+    por_dia = {d: {"fecha": d, "focos": 0, "distancia_min_km": None, "frp_max_mw": None} for d in ventana}
+    if len(focos):
+        f = focos[focos["confidence"].astype(str).str.lower().str[0] != "l"].copy()
+        f["km"] = _distancia_km(lat, lon, f["latitude"].astype(float), f["longitude"].astype(float))
+        f = f[f["km"] <= radio_km]
+        for dia, grupo in f.groupby(f["acq_date"].astype(str)):
+            d = date.fromisoformat(dia)
+            if d in por_dia:
+                por_dia[d].update(focos=len(grupo), distancia_min_km=round(float(grupo["km"].min()), 2),
+                                  frp_max_mw=float(grupo["frp"].max()))
+    return list(por_dia.values())
+
+
+async def _firms(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
+    clave = os.environ["FIRMS_MAP_KEY"]  # encolar() no deja pendiente esta fuente sin clave
+    # La caja se arma alrededor del punto redondeado a ~1 km (lo unico que ve FIRMS); la
+    # distancia de cada foco se mide despues, aca, contra el centroide real.
+    lat_c, lon_c = _celda(lat, lon)
+    margen_lat = (RADIO_INCENDIO_KM + 1.5) / 111.0
+    margen_lon = margen_lat / max(math.cos(math.radians(lat_c)), 0.1)
+    caja = (round(lon_c - margen_lon, 3), round(lat_c - margen_lat, 3),
+            round(lon_c + margen_lon, 3), round(lat_c + margen_lat, 3))
+    hoy_utc = datetime.now(timezone.utc).date()
+    disponibilidad = await asyncio.to_thread(cliente_firms.consultar_disponibilidad, clave)
+    sensores = [s for s in cliente_firms.SENSORES_VIGENTES
+                if s in disponibilidad and (hoy_utc - disponibilidad[s]).days <= DIAS_SENSOR_VIGENTE]
+    if not sensores:
+        raise cliente_firms.ErrorFirms("ningun sensor VIIRS de FIRMS tiene datos recientes")
+    partes = [await asyncio.to_thread(cliente_firms.consultar_focos, clave, caja, s, DIAS_FIRMS) for s in sensores]
+    # BUG REAL (Copiapo, 14-nov-2026): un sensor con detecciones y otro sin ninguna. La
+    # tabla vacia no trae columnas y, al concatenarla, pandas dejaba latitude/longitude
+    # como 'object'; el calculo de distancia reventaba. Solo se juntan las que traen filas.
+    partes = [p for p in partes if len(p)]
+    focos = pd.concat(partes, ignore_index=True) if partes else pd.DataFrame()
+    producto = "+".join(sensores)
+    filas = []
+    for dia in resumir_focos(focos, lat, lon, hoy_utc):
+        f = dia["fecha"]
+        filas.append(_fila(id_parcela, "firms_focos_dia", f, f, dia["focos"], "375m_VIIRS", producto))
+        if dia["focos"]:
+            filas.append(_fila(id_parcela, "firms_distancia_min_km", f, f, dia["distancia_min_km"],
+                               "375m_VIIRS", producto))
+            filas.append(_fila(id_parcela, "firms_frp_max_dia", f, f, dia["frp_max_mw"], "375m_VIIRS", producto))
+    await guardar_consultas_grilla(session, filas)
+    return None
+
+
+def resumir_disponibilidad_optica(escenas: list[dict], inicio: date, fin: date) -> dict:
+    """Escenas de cliente_copernicus.buscar_sentinel2() -> que tan seguido hubo una pasada
+    despejada sobre el punto entre `inicio` y `fin`. Un dia con varias escenas (tiles que
+    se traslapan) cuenta una vez, con la menos nublada. La nubosidad es la de la escena
+    completa (~110 km), no la del predio: es un indicador de la zona.
+
+      pasadas_despejadas_pct        dias con pasada bajo NUBOSIDAD_ESCENA_MAX_PCT
+      ventanas_con_pasada_pct       ventanas de VENTANA_OPTICA_DIAS con al menos una
+      hueco_mediano_dias            dias tipicos entre dos pasadas despejadas"""
+    por_dia: dict[date, float] = {}
+    for e in escenas:
+        if e.get("cloud_cover_pct") is None:
+            continue
+        dia = date.fromisoformat(e["fecha"][:10])
+        if inicio <= dia <= fin:
+            por_dia[dia] = min(por_dia.get(dia, 100.0), float(e["cloud_cover_pct"]))
+    claras = sorted(d for d, nubes in por_dia.items() if nubes <= NUBOSIDAD_ESCENA_MAX_PCT)
+    ventanas = [inicio + timedelta(days=n) for n in range(0, (fin - inicio).days + 1, VENTANA_OPTICA_DIAS)]
+    con_pasada = sum(1 for v in ventanas if any(v <= d < v + timedelta(days=VENTANA_OPTICA_DIAS) for d in claras))
+    huecos = sorted((b - a).days for a, b in zip(claras, claras[1:]))
+    return {"pasadas": len(por_dia),
+            "pasadas_despejadas_pct": round(100 * len(claras) / len(por_dia), 1) if por_dia else None,
+            "ventanas_con_pasada_pct": round(100 * con_pasada / len(ventanas), 1) if por_dia else None,
+            "hueco_mediano_dias": float(huecos[len(huecos) // 2]) if huecos else None}
+
+
+async def _sentinel2_nubes(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
+    fin = ventana_clima(date.today())[1]                      # ultimo mes completo
+    inicio = date(fin.year - 2, fin.month, 1) + timedelta(days=31)
+    inicio = inicio.replace(day=1)                            # 24 meses completos
+    escenas, desde = [], inicio
+    while desde <= fin:                                       # por semestres: el catalogo corta en 1000 escenas
+        hasta = min(fin, (desde + timedelta(days=183)).replace(day=1) - timedelta(days=1))
+        escenas += await asyncio.to_thread(cliente_copernicus.buscar_sentinel2, *_celda(lat, lon),
+                                           desde.isoformat(), hasta.isoformat(), None, 1000, 120)
+        desde = hasta + timedelta(days=1)
+    resumen = resumir_disponibilidad_optica(escenas, inicio, fin)
+    await guardar_consultas_grilla(session, [
+        _fila(id_parcela, capa, inicio, fin, resumen[clave], "escena_~110km", "sentinel-2-l2a_catalogo")
+        for capa, clave in CAPAS_DISPONIBILIDAD_OPTICA.items()])
+    return None if resumen["pasadas"] else "sin_cobertura"
+
+
+_EPOCA_NDVI = date(2015, 1, 1)
+
+
+async def _sentinel2_ndvi(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
+    """NDVI medio del poligono por intervalo de INTERVALO_NDVI_DIAS, y que fraccion del
+    poligono se vio en cada uno. Los intervalos van alineados a una fecha fija: asi dos
+    corridas piden los mismos tramos y el upsert los pisa en vez de dejar tramos corridos."""
+    caja = (await session.execute(text(
+        "SELECT ST_XMin(geometria) AS a, ST_YMin(geometria) AS b, ST_XMax(geometria) AS c, ST_YMax(geometria) AS d "
+        "FROM parcela WHERE id = :id"), {"id": id_parcela})).mappings().first()
+    ultimo = (await session.execute(text(
+        "SELECT max(periodo_inicio) FROM cache_consulta_grilla WHERE id_parcela = :id AND capa = 'sentinel2_visible_5d'"
+    ), {"id": id_parcela})).scalar_one()
+    hoy = date.today()
+    desde = hoy - timedelta(days=DIAS_NDVI_INICIAL) if ultimo is None else ultimo - timedelta(days=DIAS_NDVI_REVISION)
+    desde = _EPOCA_NDVI + timedelta(days=((desde - _EPOCA_NDVI).days // INTERVALO_NDVI_DIAS) * INTERVALO_NDVI_DIAS)
+
+    token = await asyncio.to_thread(cliente_copernicus.obtener_token_oauth,
+                                    os.environ["COPERNICUS_CLIENT_ID"], os.environ["COPERNICUS_CLIENT_SECRET"])
+    datos = await asyncio.to_thread(cliente_copernicus.ndvi_estadistico, token,
+                                    [caja["a"], caja["b"], caja["c"], caja["d"]],
+                                    desde.isoformat(), hoy.isoformat(), INTERVALO_NDVI_DIAS, 120)
+    filas = []
+    for d in datos:
+        inicio = date.fromisoformat(d["desde"][:10])
+        fin = inicio + timedelta(days=INTERVALO_NDVI_DIAS - 1)
+        visible = 1 - d["noDataCount"] / d["sampleCount"] if d.get("sampleCount") else 0.0
+        cobertura = "sin_dato" if visible == 0 else "completa" if visible >= 0.99 else "parcial_nubes"
+        comun = dict(id_parcela=id_parcela, periodo_inicio=inicio, periodo_fin=fin, resolucion_nativa="10m",
+                     version_producto="sentinel-2-l2a", cobertura=cobertura)
+        ndvi = d.get("mean")
+        filas.append({**comun, "capa": "sentinel2_visible_5d", "valor": round(visible, 4)})
+        filas.append({**comun, "capa": "sentinel2_ndvi_5d",
+                      "valor": None if visible == 0 or ndvi is None or ndvi != ndvi else float(ndvi)})
+    await guardar_consultas_grilla(session, filas)
+    return None if any(f["valor"] for f in filas if f["capa"] == "sentinel2_visible_5d") else "sin_cobertura"
+
+
 _INGESTAS = {"explorador_solar": _solar, "soilgrids": _soilgrids, "cr2met": _cr2met,
-             "power": _power, "open_meteo": _open_meteo, "clsoilmaps": _clsoilmaps}
+             "power": _power, "open_meteo": _open_meteo, "firms": _firms,
+             "sentinel2_nubes": _sentinel2_nubes, "sentinel2_ndvi": _sentinel2_ndvi, "clsoilmaps": _clsoilmaps}
+
+
+def _sin_configurar(fuente: str) -> bool:
+    """Las fuentes con credenciales. Sin ellas no se encolan (no es un error que
+    reintentar cada dia): la fuente se informa como 'sin_configurar'."""
+    if fuente == "firms":
+        return not os.environ.get("FIRMS_MAP_KEY")
+    if fuente == "sentinel2_ndvi":
+        return not (os.environ.get("COPERNICUS_CLIENT_ID") and os.environ.get("COPERNICUS_CLIENT_SECRET"))
+    return False
 
 
 async def estado_ingesta(session: AsyncSession, id_parcela: int) -> dict:
     """Ultimo intento por fuente: {fuente: {'estado', 'detalle', 'reintentable'}}. estado
     es el de job_extraccion, mas 'sin_iniciar' (nunca se encolo), 'interrumpida' (quedo
     pendiente o en proceso mas de MINUTOS_JOB_VIGENTE) y 'vencida' (fuente diaria completa
-    hace mas de HORAS_VIGENCIA_DIARIA). detalle solo distingue 'sin_cobertura'; la causa
-    de un error no sale de aca."""
+    hace mas que su vigencia). 'sin_configurar' es una fuente que necesita una clave que no
+    esta en el entorno; 'no_aplica', una que no corresponde correr en este predio. detalle
+    solo distingue 'sin_cobertura'; la causa de un error no sale de aca."""
     filas = (await session.execute(text("""
         SELECT DISTINCT ON (proveedor) proveedor, estado, detalle,
                fecha_solicitud < now() - make_interval(mins => CAST(:vigente AS integer)) AS viejo,
                fecha_solicitud < now() - make_interval(mins => CAST(:espera AS integer)) AS enfriado,
-               fecha_completado < now() - make_interval(hours => CAST(:horas AS integer)) AS vencido,
+               extract(epoch FROM now() - fecha_completado) / 3600 AS horas_desde,
                -- CR2MET: vence al cambiar de mes (la ventana se corre) y otra vez el dia 10
                -- (el mes anterior ya quedo completo pese a los ~9 dias de atraso del producto).
                fecha_completado < date_trunc('month', now())
                  OR (extract(day FROM now()) >= 10
                      AND fecha_completado < date_trunc('month', now()) + interval '9 days') AS mes_vencido
         FROM job_extraccion WHERE id_parcela = :id ORDER BY proveedor, id DESC
-    """), {"id": id_parcela, "vigente": MINUTOS_JOB_VIGENTE, "espera": MINUTOS_ENTRE_REINTENTOS,
-           "horas": HORAS_VIGENCIA_DIARIA})).mappings().all()
+    """), {"id": id_parcela, "vigente": MINUTOS_JOB_VIGENTE, "espera": MINUTOS_ENTRE_REINTENTOS})).mappings().all()
     ultimo = {f["proveedor"]: f for f in filas}
+    optica = await leer_disponibilidad_optica(session, id_parcela)
     out = {}
     for fuente in FUENTES:
+        if _sin_configurar(fuente):
+            out[fuente] = {"estado": "sin_configurar", "detalle": None, "reintentable": False, "con_error": False}
+            continue
+        if fuente == "sentinel2_ndvi" and not optica["viable"]:
+            # Zona con pocas pasadas despejadas, o todavia sin medir: no se gasta cuota.
+            out[fuente] = {"estado": "no_aplica", "detalle": None, "reintentable": False, "con_error": False}
+            continue
         f = ultimo.get(fuente)
         if f is None:
             out[fuente] = {"estado": "sin_iniciar", "detalle": None, "reintentable": True, "con_error": False}
@@ -230,8 +419,10 @@ async def estado_ingesta(session: AsyncSession, id_parcela: int) -> dict:
         estado = f["estado"]
         if estado in ("pendiente", "en_proceso") and f["viejo"]:
             estado = "interrumpida"
-        elif estado == "completo" and ((fuente in FUENTES_DIARIAS and f["vencido"])
-                                        or (fuente == "cr2met" and f["mes_vencido"])):
+        elif estado == "completo" and (
+                (fuente in FUENTES_DIARIAS and f["horas_desde"] is not None
+                 and f["horas_desde"] > HORAS_VIGENCIA.get(fuente, HORAS_VIGENCIA_DIARIA))
+                or (fuente == "cr2met" and f["mes_vencido"])):
             estado = "vencida"
         out[fuente] = {"estado": estado,
                        "detalle": "sin_cobertura" if f["detalle"] == "sin_cobertura" else None,

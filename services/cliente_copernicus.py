@@ -53,17 +53,20 @@ def obtener_token_oauth(client_id: str, client_secret: str, timeout: int = 20) -
 
 
 def _evalscript_ndvi() -> str:
-    # SCL 3/8/9 = sombra de nube/nube media probabilidad/nube alta probabilidad (Sen2Cor) --
-    # se descartan antes de promediar, no despues -- un NDVI "promedio" que mezclara pixeles
-    # nublados con limpios seria un numero sin significado agronomico.
+    # Solo se promedian los pixeles que Sen2Cor clasifica como superficie visible: SCL 4
+    # (vegetacion), 5 (suelo desnudo), 6 (agua) y 7 (sin clasificar). Antes solo se
+    # excluian 3/8/9 (sombra de nube y nube media/alta) y se colaban cirros (10), sombras
+    # oscuras (2), nieve (11) y pixeles defectuosos -- BUG REAL visto en la serie de
+    # Quemchi: intervalos "validos" con NDVI -0,02 o 0,32 en un predio que marca 0,8.
+    # Un NDVI promedio que mezcla pixeles nublados con limpios no significa nada.
     return (
         '//VERSION=3\n'
         'function setup() { return { input: [{bands: ["B04","B08","SCL","dataMask"]}], '
         'output: [{id:"ndvi",bands:1,sampleType:"FLOAT32"},{id:"dataMask",bands:1}] }; }\n'
         'function evaluatePixel(s) {\n'
         '  let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04);\n'
-        '  let nublado = (s.SCL == 3 || s.SCL == 8 || s.SCL == 9);\n'
-        '  return { ndvi: [ndvi], dataMask: [nublado ? 0 : s.dataMask] };\n'
+        '  let visible = (s.SCL == 4 || s.SCL == 5 || s.SCL == 6 || s.SCL == 7);\n'
+        '  return { ndvi: [ndvi], dataMask: [visible ? s.dataMask : 0] };\n'
         '}'
     )
 

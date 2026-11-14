@@ -30,14 +30,20 @@ CREATE TABLE perfil_climatico_regional (
 
 CREATE TABLE ecoregion_wwf (
   id SERIAL PRIMARY KEY,
+  eco_id INT UNIQUE,                -- identificador de la ecorregion en la fuente
   eco_name VARCHAR NOT NULL,
+  bioma_wwf VARCHAR,                -- uno de los 14 biomas de WWF, tal como viene
+  reino VARCHAR,                    -- reino biogeografico (ej. Neotropic)
   bioma_tipo VARCHAR CHECK (bioma_tipo IN
     ('templado_costero', 'andino_altura', 'corredor_seco', 'amazonico')),
+  fuente VARCHAR,
   geometria GEOMETRY(MultiPolygon, 4326) NOT NULL
 );
 CREATE INDEX idx_ecoregion_wwf_geometria ON ecoregion_wwf USING GIST (geometria);
--- Import único desde el shapefile WWF Terrestrial Ecoregions (Olson et al. 2001).
--- bioma_tipo se llena a mano por fila tras el import, no viene en la fuente original.
+-- Se carga con database/seed_ecorregiones.sql (generado por importar_ecorregiones.py):
+-- "Biomes and Ecoregions 2017" (RESOLVE, CC-BY 4.0), la revision del mapa de WWF de
+-- Olson et al. 2001. bioma_tipo es la clasificacion propia del proyecto: no viene en la
+-- fuente ni tiene equivalencia publicada con bioma_wwf; queda en NULL hasta decidirla.
 
 -- La tierra física, estable a través de temporadas. El motor de rotación compara
 -- secuencias de cultivos sobre la MISMA parcela — por eso el terreno y el ciclo
@@ -46,6 +52,9 @@ CREATE TABLE parcela (
   id SERIAL PRIMARY KEY,
   id_usuario INT NOT NULL REFERENCES usuarios(id),
   id_perfil_climatico INT REFERENCES perfil_climatico_regional(id),
+  -- Ecorregion que contiene el centroide (o la mas cercana a menos de 5 km): se asigna al
+  -- crear la parcela. NULL si el punto queda fuera de las ecorregiones cargadas.
+  id_ecoregion INT REFERENCES ecoregion_wwf(id),
   geometria GEOMETRY(Polygon, 4326) NOT NULL,
   altitud_msnm INT
 );

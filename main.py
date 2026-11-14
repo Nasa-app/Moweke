@@ -35,7 +35,8 @@ import services.cliente_solar as cliente_solar
 import services.ingesta_predio as ingesta_predio
 from services.auth import crear_token, decodificar_token, hash_password, verificar_password
 from services.db import obtener_sesion
-from services.repositorio_clima import guardar_consulta_grilla, leer_clima_diario, leer_sitio
+from services.repositorio_clima import (guardar_consulta_grilla, leer_clima_diario, leer_disponibilidad_optica,
+                                        leer_incendios, leer_ndvi, leer_sitio)
 from services.repositorio_postgres import RepositorioPostgres
 
 _CACHE_CR2MET = ingesta_predio.CACHE_CR2MET
@@ -176,11 +177,13 @@ async def _parcela_autorizada(id_parcela: int, usuario: dict, session: AsyncSess
     """La parcela, solo si es del usuario (o el usuario es admin). Una parcela ajena
     responde 404 igual que una inexistente: no se confirma que el id existe."""
     fila = (await session.execute(text("""
-        SELECT id, id_usuario, altitud_msnm,
-               ST_Y(ST_Centroid(geometria)) AS lat, ST_X(ST_Centroid(geometria)) AS lon,
-               ST_Area(geometria::geography) / 10000 AS hectareas,
-               ST_AsGeoJSON(geometria, 6) AS perimetro
-        FROM parcela WHERE id = :id
+        SELECT p.id, p.id_usuario, p.altitud_msnm,
+               ST_Y(ST_Centroid(p.geometria)) AS lat, ST_X(ST_Centroid(p.geometria)) AS lon,
+               ST_Area(p.geometria::geography) / 10000 AS hectareas,
+               ST_AsGeoJSON(p.geometria, 6) AS perimetro,
+               e.eco_name AS ecorregion, e.bioma_wwf AS bioma
+        FROM parcela p LEFT JOIN ecoregion_wwf e ON e.id = p.id_ecoregion
+        WHERE p.id = :id
     """), {"id": id_parcela})).mappings().first()
     if not fila or (fila["id_usuario"] != usuario["id"] and usuario["rol"] != "admin"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
@@ -188,6 +191,9 @@ async def _parcela_autorizada(id_parcela: int, usuario: dict, session: AsyncSess
     del parcela["id_usuario"]
     parcela["hectareas"] = round(parcela["hectareas"], 2)
     parcela["perimetro"] = json.loads(parcela["perimetro"])
+    # Fuente: Biomes and Ecoregions 2017 (RESOLVE), CC-BY 4.0 -- citar donde se muestre.
+    nombre, bioma = parcela.pop("ecorregion"), parcela.pop("bioma")
+    parcela["ecorregion"] = {"nombre": nombre, "bioma": bioma} if nombre else None
     return parcela
 
 
@@ -220,6 +226,15 @@ async def crear_parcela(datos: ParcelaNueva, tareas: BackgroundTasks,
         RETURNING id
     """), {"usuario": usuario["id"], "lon": datos.lon, "lat": datos.lat,
            "srid": srid_utm, "medio_lado": medio_lado_m})).scalar_one()
+    # Ecorregion: la que contiene el centroide o, si cae en un borde simplificado (costa),
+    # la mas cercana a menos de 5 km. Sin ninguna, queda en NULL.
+    await session.execute(text("""
+        UPDATE parcela p SET id_ecoregion = (
+            SELECT e.id FROM ecoregion_wwf e
+            WHERE ST_DWithin(e.geometria::geography, ST_Centroid(p.geometria)::geography, 5000)
+            ORDER BY ST_Distance(e.geometria::geography, ST_Centroid(p.geometria)::geography) LIMIT 1)
+        WHERE p.id = :id
+    """), {"id": id_parcela})
     await session.commit()
 
     jobs = await ingesta_predio.encolar(session, id_parcela)
@@ -243,7 +258,9 @@ async def listar_parcelas(session: AsyncSession = Depends(obtener_sesion),
 async def ver_parcela(id_parcela: int, session: AsyncSession = Depends(obtener_sesion),
                        usuario: dict = Depends(usuario_actual)):
     parcela = await _parcela_autorizada(id_parcela, usuario, session)
-    return {**parcela, "estado_ingesta": await ingesta_predio.estado_ingesta(session, id_parcela)}
+    return {**parcela, "incendios_cercanos": await leer_incendios(session, id_parcela),
+            "curva_satelital": await leer_disponibilidad_optica(session, id_parcela),
+            "estado_ingesta": await ingesta_predio.estado_ingesta(session, id_parcela)}
 
 
 @app.post("/api/parcelas/{id_parcela}/ingesta", status_code=status.HTTP_202_ACCEPTED)
@@ -415,8 +432,33 @@ async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
                              "Esta especie todavia no tiene perfil fenologico: solo se puede evaluar su idoneidad de sitio")
     except ValueError:
         raise HTTPException(status.HTTP_409_CONFLICT, sin_clima)
+    # Eventos que no salen del clima: focos de calor cerca del predio desde la siembra,
+    # cada uno con la fase en que estaba el cultivo. Son alerta, no perdida calculada:
+    # no hay una regla de dano por incendio con respaldo.
+    incendios = await leer_incendios(session, id_parcela, cultivo["fecha_siembra"])
+    externos = [{"tipo": "incendio_cercano", **dia,
+                 "fase": next((f["fase"] for f in resultado["fases"]
+                               if f["inicio"] <= dia["fecha"] <= (f["fin"] or "9999")), None)}
+                for dia in incendios["dias_con_focos"]]
+    # Contraste con el satelite, solo donde el cielo deja ver el predio con frecuencia.
+    optica = await leer_disponibilidad_optica(session, id_parcela)
+    if not optica["viable"]:
+        curva = {"disponible": False, "ventanas_con_pasada_pct": optica.get("ventanas_con_pasada_pct"),
+                 "motivo": "sin_medir" if optica["viable"] is None else "zona_con_pocas_pasadas_despejadas"}
+    elif estado["sentinel2_ndvi"]["estado"] == "sin_configurar":
+        curva = {"disponible": False, "motivo": "faltan_credenciales_de_copernicus"}
+    else:
+        siembra = cultivo["fecha_siembra"]
+        observaciones = await leer_ndvi(session, id_parcela, siembra - timedelta(days=40))
+        primera = resultado["etapas"][0]
+        curva = {"disponible": True, "primera_etapa": primera["etapa"], "fecha_simulada": primera["fecha"],
+                 **catalogo_especies.curva_optica(
+                     observaciones, siembra, date.fromisoformat(primera["fecha"]) if primera["fecha"] else None),
+                 "ultimas_observaciones": [{"fecha": o["fecha"].isoformat(), "ndvi": round(o["ndvi"], 3),
+                                            "visible": round(o["visible"], 2)} for o in observaciones[-8:]]}
     return {"id_cultivo": id_cultivo, "id_parcela": id_parcela, "especie": cultivo["especie"],
-            "variedad_local": cultivo["variedad_local"], **resultado,
+            "variedad_local": cultivo["variedad_local"], **resultado, "curva_satelital": curva,
+            "eventos_externos": externos, "incendios_revisados": incendios["revisado"],
             "correccion_sesgo": clima.attrs.get("correccion_sesgo"), "estado_ingesta": estado}
 
 
@@ -531,14 +573,17 @@ async def ingesta_incendios(id_parcela: int, dias: int = 5, radio_grados: float 
     lat, lon = centroide["lat"], centroide["lon"]
     bbox = (lon - radio_grados, lat - radio_grados, lon + radio_grados, lat + radio_grados)
 
-    focos = cliente_firms.consultar_focos(map_key, bbox, dias=dias)
+    try:
+        focos = cliente_firms.consultar_focos(map_key, bbox, dias=dias)
+    except cliente_firms.ErrorFirms as error:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error))
     hoy = date.today()
     desde = hoy - timedelta(days=dias - 1)
     frp_max = float(focos["frp"].max()) if len(focos) else None
     await guardar_consulta_grilla(session, id_parcela, "firms_focos_detectados", desde, hoy,
-                                   float(len(focos)), "375m_VIIRS", "VIIRS_SNPP_NRT", "completa")
+                                   float(len(focos)), "375m_VIIRS", "VIIRS_NOAA20_NRT", "completa")
     await guardar_consulta_grilla(session, id_parcela, "firms_frp_max", desde, hoy,
-                                   frp_max, "375m_VIIRS", "VIIRS_SNPP_NRT",
+                                   frp_max, "375m_VIIRS", "VIIRS_NOAA20_NRT",
                                    "sin_dato" if frp_max is None else "completa")
     return {"parcela": id_parcela, "bbox": bbox, "dias": dias, "focos_detectados": len(focos),
             "frp_maximo": frp_max, "detalle": focos.to_dict("records")}

@@ -266,3 +266,79 @@ async def leer_clima_diario(session: AsyncSession, id_parcela: int, desde: date,
         fuente: None if sesgo is None else {k: v if k == "dias_traslape" else redondo(v) for k, v in sesgo.items()}
         for fuente, sesgo in (("power", sesgo_power), ("open_meteo", sesgo_modelo))}
     return serie
+
+
+# Radio dentro del cual un foco de calor de FIRMS cuenta como "cercano" al predio. Es un
+# criterio de producto, no un umbral agronomico: no hay funcion de dano de cultivo
+# asociada, por eso un foco se informa como alerta y no entra al calculo de perdida.
+RADIO_INCENDIO_KM = 10.0
+_CAPAS_INCENDIO = {"firms_focos_dia": "focos", "firms_distancia_min_km": "distancia_min_km",
+                   "firms_frp_max_dia": "frp_max_mw"}
+
+
+async def leer_incendios(session: AsyncSession, id_parcela: int, desde: date | None = None) -> dict:
+    """Focos de calor de FIRMS dentro de RADIO_INCENDIO_KM del predio, por dia.
+    `revisado` son el primer y el ultimo dia para los que hay consulta guardada (None si
+    FIRMS nunca corrio para el predio): sin eso, 'sin focos' no se distingue de 'sin revisar'."""
+    filas = (await session.execute(text("""
+        SELECT periodo_inicio AS fecha, capa, valor FROM cache_consulta_grilla
+        WHERE id_parcela = :id AND capa = ANY(:capas) AND valor IS NOT NULL
+          AND (CAST(:desde AS date) IS NULL OR periodo_inicio >= CAST(:desde AS date))
+        ORDER BY periodo_inicio
+    """), {"id": id_parcela, "capas": list(_CAPAS_INCENDIO), "desde": desde})).mappings().all()
+    por_dia: dict[date, dict] = {}
+    for f in filas:
+        por_dia.setdefault(f["fecha"], {})[_CAPAS_INCENDIO[f["capa"]]] = f["valor"]
+    dias = sorted(por_dia)
+    return {"radio_km": RADIO_INCENDIO_KM,
+            "revisado": [dias[0].isoformat(), dias[-1].isoformat()] if dias else None,
+            "dias_con_focos": [{"fecha": d.isoformat(), "focos": int(v["focos"]),
+                                "distancia_min_km": v.get("distancia_min_km"), "frp_max_mw": v.get("frp_max_mw")}
+                               for d, v in sorted(por_dia.items()) if v.get("focos")]}
+
+
+# Curva optica del satelite (NDVI de Sentinel-2): solo sirve donde el cielo deja ver el
+# suelo con frecuencia. Medido con el catalogo publico en 24 meses: en Quemchi menos de
+# la mitad de las ventanas de 10 dias tuvo una pasada despejada; en San Fernando, casi
+# todas. Los tres numeros de abajo son criterio de producto, no un estandar publicado.
+NUBOSIDAD_ESCENA_MAX_PCT = 20.0      # una pasada cuenta como despejada bajo esta nubosidad de escena
+VENTANA_OPTICA_DIAS = 10             # cada cuanto hace falta una observacion para seguir un cultivo
+VENTANAS_CON_PASADA_MIN_PCT = 66.0   # con menos ventanas cubiertas, la curva no se ofrece
+CAPAS_DISPONIBILIDAD_OPTICA = {"sentinel2_pasadas": "pasadas",
+                               "sentinel2_pasadas_despejadas_pct": "pasadas_despejadas_pct",
+                               "sentinel2_ventanas_con_pasada_pct": "ventanas_con_pasada_pct",
+                               "sentinel2_hueco_mediano_dias": "hueco_mediano_dias"}
+
+
+async def leer_disponibilidad_optica(session: AsyncSession, id_parcela: int) -> dict:
+    """Si en el predio se puede seguir un cultivo con la curva optica, y con que numeros
+    se decidio. `viable` es None mientras no se haya medido."""
+    filas = (await session.execute(text("""
+        SELECT DISTINCT ON (capa) capa, valor, periodo_inicio, periodo_fin FROM cache_consulta_grilla
+        WHERE id_parcela = :id AND capa = ANY(:capas) ORDER BY capa, periodo_fin DESC
+    """), {"id": id_parcela, "capas": list(CAPAS_DISPONIBILIDAD_OPTICA)})).mappings().all()
+    medido = {CAPAS_DISPONIBILIDAD_OPTICA[f["capa"]]: f["valor"] for f in filas}
+    ventanas = medido.get("ventanas_con_pasada_pct")
+    return {"viable": None if ventanas is None else ventanas >= VENTANAS_CON_PASADA_MIN_PCT,
+            "periodo_medido": [filas[0]["periodo_inicio"].isoformat(), filas[0]["periodo_fin"].isoformat()] if filas else None,
+            **medido, "ventana_dias": VENTANA_OPTICA_DIAS, "nubosidad_escena_max_pct": NUBOSIDAD_ESCENA_MAX_PCT,
+            "ventanas_con_pasada_min_pct": VENTANAS_CON_PASADA_MIN_PCT}
+
+
+VISIBLE_MIN = 0.8  # fraccion del poligono que debe verse para que un NDVI cuente
+
+
+async def leer_ndvi(session: AsyncSession, id_parcela: int, desde: date) -> list[dict]:
+    """Observaciones de NDVI del poligono desde `desde`: [{'fecha' (centro del intervalo),
+    'ndvi', 'visible'}], solo los intervalos en que se vio al menos VISIBLE_MIN del predio."""
+    filas = (await session.execute(text("""
+        SELECT periodo_inicio, periodo_fin,
+               max(valor) FILTER (WHERE capa = 'sentinel2_ndvi_5d') AS ndvi,
+               max(valor) FILTER (WHERE capa = 'sentinel2_visible_5d') AS visible
+        FROM cache_consulta_grilla
+        WHERE id_parcela = :id AND capa IN ('sentinel2_ndvi_5d', 'sentinel2_visible_5d') AND periodo_inicio >= :desde
+        GROUP BY periodo_inicio, periodo_fin ORDER BY periodo_inicio
+    """), {"id": id_parcela, "desde": desde})).mappings().all()
+    return [{"fecha": f["periodo_inicio"] + (f["periodo_fin"] - f["periodo_inicio"]) / 2,
+             "ndvi": f["ndvi"], "visible": f["visible"]}
+            for f in filas if f["ndvi"] is not None and (f["visible"] or 0) >= VISIBLE_MIN]
