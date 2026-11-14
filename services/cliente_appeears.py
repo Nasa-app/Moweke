@@ -172,19 +172,42 @@ def filtrar_nubes_hls(df, columna_fmask: str):
     return df[df[columna_nube] == "0b0"].copy()
 
 
-def calcular_ndvi_ndmi(df_b04, df_b05, df_b06, producto: str = "HLSL30.020"):
-    """Combina tres extracciones de banda (roja/B04, NIR/B05, SWIR1/B06) por fecha real
-    -- NDVI = (NIR-roja)/(NIR+roja) (vegetacion/reflectancia), NDMI = (NIR-SWIR1)/(NIR+SWIR1)
-    (humedad de dosel/sequedad). Las tres vienen de tareas separadas (mismo producto,
-    punto y rango de fechas) -- se cruzan por 'Date', no se asume que vengan en el mismo
-    orden de filas (AppEEARS puede devolver pases distintos si una banda tuvo mas o menos
-    cobertura util)."""
-    import pandas as pd
+def calcular_indices_opticos(df, producto: str = "HLSL30.020"):
+    """A partir de UNA tarea multicapa real (B02/B04/B05/B06/B07 del mismo producto,
+    mismo CSV -- ver solicitar_extraccion_multicapa), calcula los indices opticos reales
+    que motivaron esta extension (clasificacion NASA/ESA de indicadores satelitales que
+    el usuario trajo): reemplaza a la vieja calcular_ndvi_ndmi() (que cruzaba 3 tareas
+    separadas por fecha -- innecesario ahora que se piden todas las bandas juntas, y
+    nunca se llamaba desde main.py, que calculaba NDVI/NDMI a mano).
 
+      ndvi  = (nir-roja)/(nir+roja)                                 vegetacion/reflectancia
+      ndmi  = (nir-swir1)/(nir+swir1)                               humedad de dosel / sequedad
+      evi   = 2.5*(nir-roja)/(nir+6*roja-7.5*azul+1)                vegetacion, menos saturado que NDVI
+      savi  = 1.5*(nir-roja)/(nir+roja+0.5)                         vegetacion, corrige suelo expuesto
+      nbr   = (nir-swir2)/(nir+swir2)                               quemado / severidad de incendio
+      bsi   = ((swir1+roja)-(nir+azul))/((swir1+roja)+(nir+azul))   indice de suelo desnudo
+      arcilla_ratio       = swir1/swir2                             composicion mineral: arcillas
+      oxido_hierro_ratio  = roja/azul                               composicion mineral: oxidos de hierro
+
+    Formulas estandar de teledeteccion (Huete 1988 para SAVI, Huete et al. 1997 para EVI,
+    Key & Benson 2006 para NBR) -- no inventadas para este proyecto, pero SIN VERIFICAR
+    contra un valor de referencia publicado para Chiloe todavia; verificar que caigan en
+    rango fisico plausible (NDVI/NDMI/NBR/SAVI en [-1,1], EVI tipicamente [-1,1] tambien)
+    antes de usarlas para decidir algo, igual que se hizo con cada fuente nueva de este
+    proyecto."""
+    b02 = nombre_columna_valor(producto, "B02")
     b04 = nombre_columna_valor(producto, "B04")
     b05 = nombre_columna_valor(producto, "B05")
     b06 = nombre_columna_valor(producto, "B06")
-    m = df_b04[["Date", b04]].merge(df_b05[["Date", b05]], on="Date").merge(df_b06[["Date", b06]], on="Date")
-    m["ndvi"] = (m[b05] - m[b04]) / (m[b05] + m[b04])
-    m["ndmi"] = (m[b05] - m[b06]) / (m[b05] + m[b06])
-    return m[["Date", "ndvi", "ndmi"]]
+    b07 = nombre_columna_valor(producto, "B07")
+    azul, roja, nir, swir1, swir2 = df[b02], df[b04], df[b05], df[b06], df[b07]
+    out = df[["Date"]].copy()
+    out["ndvi"] = (nir - roja) / (nir + roja)
+    out["ndmi"] = (nir - swir1) / (nir + swir1)
+    out["evi"] = 2.5 * (nir - roja) / (nir + 6 * roja - 7.5 * azul + 1)
+    out["savi"] = 1.5 * (nir - roja) / (nir + roja + 0.5)
+    out["nbr"] = (nir - swir2) / (nir + swir2)
+    out["bsi"] = ((swir1 + roja) - (nir + azul)) / ((swir1 + roja) + (nir + azul))
+    out["arcilla_ratio"] = swir1 / swir2
+    out["oxido_hierro_ratio"] = roja / azul
+    return out

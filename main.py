@@ -27,6 +27,7 @@ import services.cliente_appeears as cliente_appeears
 import services.cliente_clsoilmaps as cliente_clsoilmaps
 import services.cliente_copernicus as cliente_copernicus
 import services.cliente_cr2met as cliente_cr2met
+import services.cliente_firms as cliente_firms
 import services.cliente_soilgrids as cliente_soilgrids
 import services.cliente_solar as cliente_solar
 from services.auth import crear_token, decodificar_token, hash_password, verificar_password
@@ -224,6 +225,41 @@ async def ingesta_suelo_quimico(id_parcela: int, session: AsyncSession = Depends
     return {"parcela": id_parcela, "lat": lat, "lon": lon, "guardado_en_cache_consulta_grilla": guardado}
 
 
+@app.post("/api/admin/parcelas/{id_parcela}/ingesta/incendios")
+async def ingesta_incendios(id_parcela: int, dias: int = 5, radio_grados: float = 0.1,
+                             session: AsyncSession = Depends(obtener_sesion),
+                             _admin: dict = Depends(requerir_admin)):
+    """NASA FIRMS -- focos de calor reales (VIIRS). Necesita FIRMS_MAP_KEY en el entorno
+    (clave gratuita por email, ver cliente_firms.py). dias: 1-5 (limite real de la API
+    para productos _NRT). radio_grados: medio lado del cuadrado alrededor de la parcela
+    -- un foco de incendio es un evento regional, no tiene sentido pedir solo el centroide
+    como las demas fuentes puntuales."""
+    map_key = os.environ.get("FIRMS_MAP_KEY")
+    if not map_key:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Falta FIRMS_MAP_KEY en el entorno")
+
+    centroide = (await session.execute(
+        text("SELECT ST_Y(ST_Centroid(geometria)) AS lat, ST_X(ST_Centroid(geometria)) AS lon "
+             "FROM parcela WHERE id = :id"), {"id": id_parcela},
+    )).mappings().first()
+    if not centroide:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+    lat, lon = centroide["lat"], centroide["lon"]
+    bbox = (lon - radio_grados, lat - radio_grados, lon + radio_grados, lat + radio_grados)
+
+    focos = cliente_firms.consultar_focos(map_key, bbox, dias=dias)
+    hoy = date.today()
+    desde = hoy - timedelta(days=dias - 1)
+    frp_max = float(focos["frp"].max()) if len(focos) else None
+    await guardar_consulta_grilla(session, id_parcela, "firms_focos_detectados", desde, hoy,
+                                   float(len(focos)), "375m_VIIRS", "VIIRS_SNPP_NRT", "completa")
+    await guardar_consulta_grilla(session, id_parcela, "firms_frp_max", desde, hoy,
+                                   frp_max, "375m_VIIRS", "VIIRS_SNPP_NRT",
+                                   "sin_dato" if frp_max is None else "completa")
+    return {"parcela": id_parcela, "bbox": bbox, "dias": dias, "focos_detectados": len(focos),
+            "frp_maximo": frp_max, "detalle": focos.to_dict("records")}
+
+
 @app.get("/api/admin/parcelas/{id_parcela}/idoneidad")
 async def idoneidad_parcela(id_parcela: int, especies: str = "papa,ajo_chilote,haba",
                              session: AsyncSession = Depends(obtener_sesion),
@@ -233,7 +269,10 @@ async def idoneidad_parcela(id_parcela: int, especies: str = "papa,ajo_chilote,h
     correr la simulacion real por fase en las especies que ya tienen perfil fenologico
     (ver _idoneidad_simulada en catalogo_especies.py) -- no solo el promedio ciego de
     tmin/tmax, que es lo unico que se podia hacer antes de esto. `especies`: lista
-    separada por coma de los nombres exactos en requisitos_especie."""
+    separada por coma, cada entrada 'especie' o 'especie:variedad_local' (ej.
+    'papa,solanum_tuberosum:yagana') -- BUG REAL corregido: antes esto siempre consultaba
+    la fila generica (variedad_local NULL), sin forma de pedir una variedad especifica
+    aunque requisitos_especie/regla_dano_especie si tienen esa columna."""
     centroide = (await session.execute(
         text("SELECT ST_Y(ST_Centroid(geometria)) AS lat FROM parcela WHERE id = :id"), {"id": id_parcela},
     )).mappings().first()
@@ -241,14 +280,20 @@ async def idoneidad_parcela(id_parcela: int, especies: str = "papa,ajo_chilote,h
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
     lat = centroide["lat"]
 
+    # Lista explicita de capas por variable -- BUG REAL corregido: antes era
+    # `capa LIKE '%tmin%'`/`'%tmax%'`, que promediaria en silencio cualquier capa futura
+    # que tuviera esa substring en el nombre, sin que quien llama se entere. Agregar una
+    # fuente nueva de temperatura significa agregarla aca explicito, a proposito.
+    CAPAS_TMIN = ("cr2met_tmin",)
+    CAPAS_TMAX = ("cr2met_tmax",)
     fila = (await session.execute(text("""
         SELECT
           avg(valor) FILTER (WHERE capa = 'soilgrids_ph') AS ph,
           avg(valor) FILTER (WHERE capa = 'clsoilmaps_awc_total_mm') AS awc_mm,
-          avg(valor) FILTER (WHERE capa LIKE '%tmin%') AS tmin,
-          avg(valor) FILTER (WHERE capa LIKE '%tmax%') AS tmax
+          avg(valor) FILTER (WHERE capa = ANY(:capas_tmin)) AS tmin,
+          avg(valor) FILTER (WHERE capa = ANY(:capas_tmax)) AS tmax
         FROM cache_consulta_grilla WHERE id_parcela = :id
-    """), {"id": id_parcela})).mappings().first()
+    """), {"id": id_parcela, "capas_tmin": list(CAPAS_TMIN), "capas_tmax": list(CAPAS_TMAX)})).mappings().first()
     if fila is None or all(v is None for v in fila.values()):
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                              "Parcela sin datos en cache_consulta_grilla todavia -- correr las ingestas primero")
@@ -267,8 +312,16 @@ async def idoneidad_parcela(id_parcela: int, especies: str = "papa,ajo_chilote,h
         clima.index = pd.to_datetime(clima.index)
         clima = clima.rename(columns={"cr2met_tmin": "tmin", "cr2met_tmax": "tmax", "cr2met_lluvia": "lluvia"})
 
+    lista_especies = []
+    for entrada in especies.split(","):
+        if ":" in entrada:
+            especie, variedad = entrada.split(":", 1)
+        else:
+            especie, variedad = entrada, None
+        lista_especies.append((especie.strip(), variedad.strip() if variedad else None))
+
     repo = RepositorioPostgres(session)
-    resultado = await catalogo_especies.calcular_idoneidad(sitio, especies.split(","), repo, clima=clima, lat=lat)
+    resultado = await catalogo_especies.calcular_idoneidad(sitio, lista_especies, repo, clima=clima, lat=lat)
     return {"parcela": id_parcela, "sitio": sitio,
             "clima_dias_reales_usados": len(clima) if clima is not None else 0, "idoneidad": resultado}
 
@@ -301,16 +354,26 @@ async def ingesta_appeears(id_parcela: int, dias: int = 60, session: AsyncSessio
     hoy, desde = date.today(), date.today() - timedelta(days=dias)
     rango = (desde.strftime("%m-%d-%Y"), hoy.strftime("%m-%d-%Y"))
 
-    # Las tres se piden de entrada -- corren en paralelo del lado de AppEEARS, esperar
+    # Las cuatro se piden de entrada -- corren en paralelo del lado de AppEEARS, esperar
     # una antes de pedir la siguiente desperdiciaria los minutos de cola de cada una.
+    # Landsat pide B02/B07 ademas de B04/B05/B06 -- las necesitan EVI/SAVI/NBR/BSI y los
+    # indices minerales (arcillas/oxidos de hierro), ver calcular_indices_opticos().
     tareas = {
         "landsat": cliente_appeears.solicitar_extraccion_multicapa(
-            token, f"mogewe_p{id_parcela}_landsat", [("HLSL30.020", "B04"), ("HLSL30.020", "B05"), ("HLSL30.020", "B06")],
+            token, f"mogewe_p{id_parcela}_landsat",
+            [("HLSL30.020", "B02"), ("HLSL30.020", "B04"), ("HLSL30.020", "B05"),
+             ("HLSL30.020", "B06"), ("HLSL30.020", "B07"), ("HLSL30.020", "Fmask")],
             punto, *rango),
         "smap": cliente_appeears.solicitar_extraccion_puntual(
             token, f"mogewe_p{id_parcela}_smap", "SPL4SMGP.008", "Geophysical_Data_sm_surface", punto, *rango),
         "ecostress": cliente_appeears.solicitar_extraccion_puntual(
             token, f"mogewe_p{id_parcela}_ecostress", "ECO_L2_LSTE.002", "LST", punto, *rango),
+        # LST propio de Landsat (TIRS), distinto del de ECOSTRESS -- misma variable fisica,
+        # dos sensores/resoluciones distintas (30m vs 70m), ver clasificacion NASA/USGS
+        # que trajo el usuario. ST_B10 viene en Kelvin ya escalado por AppEEARS (verificar
+        # igual contra el valor real antes de usarlo para decidir algo).
+        "landsat_lst": cliente_appeears.solicitar_extraccion_puntual(
+            token, f"mogewe_p{id_parcela}_landsat_lst", "L08_ST.002", "ST_B10", punto, *rango),
     }
 
     resultados, filas_escritas = {}, 0
@@ -328,19 +391,25 @@ async def ingesta_appeears(id_parcela: int, dias: int = 60, session: AsyncSessio
             if df.empty:
                 resultados[nombre] = {"dias_sin_nube": 0}
                 continue
-            b04 = cliente_appeears.nombre_columna_valor("HLSL30.020", "B04")
-            b05 = cliente_appeears.nombre_columna_valor("HLSL30.020", "B05")
-            b06 = cliente_appeears.nombre_columna_valor("HLSL30.020", "B06")
-            ndvi = (df[b05] - df[b04]) / (df[b05] + df[b04])
-            ndmi = (df[b05] - df[b06]) / (df[b05] + df[b06])
-            for fecha, v_ndvi, v_ndmi in zip(df["Date"], ndvi, ndmi):
-                dia = date.fromisoformat(fecha)
-                await guardar_consulta_grilla(session, id_parcela, "landsat_ndvi", dia, dia,
-                                               float(v_ndvi), "30m", "HLSL30.020", "completa")
-                await guardar_consulta_grilla(session, id_parcela, "landsat_ndmi", dia, dia,
-                                               float(v_ndmi), "30m", "HLSL30.020", "completa")
-                filas_escritas += 2
-            resultados[nombre] = {"dias_sin_nube": len(df), "ndvi_ultimo": float(ndvi.iloc[-1]), "ndmi_ultimo": float(ndmi.iloc[-1])}
+            indices = cliente_appeears.calcular_indices_opticos(df, "HLSL30.020")
+            capas_indices = ("ndvi", "ndmi", "evi", "savi", "nbr", "bsi", "arcilla_ratio", "oxido_hierro_ratio")
+            for _, fila in indices.iterrows():
+                dia = date.fromisoformat(fila["Date"])
+                for capa in capas_indices:
+                    await guardar_consulta_grilla(session, id_parcela, f"landsat_{capa}", dia, dia,
+                                                   float(fila[capa]), "30m", "HLSL30.020", "completa")
+                    filas_escritas += 1
+            resultados[nombre] = {"dias_sin_nube": len(df),
+                                   **{f"{c}_ultimo": float(indices.iloc[-1][c]) for c in capas_indices}}
+
+        elif nombre == "landsat_lst":
+            col = cliente_appeears.nombre_columna_valor("L08_ST.002", "ST_B10")
+            for _, fila in df.iterrows():
+                dia = date.fromisoformat(str(fila["Date"])[:10])
+                await guardar_consulta_grilla(session, id_parcela, "landsat_lst_kelvin", dia, dia,
+                                               float(fila[col]), "30m", "L08_ST.002", "completa")
+                filas_escritas += 1
+            resultados[nombre] = {"pases": len(df)}
 
         elif nombre == "smap":
             col = cliente_appeears.nombre_columna_valor("SPL4SMGP.008", "Geophysical_Data_sm_surface")

@@ -122,12 +122,20 @@ async def _idoneidad_simulada(especie: str, variedad_local: str | None, repo: Re
             "cap_mm_usado": cap_mm if cap_mm else "100.0 (placeholder, sin dato real de sitio)"}
 
 
-async def calcular_idoneidad(sitio: dict, especies: list[str], repo: RepositorioEspecies,
+async def calcular_idoneidad(sitio: dict, especies: list[tuple[str, str | None]], repo: RepositorioEspecies,
                               clima: pd.DataFrame | None = None, lat: float | None = None) -> list[dict]:
     """La funcion de analisis de terreno que el plan (Fase 6) asigna a este nivel de
     madurez: solo necesita requisitos_especie (perfil_generico), no umbral_fenologico_config
     -- por eso puede correr para una especie que EspecieSinPerfilFenologico todavia no
     deja simular con construir_cultivo().
+
+    especies: [(especie, variedad_local), ...] -- BUG REAL corregido: antes esto era
+    list[str] y pasaba variedad_local=None fijo en toda la cadena (requisitos(),
+    nivel_madurez(), construir_cultivo(), construir_reglas()), aunque requisitos_especie
+    y regla_dano_especie SI tienen columna variedad_local -- el dia que exista una fila
+    calibrada para una variedad especifica (ej. via caracteristica_variedad_aportada),
+    esta funcion la habria ignorado igual. Mismo patron que construir_catalogo(), que
+    siempre acepto tuplas -- calcular_idoneidad() era la excepcion, no construir_catalogo.
 
     sitio: {'ph': float|None, 'tmin': float|None, 'tmax': float|None, 'awc_mm': float|None}
     -- valores REALES del sitio (ej. ph/awc de SoilGrids/CLSoilMaps, tmin/tmax promedio
@@ -141,16 +149,17 @@ async def calcular_idoneidad(sitio: dict, especies: list[str], repo: Repositorio
     de tb/tc. El chequeo generico de abajo queda como respaldo para perfil_generico puro
     (la mayoria de EcoCrop, sin umbral_fenologico_config) o si la simulacion no corrio."""
     out = []
-    for especie in especies:
-        req = await repo.requisitos(especie, None)
+    for especie, variedad_local in especies:
+        nombre = especie if variedad_local is None else f"{especie}:{variedad_local}"
+        req = await repo.requisitos(especie, variedad_local)
         if req is None:
-            out.append({"especie": especie, "apta": None, "razones": ["sin_perfil (sin requisitos_especie)"]})
+            out.append({"especie": nombre, "apta": None, "razones": ["sin_perfil (sin requisitos_especie)"]})
             continue
-        nivel = await nivel_madurez(especie, None, repo)
+        nivel = await nivel_madurez(especie, variedad_local, repo)
 
         resultado = None
         if clima is not None and lat is not None and nivel in ("perfil_fenologico_regional", "perfil_calibrado"):
-            resultado = await _idoneidad_simulada(especie, None, repo, clima, lat, sitio.get("awc_mm"))
+            resultado = await _idoneidad_simulada(especie, variedad_local, repo, clima, lat, sitio.get("awc_mm"))
 
         if resultado is None:
             razones = []
@@ -165,9 +174,22 @@ async def calcular_idoneidad(sitio: dict, especies: list[str], repo: Repositorio
             tmax = sitio.get("tmax")
             if tmax is not None and req.get("tc") is not None and tmax > req["tc"]:
                 razones.append(f"temperatura maxima real del sitio ({tmax}) sobre el techo termico de la especie ({req['tc']})")
+            # BUG REAL corregido: habia columnas humedad_suelo_minima/maxima en
+            # requisitos_especie que esta funcion nunca leia -- el agua disponible del
+            # sitio (awc_mm, CLSoilMaps) solo entraba como insumo del balance de agua en
+            # el camino simulado, nunca se comparaba directo contra el requisito de la
+            # especie. Hoy (verificado) ninguna fila tiene esta columna poblada todavia
+            # -- esto no cambia ningun resultado actual, deja el mecanismo listo para
+            # cuando se poblar con datos de lluvia real (ej. EcoCrop RMIN/RMAX) o de
+            # ground truth de agricultores.
+            awc = sitio.get("awc_mm")
+            if awc is not None and req.get("humedad_suelo_minima") is not None and awc < req["humedad_suelo_minima"]:
+                razones.append(f"agua disponible del sitio ({awc} mm) bajo el minimo tolerado por la especie ({req['humedad_suelo_minima']} mm)")
+            if awc is not None and req.get("humedad_suelo_maxima") is not None and awc > req["humedad_suelo_maxima"]:
+                razones.append(f"agua disponible del sitio ({awc} mm) sobre el maximo tolerado por la especie ({req['humedad_suelo_maxima']} mm)")
             resultado = {"apta": len(razones) == 0, "razones": razones, "metodo": "generico_tb_tc_promedio"}
 
-        out.append({"especie": especie, "fuente_requisitos": req.get("fuente"), "nivel_madurez": nivel, **resultado})
+        out.append({"especie": nombre, "fuente_requisitos": req.get("fuente"), "nivel_madurez": nivel, **resultado})
     return out
 
 
