@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+sqlalchemy[asyncio]>=2.0
+asyncpg
+geoalchemy2
+pandas
+numpy
+requests
+python-dotenv
+jinja2
+python-multipart
+passlib
+bcrypt==4.0.1
+python-jose[cryptography]

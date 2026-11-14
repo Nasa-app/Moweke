@@ -58,23 +58,29 @@ INSERT INTO rasgos_rotacion_especie (especie, fija_nitrogeno, familia_botanica, 
 -- regla_dano_especie — ninguna tiene fuente citable, todas placeholder_sin_validar
 -- ============================================================
 
+-- Nombres de fase alineados con catalogo_especies.construir_cultivo, que SIEMPRE usa
+-- emergencia/floracion/madurez (ver NOMBRE_ETAPA en ese archivo) -- no con el nombre
+-- biológico específico (tuberización, bulbificación). Se encontró como bug real al
+-- probar contra Postgres (Fase 3 del plan de MVP): con los nombres específicos, las
+-- reglas de la etapa media nunca coincidían con las fases que el motor calcula,
+-- dejando inactivas justo las reglas de helada en el período más sensible del cultivo.
 INSERT INTO regla_dano_especie (especie, variedad_local, fase, peligro, umbral, minimo, efecto, valor) VALUES
-  ('papa', NULL, 'emergencia->tuberizacion', 'helada', -1, 1, 'atraso', 14),
-  ('papa', NULL, 'emergencia->tuberizacion', 'helada', -4, 1, 'total', 0),
-  ('papa', NULL, 'tuberizacion->madurez', 'helada', -1, 1, 'parcial', 0.3),
-  ('papa', NULL, 'tuberizacion->madurez', 'calor', 28, 5, 'parcial', 0.25),
-  ('papa', NULL, 'tuberizacion->madurez', 'sequia', 0.4, 0, 'parcial', 0.4),
+  ('papa', NULL, 'emergencia->floracion', 'helada', -1, 1, 'atraso', 14),
+  ('papa', NULL, 'emergencia->floracion', 'helada', -4, 1, 'total', 0),
+  ('papa', NULL, 'floracion->madurez', 'helada', -1, 1, 'parcial', 0.3),
+  ('papa', NULL, 'floracion->madurez', 'calor', 28, 5, 'parcial', 0.25),
+  ('papa', NULL, 'floracion->madurez', 'sequia', 0.4, 0, 'parcial', 0.4),
   ('papa', NULL, 'siembra->emergencia', 'anegamiento', 20, 3, 'total', 0),
-  ('papa', NULL, 'tuberizacion->madurez', 'anegamiento', 20, 3, 'parcial', 0.4),
-  ('papa', NULL, 'tuberizacion->madurez', 'tizon', 90, 3, 'parcial', 0.3),
+  ('papa', NULL, 'floracion->madurez', 'anegamiento', 20, 3, 'parcial', 0.4),
+  ('papa', NULL, 'floracion->madurez', 'tizon', 90, 3, 'parcial', 0.3),
   ('papa', NULL, '*', 'ceniza', 0, 0, 'parcial', 0.3),
 
-  ('ajo_chilote', NULL, 'emergencia->bulbificacion', 'helada', -3, 1, 'parcial', 0.3),
-  ('ajo_chilote', NULL, 'emergencia->bulbificacion', 'helada', -6, 1, 'total', 0),
-  ('ajo_chilote', NULL, 'bulbificacion->madurez', 'helada', -2, 1, 'parcial', 0.3),
-  ('ajo_chilote', NULL, 'bulbificacion->madurez', 'calor', 30, 5, 'parcial', 0.2),
+  ('ajo_chilote', NULL, 'emergencia->floracion', 'helada', -3, 1, 'parcial', 0.3),
+  ('ajo_chilote', NULL, 'emergencia->floracion', 'helada', -6, 1, 'total', 0),
+  ('ajo_chilote', NULL, 'floracion->madurez', 'helada', -2, 1, 'parcial', 0.3),
+  ('ajo_chilote', NULL, 'floracion->madurez', 'calor', 30, 5, 'parcial', 0.2),
   ('ajo_chilote', NULL, 'siembra->emergencia', 'anegamiento', 20, 3, 'parcial', 0.3),
-  ('ajo_chilote', NULL, 'bulbificacion->madurez', 'anegamiento', 20, 3, 'parcial', 0.35),
+  ('ajo_chilote', NULL, 'floracion->madurez', 'anegamiento', 20, 3, 'parcial', 0.35),
   ('ajo_chilote', NULL, 'cosecha', 'lluvia_cosecha', 50, 0, 'parcial', 0.2),
   ('ajo_chilote', NULL, '*', 'ceniza', 0, 0, 'parcial', 0.3),
 

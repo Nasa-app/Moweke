@@ -12,7 +12,12 @@ CREATE TABLE usuarios (
   nombre VARCHAR NOT NULL,
   pais VARCHAR NOT NULL,
   unidad_administrativa_local VARCHAR,
-  geometria GEOMETRY(Point, 4326) NOT NULL
+  geometria GEOMETRY(Point, 4326) NOT NULL,
+  -- Fase 2 del plan de MVP: autenticación. Agricultor por teléfono, admin por email.
+  telefono VARCHAR UNIQUE,
+  email VARCHAR UNIQUE,
+  password_hash VARCHAR,
+  rol VARCHAR NOT NULL DEFAULT 'agricultor' CHECK (rol IN ('agricultor', 'admin'))
 );
 CREATE INDEX idx_usuarios_geometria ON usuarios USING GIST (geometria);
 
@@ -141,7 +146,11 @@ CREATE TABLE rasgos_rotacion_especie (
   intervalo_rotacion INT,
   siembra_mes INT,
   siembra_dia INT,
-  perenne BOOLEAN NOT NULL DEFAULT false
+  perenne BOOLEAN NOT NULL DEFAULT false,
+  -- Fase 1 del plan de MVP: max_ciclo (antes global en motor_rotacion.evaluar_cultivos)
+  -- pasa a ser por especie, nullable, con fallback al valor global en el código si es NULL.
+  -- Resuelve el bug documentado de que papa falla por corte de días, no por clima real.
+  max_ciclo_dias INT
 );
 
 -- Reglas de dano por fase x peligro (services/motor_estres.Regla). Una especie sin filas

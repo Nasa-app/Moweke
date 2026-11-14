@@ -6,17 +6,15 @@ el mismo Protocol (RepositorioEspecies) con las mismas cuatro firmas -- por eso
 services/catalogo_especies.py, motor_estres.py y motor_rotacion.py no necesitan saber que
 existe este archivo: consumen la interfaz, no esta clase.
 
-NO VERIFICADO POR EJECUCION: este entorno no tiene sqlalchemy/asyncpg instalados ni un
-Postgres corriendo. La logica (que tablas, que columnas, que filtros) esta revisada contra
-database/schema.sql columna por columna, pero no se probo end-to-end como el resto del
-codigo de este proyecto. Correrlo contra una base real antes de confiar en el.
+VERIFICADO (Fase 3 del plan de MVP) contra Postgres+PostGIS real en Railway. Se encontró
+y corrigió un bug real: ver `_coincide_variedad` más abajo.
 
 Patron de acceso: async, una conexion (o pool) por request de FastAPI, inyectada por
 dependencia -- nunca una conexion global compartida entre requests concurrentes.
 """
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Tablas declaradas con SQLAlchemy Core, columna por columna igual que database/schema.sql.
@@ -73,6 +71,18 @@ class RepositorioPostgres:
     def __init__(self, session: AsyncSession):
         self._s = session
 
+    @staticmethod
+    def _coincide_variedad(columna, variedad_local: str | None):
+        """BUG REAL encontrado al probar contra Postgres: `columna.in_([variedad_local, None])`
+        con variedad_local=None genera `IN (NULL, NULL)`, que en SQL no matchea nunca -- NULL
+        nunca es igual a NULL vía IN/=. Se verificó: requisitos("papa", None) devolvía None
+        con la versión anterior, aunque la fila genérica de papa sí existe.
+        La forma correcta: coincide si la columna es NULL (fila genérica) O si coincide
+        exactamente con variedad_local (cuando se pide una variedad específica)."""
+        if variedad_local is None:
+            return columna.is_(None)
+        return or_(columna == variedad_local, columna.is_(None))
+
     async def requisitos(self, especie: str, variedad_local: str | None) -> dict | None:
         # variedad_local especifica primero; si no hay fila para esa variedad, cae a la
         # fila generica de la especie (variedad_local IS NULL) -- mismo principio de
@@ -80,7 +90,7 @@ class RepositorioPostgres:
         # resto del proyecto (ver jerarquia de confianza).
         q = select(requisitos_especie).where(
             requisitos_especie.c.especie == especie,
-            requisitos_especie.c.variedad_local.in_([variedad_local, None]),
+            self._coincide_variedad(requisitos_especie.c.variedad_local, variedad_local),
         ).order_by(requisitos_especie.c.variedad_local.is_(None))  # no-nulo primero
         fila = (await self._s.execute(q)).mappings().first()
         return dict(fila) if fila else None
@@ -88,7 +98,7 @@ class RepositorioPostgres:
     async def umbrales_fenologicos(self, especie: str, variedad_local: str | None) -> list[dict]:
         q = select(umbral_fenologico_config).where(
             umbral_fenologico_config.c.especie == especie,
-            umbral_fenologico_config.c.variedad_local.in_([variedad_local, None]),
+            self._coincide_variedad(umbral_fenologico_config.c.variedad_local, variedad_local),
         )
         filas = (await self._s.execute(q)).mappings().all()
         return [dict(f) for f in filas]
@@ -101,7 +111,7 @@ class RepositorioPostgres:
     async def reglas_dano(self, especie: str, variedad_local: str | None) -> list[dict]:
         q = select(regla_dano_especie).where(
             regla_dano_especie.c.especie == especie,
-            regla_dano_especie.c.variedad_local.in_([variedad_local, None]),
+            self._coincide_variedad(regla_dano_especie.c.variedad_local, variedad_local),
         )
         filas = (await self._s.execute(q)).mappings().all()
         return [dict(f) for f in filas]
