@@ -133,8 +133,54 @@ CREATE TABLE requisitos_especie (
   foto_critico FLOAT,
   foto_sens FLOAT,
   vern_req FLOAT,
+  -- Lo que necesita el metodo EcoCrop de catalogo_especies.puntuar_especie(): rango
+  -- optimo (no solo el punto medio t_optima), temperatura letal con cualquier signo
+  -- (regla_dano_especie solo guarda las negativas), lluvia ANUAL en mm (asi la publica
+  -- EcoCrop; el motor la reparte por mes segun la duracion del ciclo), categorias de luz
+  -- (texto, ver equivalencia_luz_ghi), fotoperiodo categorico y duracion del ciclo.
+  t_opt_min FLOAT,
+  t_opt_max FLOAT,
+  temperatura_letal FLOAT,
+  ph_opt_min FLOAT,
+  ph_opt_max FLOAT,
+  lluvia_anual_min FLOAT,
+  lluvia_anual_opt_min FLOAT,
+  lluvia_anual_opt_max FLOAT,
+  lluvia_anual_max FLOAT,
+  luz_min VARCHAR,
+  luz_opt_min VARCHAR,
+  luz_opt_max VARCHAR,
+  luz_max VARCHAR,
+  fotoperiodo VARCHAR,
+  ciclo_min_dias INT,
+  ciclo_max_dias INT,
   fuente VARCHAR NOT NULL DEFAULT 'placeholder_sin_validar',
   UNIQUE (especie, variedad_local)
+);
+
+-- Identidad de la especie, separada de sus requisitos: nombre cientifico, nombres
+-- comunes y categoria de uso -- lo que hace falta para mostrar un resultado y para
+-- filtrar forestales/ornamentales del catalogo de EcoCrop.
+CREATE TABLE especie (
+  especie VARCHAR PRIMARY KEY,
+  nombre_cientifico VARCHAR,
+  nombres_comunes TEXT,          -- texto libre multilingue tal como viene de la fuente
+  familia_botanica VARCHAR,
+  forma_vida VARCHAR,
+  categorias TEXT[],
+  fuente VARCHAR NOT NULL
+);
+
+-- Equivalencia entre las categorias de luz de EcoCrop y la radiacion global horizontal
+-- (GHI) del sitio. EcoCrop NO publica esta equivalencia ni usa la luz en su modelo: los
+-- umbrales son criterio propio de este proyecto, sin validar -- por eso viven en una
+-- tabla con `fuente` y no en el codigo, y por eso el motor solo los usa para penalizar
+-- el puntaje, nunca para descartar una especie. `orden` 1 = mas luz.
+CREATE TABLE equivalencia_luz_ghi (
+  categoria VARCHAR PRIMARY KEY,
+  orden INT NOT NULL UNIQUE,
+  ghi_min_kwh_m2_dia FLOAT NOT NULL,   -- limite inferior (inclusivo) de la categoria
+  fuente VARCHAR NOT NULL DEFAULT 'criterio_propio_sin_validar'
 );
 
 CREATE TABLE rasgos_rotacion_especie (
@@ -247,16 +293,21 @@ CREATE VIEW vista_publica_respuesta AS
 -- Sin CHECK de valores fijos en proveedor/producto: el catálogo de fuentes
 -- crece (agregamos VNP13A1, GRACE, GAEZ a mitad de este proyecto). Validar
 -- valores conocidos en la capa de aplicación, no en la base de datos.
+-- Una fila por intento. Cuelga de un perfil climatico regional (extraccion historica
+-- de una region) o de una parcela (services/ingesta_predio.py) -- nunca de ninguno.
 CREATE TABLE job_extraccion (
   id SERIAL PRIMARY KEY,
-  id_perfil_climatico INT NOT NULL REFERENCES perfil_climatico_regional(id),
+  id_perfil_climatico INT REFERENCES perfil_climatico_regional(id),
+  id_parcela INT REFERENCES parcela(id),
   proveedor VARCHAR NOT NULL,
   producto VARCHAR NOT NULL,
   job_id_externo VARCHAR,
   estado VARCHAR NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'en_proceso', 'completo', 'error')),
+  detalle TEXT,                    -- causa del error; uso interno, no se muestra al agricultor
   fecha_solicitud TIMESTAMP NOT NULL DEFAULT now(),
   fecha_completado TIMESTAMP
 );
+CREATE INDEX idx_job_extraccion_parcela ON job_extraccion (id_parcela, proveedor);
 
 -- Capas de parcela: HLS, SRTM, SMAP, POWER, ECOSTRESS — todo lo que se consulta
 -- por polígono o centroide de una parcela específica.

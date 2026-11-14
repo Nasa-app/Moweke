@@ -93,13 +93,17 @@ def extraer_archivo(ruta_interna: str, destino_local: str, url_zip: str = URL_RO
     if os.path.exists(destino_local):
         return destino_local
     archivo = _ArchivoZipRemoto(url_zip, timeout=timeout)
+    # Escritura atomica: la extraccion tarda minutos; sin esto, una llamada concurrente
+    # (o una extraccion cortada) veria el .tif a medias y lo tomaria por cache valido.
+    parcial = f"{destino_local}.{os.getpid()}.parcial"
     with zipfile.ZipFile(archivo) as zf:
-        with zf.open(ruta_interna) as origen, open(destino_local, "wb") as salida:
+        with zf.open(ruta_interna) as origen, open(parcial, "wb") as salida:
             while True:
                 bloque = origen.read(1024 * 1024)
                 if not bloque:
                     break
                 salida.write(bloque)
+    os.replace(parcial, destino_local)
     return destino_local
 
 

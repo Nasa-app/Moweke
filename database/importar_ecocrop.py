@@ -20,16 +20,28 @@ chequeo aunque la fuente misma advierta que es opinion, no medicion.
 Alcance deliberadamente acotado a lo que EcoCrop puede respaldar sin inventar nada:
   - requisitos_especie: tb=TMIN, t_optima=punto medio(TOPMN,TOPMX), tc=TMAX,
     ph_suelo_min=PHMIN, ph_suelo_max=PHMAX. Esto alcanza 'perfil_generico' -- sirve para
-    idoneidad de sitio (calcular_idoneidad(), cuando exista), NO para simular fenologia
+    idoneidad de sitio (calcular_idoneidad()), NO para simular fenologia
     (construir_cultivo() seguira fallando explicito con EspecieSinPerfilFenologico: no
     hay umbral_fenologico_config, EcoCrop no da reparto de GDD por etapa).
+  - requisitos_especie, columnas del metodo EcoCrop (catalogo_especies.puntuar_especie()):
+    t_opt_min/t_opt_max=TOPMN/TOPMX, ph_opt_min/ph_opt_max=PHOPMN/PHOPMX,
+    temperatura_letal=KTMP (cualquier signo), lluvia_anual_*=RMIN/ROPMN/ROPMX/RMAX (mm
+    anuales, tal cual), luz_*=LIMN/LIOPMN/LIOPMX/LIMX (categoria en texto, tal cual),
+    fotoperiodo=PHOTO (texto, tal cual), ciclo_min_dias/ciclo_max_dias=GMIN/GMAX (0 en
+    el CSV significa "sin dato", se guarda NULL). Todo copia directa: la conversion de
+    categoria de luz a radiacion NO se hace aca, vive en la tabla equivalencia_luz_ghi.
+  - especie: nombre cientifico, nombres comunes (COMNAME crudo), familia, forma de vida
+    y categorias de uso (CAT separado por comas).
   - regla_dano_especie: SOLO si KTMP (temperatura letal real, definicion propia de
     EcoCrop) esta presente y es negativa -> una regla 'helada' con efecto 'total'. Es
     mapeo directo de la propia definicion del campo, no una regla inventada.
   - humedad_suelo_min/max, horas_luz_criticas, foto_*, vern_req: quedan SIN poblar.
-    EcoCrop da lluvia anual (mm) y fotoperiodo categorico, no la fraccion de agua
-    aprovechable ni el umbral numerico de horas de luz que el motor espera -- convertir
-    eso seria inventar un numero, no traducir uno real.
+    EcoCrop no da la fraccion de agua aprovechable ni el umbral numerico de horas de luz
+    que el motor fenologico espera -- convertir eso seria inventar un numero.
+
+El SQL generado es idempotente: carga el CSV a una tabla temporal y desde ahi actualiza
+las filas de EcoCrop que ya existan e inserta las que falten -- se puede correr sobre
+una base nueva o sobre una que ya tenia la version anterior de este seed.
   - rasgos_rotacion_especie: NO se toca. EcoCrop no tiene mes/dia de siembra ni
     intervalo de rotacion -- sin esto, construir_perfil() seguira fallando con
     EspecieSinPerfil para estas especies (correcto: no estan listas para rotacion).
@@ -68,6 +80,62 @@ def escapar(valor) -> str:
     return str(valor)
 
 
+CATEGORIAS_LUZ = ("very bright", "clear skies", "cloudy skies", "light shade", "heavy shade")
+
+# (columna de la tabla temporal, tipo SQL) en el orden en que se escriben los VALUES.
+COLUMNAS = (
+    ("especie", "VARCHAR PRIMARY KEY"), ("nombre_cientifico", "VARCHAR"), ("nombres_comunes", "TEXT"),
+    ("familia_botanica", "VARCHAR"), ("forma_vida", "VARCHAR"), ("categorias", "TEXT[]"),
+    ("ph_suelo_min", "FLOAT"), ("ph_opt_min", "FLOAT"), ("ph_opt_max", "FLOAT"), ("ph_suelo_max", "FLOAT"),
+    ("tb", "FLOAT"), ("t_opt_min", "FLOAT"), ("t_optima", "FLOAT"), ("t_opt_max", "FLOAT"), ("tc", "FLOAT"),
+    ("temperatura_letal", "FLOAT"),
+    ("lluvia_anual_min", "FLOAT"), ("lluvia_anual_opt_min", "FLOAT"),
+    ("lluvia_anual_opt_max", "FLOAT"), ("lluvia_anual_max", "FLOAT"),
+    ("luz_min", "VARCHAR"), ("luz_opt_min", "VARCHAR"), ("luz_opt_max", "VARCHAR"), ("luz_max", "VARCHAR"),
+    ("fotoperiodo", "VARCHAR"), ("ciclo_min_dias", "INT"), ("ciclo_max_dias", "INT"),
+)
+# Columnas de requisitos_especie que vienen de la tabla temporal (todas menos la
+# identidad, que va a la tabla `especie`).
+COLUMNAS_REQUISITOS = tuple(c for c, _ in COLUMNAS[6:])
+
+
+def texto(valor) -> str | None:
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+        return None
+    s = str(valor).strip()
+    return s if s and s != "NA" else None
+
+
+def numero(valor) -> float | None:
+    return None if pd.isna(valor) else float(valor)
+
+
+def dias(valor) -> int | None:
+    """GMIN/GMAX: 0 en el CSV significa 'sin dato' (685 especies, casi todas arboles),
+    no un ciclo de cero dias."""
+    return None if pd.isna(valor) or valor <= 0 else int(valor)
+
+
+def luz(valor) -> str | None:
+    s = texto(valor)
+    return s.lower() if s and s.lower() in CATEGORIAS_LUZ else None
+
+
+def familia(valor) -> str | None:
+    """FAMNAME viene como ruta taxonomica ('Magnoliopsida:Asteridae:Solanales:Solanaceae');
+    la familia es el ultimo tramo."""
+    s = texto(valor)
+    return s.split(":")[-1].strip() if s else None
+
+
+def arreglo(valor) -> str:
+    s = texto(valor)
+    if s is None:
+        return "NULL"
+    partes = [p.strip() for p in s.split(",") if p.strip()]
+    return "ARRAY[" + ", ".join(escapar(p) for p in partes) + "]"
+
+
 def main(ruta_csv: str, destino_sql: str) -> None:
     df = pd.read_csv(ruta_csv, encoding="latin-1")
     completos = df.dropna(subset=["TMIN", "TOPMN", "TOPMX", "TMAX"]).copy()
@@ -77,36 +145,63 @@ def main(ruta_csv: str, destino_sql: str) -> None:
     log.info("total CSV: %d | con tb/to/tc completos: %d | tras deduplicar por slug: %d",
               len(df), antes, len(completos))
 
-    filas_req, filas_regla = [], []
+    filas = []
     for _, r in completos.iterrows():
-        t_optima = (r["TOPMN"] + r["TOPMX"]) / 2
-        ph_min = r["PHMIN"] if pd.notna(r["PHMIN"]) else None
-        ph_max = r["PHMAX"] if pd.notna(r["PHMAX"]) else None
-        filas_req.append(
-            f"('{r['especie']}', NULL, {escapar(ph_min)}, {escapar(ph_max)}, "
-            f"{r['TMIN']}, {t_optima}, {r['TMAX']}, '{FUENTE}')"
+        valores = (
+            escapar(r["especie"]), escapar(texto(r["ScientificName"])), escapar(texto(r["COMNAME"])),
+            escapar(familia(r["FAMNAME"])), escapar(texto(r["LIFO"])), arreglo(r["CAT"]),
+            escapar(numero(r["PHMIN"])), escapar(numero(r["PHOPMN"])),
+            escapar(numero(r["PHOPMX"])), escapar(numero(r["PHMAX"])),
+            escapar(numero(r["TMIN"])), escapar(numero(r["TOPMN"])),
+            escapar((r["TOPMN"] + r["TOPMX"]) / 2), escapar(numero(r["TOPMX"])), escapar(numero(r["TMAX"])),
+            escapar(numero(r["KTMP"])),
+            escapar(numero(r["RMIN"])), escapar(numero(r["ROPMN"])),
+            escapar(numero(r["ROPMX"])), escapar(numero(r["RMAX"])),
+            escapar(luz(r["LIMN"])), escapar(luz(r["LIOPMN"])), escapar(luz(r["LIOPMX"])), escapar(luz(r["LIMX"])),
+            escapar(texto(r["PHOTO"])), escapar(dias(r["GMIN"])), escapar(dias(r["GMAX"])),
         )
-        if pd.notna(r["KTMP"]) and r["KTMP"] < 0:
-            filas_regla.append(
-                f"('{r['especie']}', NULL, '*', 'helada', {r['KTMP']}, 1, 'total', 0, '{FUENTE}')"
-            )
+        filas.append("(" + ", ".join(valores) + ")")
 
+    asignaciones = ", ".join(f"{c} = e.{c}" for c in COLUMNAS_REQUISITOS)
+    lista = ", ".join(COLUMNAS_REQUISITOS)
     with open(destino_sql, "w") as f:
         f.write(
             "-- Generado por database/importar_ecocrop.py -- NO editar a mano, regenerar desde el CSV.\n"
-            "-- Ver advertencia completa en el encabezado de ese script: opinion experta, no medicion;\n"
-            "-- alcance acotado a requisitos_especie + regla_dano_especie (helada por KTMP).\n\n"
+            "-- Ver advertencia completa en el encabezado de ese script: opinion experta, no medicion.\n"
+            "-- Idempotente: actualiza las filas de EcoCrop existentes e inserta las que falten.\n\n"
+            "BEGIN;\n\n"
         )
-        f.write("INSERT INTO requisitos_especie (especie, variedad_local, ph_suelo_min, ph_suelo_max, "
-                 "tb, t_optima, tc, fuente) VALUES\n")
-        f.write(",\n".join(filas_req) + ";\n\n")
-        if filas_regla:
-            f.write("INSERT INTO regla_dano_especie (especie, variedad_local, fase, peligro, umbral, "
-                     "minimo, efecto, valor, fuente) VALUES\n")
-            f.write(",\n".join(filas_regla) + ";\n")
+        f.write("CREATE TEMP TABLE _ecocrop (\n  "
+                 + ",\n  ".join(f"{c} {t}" for c, t in COLUMNAS) + "\n) ON COMMIT DROP;\n\n")
+        f.write("INSERT INTO _ecocrop VALUES\n" + ",\n".join(filas) + ";\n\n")
+        f.write(
+            f"UPDATE requisitos_especie r SET {asignaciones}\n"
+            f"FROM _ecocrop e\n"
+            f"WHERE r.especie = e.especie AND r.variedad_local IS NULL AND r.fuente = '{FUENTE}';\n\n"
+            f"INSERT INTO requisitos_especie (especie, variedad_local, {lista}, fuente)\n"
+            f"SELECT e.especie, NULL, {', '.join('e.' + c for c in COLUMNAS_REQUISITOS)}, '{FUENTE}'\n"
+            f"FROM _ecocrop e\n"
+            f"WHERE NOT EXISTS (SELECT 1 FROM requisitos_especie r\n"
+            f"                  WHERE r.especie = e.especie AND r.variedad_local IS NULL);\n\n"
+            f"INSERT INTO especie (especie, nombre_cientifico, nombres_comunes, familia_botanica, forma_vida, "
+            f"categorias, fuente)\n"
+            f"SELECT especie, nombre_cientifico, nombres_comunes, familia_botanica, forma_vida, categorias, "
+            f"'{FUENTE}'\nFROM _ecocrop\n"
+            f"ON CONFLICT (especie) DO UPDATE SET nombre_cientifico = EXCLUDED.nombre_cientifico,\n"
+            f"  nombres_comunes = EXCLUDED.nombres_comunes, familia_botanica = EXCLUDED.familia_botanica,\n"
+            f"  forma_vida = EXCLUDED.forma_vida, categorias = EXCLUDED.categorias, fuente = EXCLUDED.fuente;\n\n"
+            f"INSERT INTO regla_dano_especie (especie, variedad_local, fase, peligro, umbral, minimo, efecto, "
+            f"valor, fuente)\n"
+            f"SELECT e.especie, NULL, '*', 'helada', e.temperatura_letal, 1, 'total', 0, '{FUENTE}'\n"
+            f"FROM _ecocrop e\n"
+            f"WHERE e.temperatura_letal < 0\n"
+            f"  AND NOT EXISTS (SELECT 1 FROM regla_dano_especie d\n"
+            f"                  WHERE d.especie = e.especie AND d.peligro = 'helada' AND d.fuente = '{FUENTE}');\n\n"
+            "COMMIT;\n"
+        )
 
-    log.info("escrito %s: %d filas de requisitos_especie, %d filas de regla_dano_especie (helada por KTMP)",
-              destino_sql, len(filas_req), len(filas_regla))
+    log.info("escrito %s: %d especies (requisitos_especie + especie), %d con temperatura letal negativa "
+              "(regla 'helada')", destino_sql, len(filas), int((completos["KTMP"] < 0).sum()))
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 Componente de datos v0.1 — implementacion real de RepositorioEspecies sobre Postgres.
 
 Esto es lo que reemplaza a catalogo_especies.RepositorioEnMemoria en produccion. Implementa
-el mismo Protocol (RepositorioEspecies) con las mismas cuatro firmas -- por eso
+el mismo Protocol (RepositorioEspecies) con las mismas firmas -- por eso
 services/catalogo_especies.py, motor_estres.py y motor_rotacion.py no necesitan saber que
 existe este archivo: consumen la interfaz, no esta clase.
 
@@ -20,7 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # Tablas declaradas con SQLAlchemy Core, columna por columna igual que database/schema.sql.
 # No se usa un ORM declarativo (modelos de clase) a proposito: este componente solo lee
 # cuatro tablas con consultas simples, un ORM completo seria una capa de mas para esto.
-from sqlalchemy import MetaData, Table, Column, Integer, String, Float, Boolean, Date
+from sqlalchemy import MetaData, Table, Column, Integer, String, Float, Boolean, Date, Text
+from sqlalchemy.dialects.postgresql import ARRAY
 
 metadata = MetaData()
 
@@ -33,7 +34,28 @@ requisitos_especie = Table(
     Column("ph_suelo_min", Float), Column("ph_suelo_max", Float),
     Column("tb", Float), Column("t_optima", Float), Column("tc", Float),
     Column("foto_critico", Float), Column("foto_sens", Float), Column("vern_req", Float),
+    Column("t_opt_min", Float), Column("t_opt_max", Float), Column("temperatura_letal", Float),
+    Column("ph_opt_min", Float), Column("ph_opt_max", Float),
+    Column("lluvia_anual_min", Float), Column("lluvia_anual_opt_min", Float),
+    Column("lluvia_anual_opt_max", Float), Column("lluvia_anual_max", Float),
+    Column("luz_min", String), Column("luz_opt_min", String),
+    Column("luz_opt_max", String), Column("luz_max", String),
+    Column("fotoperiodo", String), Column("ciclo_min_dias", Integer), Column("ciclo_max_dias", Integer),
     Column("fuente", String),
+)
+
+especie = Table(
+    "especie", metadata,
+    Column("especie", String, primary_key=True),
+    Column("nombre_cientifico", String), Column("nombres_comunes", Text),
+    Column("familia_botanica", String), Column("forma_vida", String),
+    Column("categorias", ARRAY(Text)), Column("fuente", String),
+)
+
+equivalencia_luz_ghi = Table(
+    "equivalencia_luz_ghi", metadata,
+    Column("categoria", String, primary_key=True),
+    Column("orden", Integer), Column("ghi_min_kwh_m2_dia", Float), Column("fuente", String),
 )
 
 umbral_fenologico_config = Table(
@@ -99,6 +121,25 @@ class RepositorioPostgres:
         q = select(requisitos_especie.c.especie, requisitos_especie.c.variedad_local).distinct()
         filas = (await self._s.execute(q)).all()
         return [(f.especie, f.variedad_local) for f in filas]
+
+    # ---- lecturas en bloque para catalogo_especies.ranking_idoneidad(): evaluar el
+    # catalogo completo con una consulta por tabla, no tres por especie.
+    async def requisitos_genericos(self) -> list[dict]:
+        q = select(requisitos_especie).where(requisitos_especie.c.variedad_local.is_(None))
+        return [dict(f) for f in (await self._s.execute(q)).mappings().all()]
+
+    async def especies_con_fenologia(self) -> set[str]:
+        q = select(umbral_fenologico_config.c.especie).where(
+            umbral_fenologico_config.c.variedad_local.is_(None)).distinct()
+        return {f.especie for f in (await self._s.execute(q)).all()}
+
+    async def identidades(self) -> dict[str, dict]:
+        filas = (await self._s.execute(select(especie))).mappings().all()
+        return {f["especie"]: dict(f) for f in filas}
+
+    async def equivalencias_luz(self) -> list[dict]:
+        q = select(equivalencia_luz_ghi).order_by(equivalencia_luz_ghi.c.orden)
+        return [dict(f) for f in (await self._s.execute(q)).mappings().all()]
 
     async def requisitos(self, especie: str, variedad_local: str | None) -> dict | None:
         # variedad_local especifica primero; si no hay fila para esa variedad, cae a la

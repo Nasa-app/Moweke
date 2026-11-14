@@ -178,7 +178,7 @@ def evaluar(clima, agua, siembra, fechas, c, reglas, externos=(), manejo=()):
     motor_rotacion.evaluar_cultivos(), que trabaja con anos sinteticos sin manejo real que
     registrar. Quien evalue un cultivo real de una parcela real (calcular_fenologia_cultivo,
     Fase 6) es quien debe leer manejo_predio y pasarlo aqui."""
-    danos, fecha_perdida, atraso = [], None, 0
+    danos, eventos, fecha_perdida, atraso = [], [], None, 0
     ciclo_completo = c.etapas[-1][0] in fechas
     for nombre, ini, fin in fases(siembra, fechas, c):
         p, a = clima.loc[ini:fin], agua.loc[ini:fin]
@@ -219,6 +219,12 @@ def evaluar(clima, agua, siembra, fechas, c, reglas, externos=(), manejo=()):
                 reduccion = _reduccion_mitigacion(r, cuando, manejo)
                 valor_ef = r.valor * (1 - reduccion)
                 danos.append((nombre, r.peligro, r.efecto, valor_ef))
+                # Lo mismo que `danos`, con las fechas en que la regla se cumplio --
+                # quien sigue un cultivo real necesita saber si el evento ya ocurrio,
+                # viene en el pronostico o es solo una estimacion.
+                eventos.append({"fase": nombre, "peligro": r.peligro, "efecto": r.efecto, "valor": valor_ef,
+                                "primer_dia": pd.Timestamp(cuando[0]), "ultimo_dia": pd.Timestamp(cuando[-1]),
+                                "dias": len(cuando)})
                 if r.efecto == "total":
                     f0 = pd.Timestamp(cuando[0])
                     fecha_perdida = f0 if fecha_perdida is None else min(fecha_perdida, f0)
@@ -235,7 +241,8 @@ def evaluar(clima, agua, siembra, fechas, c, reglas, externos=(), manejo=()):
         perdida = 1 - float(np.prod([1 - v for v in peor.values()])) if peor else 0.0
         estado = "parcial" if perdida > 0 else "ok"
     return {"estado": estado, "perdida": round(perdida, 2), "atraso_dias": atraso,
-            "danos": danos, "fecha_perdida": fecha_perdida, "ciclo_completo": ciclo_completo}
+            "danos": danos, "eventos": eventos, "fecha_perdida": fecha_perdida,
+            "ciclo_completo": ciclo_completo}
 
 
 # ---------------------------------------------------------------- 3. Inyeccion de eventos

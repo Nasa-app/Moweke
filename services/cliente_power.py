@@ -61,8 +61,9 @@ def consultar_power(lat: float, lon: float, inicio: str, fin: str, timeout: int 
         for col, valores in datos.items()
     })
     df.index = pd.to_datetime(df.index, format="%Y%m%d")
-    df = df.replace(VALOR_SIN_DATO, pd.NA).astype(float)
-    return df
+    # float("nan"), no pd.NA: con pd.NA el astype(float) revienta apenas hay un dia sin
+    # dato (TypeError) -- y los ultimos dias de cualquier consulta reciente vienen asi.
+    return df.replace(VALOR_SIN_DATO, float("nan")).astype(float)
 
 
 URL_CLIMATOLOGIA = "https://power.larc.nasa.gov/api/temporal/climatology/point"

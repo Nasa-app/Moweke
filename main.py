@@ -1,17 +1,19 @@
 """
-Mogewe — API. Fase 2 del plan de MVP: solo autenticacion por ahora. Las fases
-siguientes agregan routers (parcelas, fenologia, rotacion, alertas) sin tocar este
+Mogewe — API. Autenticacion (Fase 2), el flujo del agricultor punto -> predio ->
+especies candidatas (/api/parcelas) y las ingestas de verificacion solo para admin
+(/api/admin). Las fases siguientes agregan fenologia, rotacion y alertas sin tocar el
 bloque de auth.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 from datetime import date, timedelta
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,15 +32,34 @@ import services.cliente_cr2met as cliente_cr2met
 import services.cliente_firms as cliente_firms
 import services.cliente_soilgrids as cliente_soilgrids
 import services.cliente_solar as cliente_solar
+import services.ingesta_predio as ingesta_predio
 from services.auth import crear_token, decodificar_token, hash_password, verificar_password
 from services.db import obtener_sesion
-from services.repositorio_clima import guardar_consulta_grilla
+from services.repositorio_clima import guardar_consulta_grilla, leer_clima_diario, leer_sitio
 from services.repositorio_postgres import RepositorioPostgres
 
-_CACHE_CR2MET = os.environ.get("CR2MET_CACHE_DIR", "/tmp/cr2met_cache")
+_CACHE_CR2MET = ingesta_predio.CACHE_CR2MET
 _CACHE_APPEEARS = os.environ.get("APPEEARS_CACHE_DIR", "/tmp/appeears_cache")
-_CACHE_CLSOILMAPS = os.environ.get("CLSOILMAPS_CACHE_DIR", "/tmp/clsoilmaps_cache")
-_CLSOILMAPS_ARCHIVO_INTERNO = "ROSETTA_MEAN/Total_AWC_0_200cm.tif"
+_CACHE_CLSOILMAPS = ingesta_predio.CACHE_CLSOILMAPS
+_CLSOILMAPS_ARCHIVO_INTERNO = ingesta_predio.CLSOILMAPS_ARCHIVO_INTERNO
+
+# Limites del flujo de predio. El tope de hectareas acota el poligono que se genera a
+# partir del punto; el de parcelas por usuario acota cuantas ingestas externas puede
+# disparar una sola cuenta.
+HECTAREAS_MAX = 1000.0
+PARCELAS_MAX_POR_USUARIO = 20
+CULTIVOS_MAX_POR_PARCELA = 50
+# Ventana aceptada para una fecha de siembra: hacia atras hasta donde llega el clima
+# guardado del predio (un ano), hacia adelante una siembra planeada a pocos meses.
+SIEMBRA_DIAS_ATRAS_MAX = 365
+SIEMBRA_DIAS_ADELANTE_MAX = 180
+# Dias de clima previos a la siembra que se leen para que el balance de agua del suelo
+# no parta de un balde lleno justo el dia de la siembra.
+DIAS_PREVIOS_BALANCE = 30
+# Caja aproximada de Chile continental: CR2MET, CLSoilMaps y el Explorador Solar no
+# cubren nada fuera. Un punto dentro de la caja pero fuera de Chile (Argentina, mar)
+# pasa esta validacion y queda con sus fuentes en 'sin_cobertura'.
+_CHILE = {"lat_min": -56.0, "lat_max": -17.4, "lon_min": -76.0, "lon_max": -66.0}
 
 app = FastAPI(title="Mogewe")
 
@@ -68,6 +89,18 @@ class LoginAdmin(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class ParcelaNueva(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    hectareas: float = Field(gt=0, le=HECTAREAS_MAX)
+
+
+class CultivoNuevo(BaseModel):
+    especie: str = Field(min_length=1, max_length=120)
+    variedad_local: str | None = Field(None, min_length=1, max_length=120)
+    fecha_siembra: date
 
 
 # ---------------------------------------------------------------- dependencias de autorizacion
@@ -134,6 +167,247 @@ async def login_admin(datos: LoginAdmin, session: AsyncSession = Depends(obtener
 @app.get("/api/auth/yo")
 async def yo(usuario: dict = Depends(usuario_actual)):
     return usuario
+
+
+# ---------------------------------------------------------------- flujo de predio (agricultor)
+# Punto + hectareas -> poligono -> ingesta de las fuentes de sitio -> especies candidatas.
+
+async def _parcela_autorizada(id_parcela: int, usuario: dict, session: AsyncSession) -> dict:
+    """La parcela, solo si es del usuario (o el usuario es admin). Una parcela ajena
+    responde 404 igual que una inexistente: no se confirma que el id existe."""
+    fila = (await session.execute(text("""
+        SELECT id, id_usuario, altitud_msnm,
+               ST_Y(ST_Centroid(geometria)) AS lat, ST_X(ST_Centroid(geometria)) AS lon,
+               ST_Area(geometria::geography) / 10000 AS hectareas,
+               ST_AsGeoJSON(geometria, 6) AS perimetro
+        FROM parcela WHERE id = :id
+    """), {"id": id_parcela})).mappings().first()
+    if not fila or (fila["id_usuario"] != usuario["id"] and usuario["rol"] != "admin"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+    parcela = dict(fila)
+    del parcela["id_usuario"]
+    parcela["hectareas"] = round(parcela["hectareas"], 2)
+    parcela["perimetro"] = json.loads(parcela["perimetro"])
+    return parcela
+
+
+@app.post("/api/parcelas", status_code=status.HTTP_201_CREATED)
+async def crear_parcela(datos: ParcelaNueva, tareas: BackgroundTasks,
+                         session: AsyncSession = Depends(obtener_sesion),
+                         usuario: dict = Depends(usuario_actual)):
+    """Flujo 1, paso 7: el agricultor da un punto y las hectareas; el perimetro es un
+    cuadrado de esa area centrado en el punto (aproximacion declarada, no un deslinde).
+    El cuadrado se arma en metros, en la zona UTM del punto, y se guarda en WGS84. Deja
+    encolada la ingesta de las fuentes de sitio y responde sin esperarla."""
+    if not (_CHILE["lat_min"] <= datos.lat <= _CHILE["lat_max"]
+            and _CHILE["lon_min"] <= datos.lon <= _CHILE["lon_max"]):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                             "El punto queda fuera de la cobertura actual (Chile continental)")
+    if usuario["rol"] != "admin":
+        cantidad = (await session.execute(
+            text("SELECT count(*) FROM parcela WHERE id_usuario = :u"), {"u": usuario["id"]})).scalar_one()
+        if cantidad >= PARCELAS_MAX_POR_USUARIO:
+            raise HTTPException(status.HTTP_409_CONFLICT,
+                                 f"Ya tienes {PARCELAS_MAX_POR_USUARIO} parcelas, el maximo permitido")
+
+    srid_utm = (32700 if datos.lat < 0 else 32600) + int((datos.lon + 180) // 6) + 1
+    medio_lado_m = (datos.hectareas * 10_000) ** 0.5 / 2
+    id_parcela = (await session.execute(text("""
+        INSERT INTO parcela (id_usuario, geometria)
+        VALUES (:usuario, ST_Transform(ST_Expand(ST_Transform(
+                    ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), CAST(:srid AS integer)),
+                    CAST(:medio_lado AS double precision)), 4326))
+        RETURNING id
+    """), {"usuario": usuario["id"], "lon": datos.lon, "lat": datos.lat,
+           "srid": srid_utm, "medio_lado": medio_lado_m})).scalar_one()
+    await session.commit()
+
+    jobs = await ingesta_predio.encolar(session, id_parcela)
+    tareas.add_task(ingesta_predio.ingerir_predio, id_parcela, jobs)
+    parcela = await _parcela_autorizada(id_parcela, usuario, session)
+    return {**parcela, "estado_ingesta": await ingesta_predio.estado_ingesta(session, id_parcela)}
+
+
+@app.get("/api/parcelas")
+async def listar_parcelas(session: AsyncSession = Depends(obtener_sesion),
+                           usuario: dict = Depends(usuario_actual)):
+    filas = (await session.execute(text("""
+        SELECT id, altitud_msnm, ST_Y(ST_Centroid(geometria)) AS lat, ST_X(ST_Centroid(geometria)) AS lon,
+               round((ST_Area(geometria::geography) / 10000)::numeric, 2)::float AS hectareas
+        FROM parcela WHERE id_usuario = :u ORDER BY id
+    """), {"u": usuario["id"]})).mappings().all()
+    return {"parcelas": [dict(f) for f in filas]}
+
+
+@app.get("/api/parcelas/{id_parcela}")
+async def ver_parcela(id_parcela: int, session: AsyncSession = Depends(obtener_sesion),
+                       usuario: dict = Depends(usuario_actual)):
+    parcela = await _parcela_autorizada(id_parcela, usuario, session)
+    return {**parcela, "estado_ingesta": await ingesta_predio.estado_ingesta(session, id_parcela)}
+
+
+@app.post("/api/parcelas/{id_parcela}/ingesta", status_code=status.HTTP_202_ACCEPTED)
+async def reintentar_ingesta(id_parcela: int, tareas: BackgroundTasks,
+                              session: AsyncSession = Depends(obtener_sesion),
+                              usuario: dict = Depends(usuario_actual)):
+    """Vuelve a encolar solo las fuentes que fallaron, se interrumpieron o nunca
+    corrieron -- las completas y las que estan en curso no se repiten."""
+    await _parcela_autorizada(id_parcela, usuario, session)
+    jobs = await ingesta_predio.encolar(session, id_parcela)
+    if jobs:
+        tareas.add_task(ingesta_predio.ingerir_predio, id_parcela, jobs)
+    return {"fuentes_encoladas": list(jobs),
+            "estado_ingesta": await ingesta_predio.estado_ingesta(session, id_parcela)}
+
+
+@app.get("/api/parcelas/{id_parcela}/candidatas_siembra")
+async def candidatas_siembra(id_parcela: int, limite: int = Query(20, ge=1, le=200),
+                              categorias: str | None = Query(None, max_length=300),
+                              incluir_no_aptas: bool = False,
+                              session: AsyncSession = Depends(obtener_sesion),
+                              usuario: dict = Depends(usuario_actual)):
+    """Flujo 1b: especies candidatas para el predio, de mas a menos idoneas, segun
+    tolerancia climatica (temperatura y helada letal), humedad (lluvia), pH y radiacion
+    -- ver catalogo_especies.ranking_idoneidad(). `categorias`: lista separada por coma
+    de categorias de EcoCrop (ej. 'vegetables,roots/tubers'); sin ella se dejan fuera
+    forestales, ornamentales y malezas. Responde 409 mientras no haya clima del predio."""
+    parcela = await _parcela_autorizada(id_parcela, usuario, session)
+    estado = await ingesta_predio.estado_ingesta(session, id_parcela)
+    sitio = await leer_sitio(session, id_parcela)
+    normales = catalogo_especies.normales_mensuales(sitio["clima"])
+    if normales["tmedia"] is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, {
+            "mensaje": "Todavia no hay un ano de clima para este predio", "estado_ingesta": estado})
+
+    filtro = {c.strip() for c in categorias.split(",") if c.strip()} if categorias else None
+    ranking = await catalogo_especies.ranking_idoneidad(
+        {"normales": normales, "ph": sitio["ph"], "ghi_mensual": sitio["ghi_mensual"], "awc_mm": sitio["awc_mm"]},
+        RepositorioPostgres(session), clima=sitio["clima"], lat=parcela["lat"], categorias=filtro)
+    aptas = sum(1 for r in ranking if r["apta"])
+    lista = ranking if incluir_no_aptas else ranking[:aptas]
+
+    inicio, fin = sitio["periodo_clima"]
+    redondear = lambda serie: None if serie is None else [round(v, 2) for v in serie]
+    return {
+        "parcela": id_parcela, "hectareas": parcela["hectareas"], "estado_ingesta": estado,
+        "datos_sitio": {
+            "periodo_clima": [inicio.isoformat(), fin.isoformat()],
+            "temperatura_media_mensual": redondear(normales["tmedia"]),
+            "temperatura_minima_mas_baja_mensual": redondear(normales["tmin_extrema"]),
+            "lluvia_mensual_mm": redondear(normales["lluvia"]),
+            "lluvia_anual_mm": None if normales["lluvia"] is None else round(sum(normales["lluvia"]), 1),
+            "ghi_mensual_kwh_m2_dia": redondear(sitio["ghi_mensual"]),
+            "ph": sitio["ph"], "agua_disponible_suelo_mm": sitio["awc_mm"],
+        },
+        "especies_evaluadas": len(ranking), "especies_aptas": aptas,
+        "candidatas": lista[:limite],
+    }
+
+
+# ---------------------------------------------------------------- cultivo sembrado: fases y condiciones
+_NIVELES_CON_FENOLOGIA = ("perfil_fenologico_regional", "perfil_calibrado")
+
+
+@app.post("/api/parcelas/{id_parcela}/cultivos", status_code=status.HTTP_201_CREATED)
+async def declarar_cultivo(id_parcela: int, datos: CultivoNuevo, tareas: BackgroundTasks,
+                            session: AsyncSession = Depends(obtener_sesion),
+                            usuario: dict = Depends(usuario_actual)):
+    """El agricultor declara que siembra (o planea sembrar) una especie del catalogo en
+    su predio. Cualquier especie del catalogo se puede declarar; el seguimiento por fase
+    solo existe para las que tienen perfil fenologico (`fenologia_disponible`)."""
+    await _parcela_autorizada(id_parcela, usuario, session)
+    hoy = date.today()
+    if not (hoy - timedelta(days=SIEMBRA_DIAS_ATRAS_MAX) <= datos.fecha_siembra
+            <= hoy + timedelta(days=SIEMBRA_DIAS_ADELANTE_MAX)):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                             f"La fecha de siembra debe estar entre {SIEMBRA_DIAS_ATRAS_MAX} dias atras "
+                             f"y {SIEMBRA_DIAS_ADELANTE_MAX} dias adelante")
+    repo = RepositorioPostgres(session)
+    if await repo.requisitos(datos.especie, datos.variedad_local) is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "La especie no esta en el catalogo")
+    cantidad = (await session.execute(
+        text("SELECT count(*) FROM predio_cultivos WHERE id_parcela = :p"), {"p": id_parcela})).scalar_one()
+    if cantidad >= CULTIVOS_MAX_POR_PARCELA:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                             f"La parcela ya tiene {CULTIVOS_MAX_POR_PARCELA} cultivos, el maximo permitido")
+
+    id_cultivo = (await session.execute(text("""
+        INSERT INTO predio_cultivos (id_parcela, especie, variedad_local, fecha_siembra)
+        VALUES (:parcela, :especie, :variedad, :siembra) RETURNING id
+    """), {"parcela": id_parcela, "especie": datos.especie, "variedad": datos.variedad_local,
+           "siembra": datos.fecha_siembra})).scalar_one()
+    await session.commit()
+
+    nivel = await catalogo_especies.nivel_madurez(datos.especie, datos.variedad_local, repo)
+    jobs = await ingesta_predio.encolar(session, id_parcela)  # refresca el clima diario si esta vencido
+    if jobs:
+        tareas.add_task(ingesta_predio.ingerir_predio, id_parcela, jobs)
+    return {"id": id_cultivo, "id_parcela": id_parcela, "especie": datos.especie,
+            "variedad_local": datos.variedad_local, "fecha_siembra": datos.fecha_siembra.isoformat(),
+            "nivel_madurez": nivel, "fenologia_disponible": nivel in _NIVELES_CON_FENOLOGIA}
+
+
+@app.get("/api/parcelas/{id_parcela}/cultivos")
+async def listar_cultivos(id_parcela: int, session: AsyncSession = Depends(obtener_sesion),
+                           usuario: dict = Depends(usuario_actual)):
+    await _parcela_autorizada(id_parcela, usuario, session)
+    filas = (await session.execute(text("""
+        SELECT id, especie, variedad_local, fecha_siembra FROM predio_cultivos
+        WHERE id_parcela = :p ORDER BY fecha_siembra DESC NULLS LAST, id DESC
+    """), {"p": id_parcela})).mappings().all()
+    return {"cultivos": [dict(f) for f in filas]}
+
+
+@app.get("/api/cultivos/{id_cultivo}/fenologia")
+async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
+                             session: AsyncSession = Depends(obtener_sesion),
+                             usuario: dict = Depends(usuario_actual)):
+    """Flujo 4 (parte): fechas de cada etapa, fase actual y condiciones y eventos de dano
+    por fase, con cada cosa marcada como observada, de pronostico o estimada -- ver
+    catalogo_especies.seguimiento_cultivo() y repositorio_clima.leer_clima_diario().
+    Si el clima diario del predio esta vencido lo deja refrescandose en segundo plano y
+    responde con lo que hay; `estado_ingesta` dice si conviene volver a consultar."""
+    cultivo = (await session.execute(text(
+        "SELECT id, id_parcela, especie, variedad_local, fecha_siembra FROM predio_cultivos WHERE id = :id"
+    ), {"id": id_cultivo})).mappings().first()
+    try:
+        if cultivo is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND)
+        parcela = await _parcela_autorizada(cultivo["id_parcela"], usuario, session)
+    except HTTPException:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cultivo no existe")
+    if cultivo["fecha_siembra"] is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "El cultivo no tiene fecha de siembra")
+    id_parcela = cultivo["id_parcela"]
+
+    jobs = await ingesta_predio.encolar(session, id_parcela)
+    if jobs:
+        tareas.add_task(ingesta_predio.ingerir_predio, id_parcela, jobs)
+    estado = await ingesta_predio.estado_ingesta(session, id_parcela)
+
+    clima = await leer_clima_diario(session, id_parcela,
+                                     cultivo["fecha_siembra"] - timedelta(days=DIAS_PREVIOS_BALANCE))
+    awc = (await session.execute(text(
+        "SELECT valor FROM cache_consulta_grilla WHERE id_parcela = :id AND capa = 'clsoilmaps_awc_total_mm'"
+    ), {"id": id_parcela})).scalar_one_or_none()
+    manejo = (await session.execute(text(
+        "SELECT tipo_labor, fecha FROM manejo_predio WHERE id_cultivo = :id"), {"id": id_cultivo})).mappings().all()
+
+    sin_clima = {"mensaje": "Todavia no hay clima diario del predio desde la fecha de siembra",
+                 "estado_ingesta": estado}
+    if clima is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, sin_clima)
+    try:
+        resultado = await catalogo_especies.seguimiento_cultivo(
+            cultivo["especie"], cultivo["variedad_local"], RepositorioPostgres(session), clima,
+            cultivo["fecha_siembra"], parcela["lat"], awc, date.today(), manejo=tuple(dict(m) for m in manejo))
+    except (catalogo_especies.EspecieSinPerfil, catalogo_especies.EspecieSinPerfilFenologico):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                             "Esta especie todavia no tiene perfil fenologico: solo se puede evaluar su idoneidad de sitio")
+    except ValueError:
+        raise HTTPException(status.HTTP_409_CONFLICT, sin_clima)
+    return {"id_cultivo": id_cultivo, "id_parcela": id_parcela, "especie": cultivo["especie"],
+            "variedad_local": cultivo["variedad_local"], **resultado, "estado_ingesta": estado}
 
 
 # ---------------------------------------------------------------- fuentes nuevas (extension

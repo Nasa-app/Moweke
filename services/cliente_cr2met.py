@@ -51,8 +51,12 @@ def descargar_mes(variable: str, anio: int, mes: int, directorio_cache: str, tim
     url = _PATRON_ARCHIVO[variable].format(base=URL_BASE, anio=anio, mes=mes)
     r = requests.get(url, timeout=timeout)
     r.raise_for_status()
-    with open(destino, "wb") as f:
+    # Escritura atomica: una descarga cortada no deja un .nc a medias que la proxima
+    # llamada tomaria por cache valido.
+    parcial = f"{destino}.{os.getpid()}.parcial"
+    with open(parcial, "wb") as f:
         f.write(r.content)
+    os.replace(parcial, destino)
     return destino
 
 

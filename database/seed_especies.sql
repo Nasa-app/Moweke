@@ -104,3 +104,26 @@ INSERT INTO regla_dano_especie (especie, variedad_local, fase, peligro, umbral, 
 UPDATE regla_dano_especie
 SET mitigado_por = 'fungicida', factor_mitigacion = 0.6, ventana_mitigacion_dias = 14
 WHERE especie = 'papa' AND peligro = 'tizon';
+
+-- ============================================================
+-- especie: identidad de las cuatro especies curadas. nombre_cientifico enlaza cada una
+-- con su fila equivalente de EcoCrop (ej. papa <-> solanum_tuberosum) para que el ranking
+-- de idoneidad muestre una sola vez la especie, con el perfil mas maduro.
+-- ============================================================
+INSERT INTO especie (especie, nombre_cientifico, nombres_comunes, familia_botanica, categorias, fuente) VALUES
+  ('papa', 'Solanum tuberosum', 'papa', 'Solanaceae', ARRAY['roots/tubers'], 'curado_a_mano'),
+  ('ajo_chilote', 'Allium ampeloprasum', 'ajo chilote', 'Amaryllidaceae', ARRAY['vegetables'], 'curado_a_mano'),
+  ('haba', 'Vicia faba', 'haba', 'Fabaceae', ARRAY['pulses (grain legumes)'], 'curado_a_mano'),
+  ('pradera', NULL, 'pradera', NULL, ARRAY['forage/pasture'], 'curado_a_mano');
+
+-- ============================================================
+-- equivalencia_luz_ghi: categorias de luz de EcoCrop -> GHI del sitio (kWh/m2/dia).
+-- Criterio propio sin validar (ver comentario de la tabla en schema.sql): solo penaliza
+-- el puntaje de idoneidad, nunca descarta una especie.
+-- ============================================================
+INSERT INTO equivalencia_luz_ghi (categoria, orden, ghi_min_kwh_m2_dia) VALUES
+  ('very bright', 1, 6.0),
+  ('clear skies', 2, 4.5),
+  ('cloudy skies', 3, 2.5),
+  ('light shade', 4, 1.5),
+  ('heavy shade', 5, 0.0);
