@@ -56,6 +56,14 @@ CREATE TABLE parcela (
   -- crear la parcela. NULL si el punto queda fuera de las ecorregiones cargadas.
   id_ecoregion INT REFERENCES ecoregion_wwf(id),
   geometria GEOMETRY(Polygon, 4326) NOT NULL,
+  -- 'dibujado': el agricultor marco el deslinde. 'aproximado': cuadrado generado desde un
+  -- punto y las hectareas. Lo que mira dentro del predio (curva satelital, mapa por celda)
+  -- solo corresponde al potrero cuando el perimetro es dibujado.
+  origen_perimetro VARCHAR NOT NULL DEFAULT 'aproximado'
+    CHECK (origen_perimetro IN ('dibujado', 'aproximado')),
+  -- Grilla del predio: celdas cuadradas de lado_celda_m, alineadas al origen de la zona UTM.
+  srid_utm INT,
+  lado_celda_m FLOAT,
   altitud_msnm INT
 );
 CREATE INDEX idx_parcela_geometria ON parcela USING GIST (geometria);
@@ -341,6 +349,23 @@ CREATE TABLE cache_consulta_grilla (
   fecha_consulta TIMESTAMP NOT NULL DEFAULT now(),
   UNIQUE (id_parcela, capa, periodo_inicio, periodo_fin)
 );
+
+-- Un valor por celda de la grilla del predio, capa e intervalo (el mapa del predio).
+-- cache_consulta_grilla guarda un valor por predio; esto guarda la variacion interna.
+CREATE TABLE cache_celda (
+  id BIGSERIAL PRIMARY KEY,
+  id_parcela INT NOT NULL REFERENCES parcela(id),
+  celda_i INT NOT NULL,            -- indices de ST_SquareGrid(lado_celda_m, perimetro en srid_utm)
+  celda_j INT NOT NULL,
+  capa VARCHAR NOT NULL,           -- 'ndvi'
+  periodo_inicio DATE NOT NULL,
+  periodo_fin DATE NOT NULL,
+  valor FLOAT,
+  visible FLOAT,                   -- fraccion de la celda (dentro del perimetro) que se vio, 0 a 1
+  fecha_consulta TIMESTAMP NOT NULL DEFAULT now(),
+  UNIQUE (id_parcela, celda_i, celda_j, capa, periodo_inicio)
+);
+CREATE INDEX idx_cache_celda_parcela ON cache_celda (id_parcela, capa, periodo_inicio);
 
 -- Calibración de microclima por parcela: delta de temperatura (no offset de días) que
 -- hace coincidir la suma térmica de la grilla con la fecha real de un indicador local

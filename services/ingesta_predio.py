@@ -7,6 +7,8 @@ dispararse a mano por los endpoints /api/admin/.../ingesta/*.
   soilgrids         pH, textura, carbono organico
   cr2met            tmin/tmax/lluvia diarios de los ultimos doce meses completos
   clsoilmaps        agua disponible total del suelo (0-200 cm)
+  relieve           altitud y pendiente de cada celda de la grilla del predio (Copernicus
+                    DEM GLO-30, datos abiertos, sin credenciales). Dato fijo: corre una vez
   sentinel2_nubes   cuantas pasadas despejadas de Sentinel-2 hubo en 24 meses (catalogo
                     publico, sin credenciales): decide si en el predio vale la pena
                     seguir el cultivo con la curva optica del satelite
@@ -22,6 +24,9 @@ dato tiene mas de HORAS_VIGENCIA_DIARIA.
   sentinel2_ndvi    NDVI del poligono cada 5 dias, con la fraccion del predio que se vio.
                     Necesita COPERNICUS_CLIENT_ID/SECRET, y solo corre donde sentinel2_nubes
                     midio cielo suficientemente despejado ('no_aplica' en el resto)
+  sentinel2_celdas  el mismo NDVI pero por celda de la grilla del predio (cache_celda):
+                    es lo que dibuja el mapa. Corre en cualquier zona -- en una nublada el
+                    mapa muestra datos mas viejos, y lo dice
 
 CR2MET tambien vence, una vez al mes: la ventana de doce meses se corre el dia 1 y el
 mes recien terminado solo queda completo hacia el dia 10 (ver estado_ingesta).
@@ -42,6 +47,7 @@ asyncio.to_thread para no congelar el resto de la API mientras se descarga.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 import os
@@ -52,11 +58,16 @@ import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services import (cliente_clsoilmaps, cliente_copernicus, cliente_cr2met, cliente_firms, cliente_openmeteo,
-                      cliente_power, cliente_soilgrids, cliente_solar, db)
-from services.repositorio_clima import (CAPAS_GHI_MENSUAL, CAPAS_DISPONIBILIDAD_OPTICA, NUBOSIDAD_ESCENA_MAX_PCT,
-                                        RADIO_INCENDIO_KM, VENTANA_OPTICA_DIAS, guardar_consultas_grilla,
-                                        leer_disponibilidad_optica, ventana_clima)
+from rasterio.features import geometry_mask
+from rasterio.transform import xy
+from rasterio.warp import transform as reproyectar
+
+from services import (cliente_clsoilmaps, cliente_copernicus, cliente_cr2met, cliente_dem, cliente_firms,
+                      cliente_openmeteo, cliente_power, cliente_soilgrids, cliente_solar, db)
+from services.repositorio_clima import (CAPAS_GHI_MENSUAL, CAPAS_DISPONIBILIDAD_OPTICA, FRACCION_MIN_CELDA,
+                                        NUBOSIDAD_ESCENA_MAX_PCT, RADIO_INCENDIO_KM, VENTANA_OPTICA_DIAS,
+                                        guardar_celdas, guardar_consultas_grilla, leer_disponibilidad_optica,
+                                        leer_grilla, ventana_clima)
 
 log = logging.getLogger("ingesta_predio")
 
@@ -74,11 +85,13 @@ PRODUCTOS = {
     "open_meteo": "pronostico_16d",
     "firms": "VIIRS_NOAA20_NOAA21_NRT_5d",
     "sentinel2_nubes": "catalogo_L2A_24_meses",
+    "relieve": "copernicus_dem_glo30",
     "sentinel2_ndvi": "L2A_ndvi_5d",
+    "sentinel2_celdas": "L2A_ndvi_5d_por_celda",
     "clsoilmaps": "awc_total_0_200cm",
 }
 FUENTES = tuple(PRODUCTOS)
-FUENTES_DIARIAS = frozenset({"power", "open_meteo", "firms", "sentinel2_ndvi"})
+FUENTES_DIARIAS = frozenset({"power", "open_meteo", "firms", "sentinel2_ndvi", "sentinel2_celdas"})
 DIAS_FIRMS = 5  # tope real de la API para productos _NRT
 # Un sensor cuyo ultimo dato es mas viejo que esto se da por caido: su "cero focos" no
 # vale como "sin incendios" (asi fallo en silencio VIIRS_SNPP_NRT desde el 2-nov-2026).
@@ -86,7 +99,13 @@ DIAS_SENSOR_VIGENTE = 3
 FUENTES_DE_SITIO = tuple(f for f in FUENTES if f not in FUENTES_DIARIAS)
 HORAS_VIGENCIA_DIARIA = 12
 # Sentinel-2 pasa cada ~5 dias: refrescar su NDVI dos veces al dia solo gastaria cuota.
-HORAS_VIGENCIA = {"sentinel2_ndvi": 72}
+HORAS_VIGENCIA = {"sentinel2_ndvi": 72, "sentinel2_celdas": 72}
+# Medido: con 4 consultas a la vez sobre 49 celdas Copernicus respondio 429 (tope de
+# unidades de proceso por minuto). Dos a la vez queda bajo el tope.
+CONSULTAS_SIMULTANEAS_CELDAS = 2
+# Primera carga de una celda: lo que el mapa llega a mostrar (repositorio_clima.DIAS_MAPA_MAX).
+# Pedir 400 dias por celda, como al predio entero, triplicaba el gasto sin usarse todavia.
+DIAS_CELDAS_INICIAL = 120
 DIAS_NDVI_INICIAL = 400      # primera carga: una temporada completa mas su linea de base
 DIAS_NDVI_REVISION = 15      # refrescos: el tramo que todavia puede recibir pasadas nuevas
 INTERVALO_NDVI_DIAS = 5
@@ -367,9 +386,132 @@ async def _sentinel2_ndvi(session: AsyncSession, id_parcela: int, lat: float, lo
     return None if any(f["valor"] for f in filas if f["capa"] == "sentinel2_visible_5d") else "sin_cobertura"
 
 
+async def _sentinel2_celdas(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
+    """NDVI de cada celda de la grilla, promediando solo los pixeles que caen dentro del
+    perimetro. Una consulta por celda, de a CONSULTAS_SIMULTANEAS_CELDAS a la vez. Cada
+    celda se guarda apenas llega y pide desde su propio ultimo dato: si la corrida se corta
+    o una celda falla, la siguiente retoma solo lo que falta. Si Copernicus empieza a
+    limitar, la corrida se corta ahi mismo en vez de insistir celda por celda."""
+    grilla = [c for c in await leer_grilla(session, id_parcela) if c["fraccion"] >= FRACCION_MIN_CELDA]
+    lado = (await session.execute(text("SELECT lado_celda_m FROM parcela WHERE id = :id"),
+                                  {"id": id_parcela})).scalar_one()
+    ultimos = {(f.celda_i, f.celda_j): f.ultimo for f in (await session.execute(text(
+        "SELECT celda_i, celda_j, max(periodo_inicio) AS ultimo FROM cache_celda "
+        "WHERE id_parcela = :id AND capa = 'ndvi' GROUP BY celda_i, celda_j"), {"id": id_parcela})).all()}
+    hoy = date.today()
+    # Sentinel-2 mide cada 10 m: la imagen de trabajo de una celda no necesita mas que eso.
+    lado_px = max(4, min(64, round(lado / 10)))
+
+    def desde_de(celda: dict) -> date:
+        ultimo = ultimos.get((celda["i"], celda["j"]))
+        desde = hoy - timedelta(days=DIAS_CELDAS_INICIAL) if ultimo is None else ultimo - timedelta(days=DIAS_NDVI_REVISION)
+        return _EPOCA_NDVI + timedelta(days=((desde - _EPOCA_NDVI).days // INTERVALO_NDVI_DIAS) * INTERVALO_NDVI_DIAS)
+
+    token = await asyncio.to_thread(cliente_copernicus.obtener_token_oauth,
+                                    os.environ["COPERNICUS_CLIENT_ID"], os.environ["COPERNICUS_CLIENT_SECRET"])
+    turno = asyncio.Semaphore(CONSULTAS_SIMULTANEAS_CELDAS)
+
+    limitado = asyncio.Event()
+
+    async def consultar(celda: dict) -> list[dict] | None:
+        async with turno:
+            if limitado.is_set():
+                return None   # el servicio ya esta limitando: no se piden mas celdas en esta corrida
+            try:
+                datos = await asyncio.to_thread(cliente_copernicus.ndvi_estadistico, token, None,
+                                                desde_de(celda).isoformat(), hoy.isoformat(), INTERVALO_NDVI_DIAS, 60,
+                                                celda["geometria"], lado_px)
+            except cliente_copernicus.LimiteCopernicus:
+                limitado.set()
+                raise
+        filas = []
+        for d in datos:
+            inicio = date.fromisoformat(d["desde"][:10])
+            # La API cuenta como "sin dato" los pixeles de la caja que quedan fuera de la
+            # geometria: lo visible se mide contra la parte de la caja que la celda ocupa.
+            dentro = d["sampleCount"] * celda["relleno"] if d.get("sampleCount") else 0
+            visible = min(1.0, (d["sampleCount"] - d["noDataCount"]) / dentro) if dentro else 0.0
+            ndvi = d.get("mean")
+            filas.append(dict(id_parcela=id_parcela, celda_i=celda["i"], celda_j=celda["j"], capa="ndvi",
+                              periodo_inicio=inicio, periodo_fin=inicio + timedelta(days=INTERVALO_NDVI_DIAS - 1),
+                              valor=None if visible == 0 or ndvi is None or ndvi != ndvi else float(ndvi),
+                              visible=round(visible, 4)))
+        return filas
+
+    con_dato, hechas, primer_error = False, 0, None
+    for tarea in asyncio.as_completed([consultar(c) for c in grilla]):
+        try:
+            filas = await tarea
+        except Exception as error:
+            primer_error = primer_error or error
+            continue
+        if filas is None:
+            continue
+        await guardar_celdas(session, filas)
+        hechas += 1
+        con_dato = con_dato or any(f["valor"] is not None for f in filas)
+    if hechas < len(grilla):
+        motivo = str(primer_error) if isinstance(primer_error, cliente_copernicus.LimiteCopernicus) \
+            else type(primer_error).__name__
+        raise RuntimeError(f"quedaron {len(grilla) - hechas} de {len(grilla)} celdas sin consultar ({motivo}); "
+                           "las demas estan guardadas y el proximo refresco retoma desde ahi")
+    return None if con_dato else "sin_cobertura"
+
+
+def relieve_por_celda(baldosas: list[dict], perimetro: dict, srid_utm: int, lado: float) -> dict:
+    """Promedia la altitud y la pendiente de los pixeles del modelo de elevacion que tocan
+    el perimetro, agrupados por celda de la grilla: {(i, j): {'altitud', 'pendiente',
+    'pixeles'}}. Un pixel pertenece a la celda donde cae su centro; la celda (i, j) de
+    ST_SquareGrid empieza en (i * lado, j * lado) en la zona UTM del predio."""
+    suma: dict[tuple, list] = {}
+    for b in baldosas:
+        filas, columnas = b["altitud"].shape
+        dentro = geometry_mask([perimetro], out_shape=(filas, columnas), transform=b["transform"],
+                               invert=True, all_touched=True)
+        f, c = np.nonzero(dentro)
+        if not len(f):
+            continue
+        lon, lat = xy(b["transform"], f, c)
+        x, y = reproyectar(b["crs"], f"EPSG:{srid_utm}", list(lon), list(lat))
+        ci, cj = np.floor(np.asarray(x) / lado).astype(int), np.floor(np.asarray(y) / lado).astype(int)
+        for i, j, alt, pen in zip(ci, cj, b["altitud"][f, c], b["pendiente"][f, c]):
+            if alt != alt:
+                continue
+            acum = suma.setdefault((int(i), int(j)), [0.0, 0.0, 0])
+            acum[0] += float(alt)
+            acum[1] += float(pen)
+            acum[2] += 1
+    return {clave: {"altitud": a / n, "pendiente": p / n, "pixeles": n} for clave, (a, p, n) in suma.items()}
+
+
+# Copernicus DEM se levanto con TanDEM-X entre 2011 y 2015: se usa como marca del dato fijo.
+_PERIODO_DEM = (date(2011, 1, 1), date(2015, 12, 31))
+
+
+async def _relieve(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
+    p = (await session.execute(text("""
+        SELECT srid_utm, lado_celda_m, ST_AsGeoJSON(geometria) AS perimetro,
+               ST_XMin(geometria) AS a, ST_YMin(geometria) AS b, ST_XMax(geometria) AS c, ST_YMax(geometria) AS d
+        FROM parcela WHERE id = :id"""), {"id": id_parcela})).mappings().first()
+    baldosas = await asyncio.to_thread(cliente_dem.leer_relieve, p["a"], p["b"], p["c"], p["d"])
+    por_celda = relieve_por_celda(baldosas, json.loads(p["perimetro"]), p["srid_utm"], p["lado_celda_m"])
+    validas = {(c["i"], c["j"]) for c in await leer_grilla(session, id_parcela)}
+    filas = []
+    for (ci, cj), v in por_celda.items():
+        if (ci, cj) not in validas:
+            continue   # un pixel que toca el borde puede tener su centro en una celda de afuera
+        comun = dict(id_parcela=id_parcela, celda_i=ci, celda_j=cj, periodo_inicio=_PERIODO_DEM[0],
+                     periodo_fin=_PERIODO_DEM[1], visible=1.0)
+        filas.append({**comun, "capa": "altitud_m", "valor": round(v["altitud"], 2)})
+        filas.append({**comun, "capa": "pendiente_pct", "valor": round(v["pendiente"], 2)})
+    await guardar_celdas(session, filas)
+    return None if filas else "sin_cobertura"
+
+
 _INGESTAS = {"explorador_solar": _solar, "soilgrids": _soilgrids, "cr2met": _cr2met,
              "power": _power, "open_meteo": _open_meteo, "firms": _firms,
-             "sentinel2_nubes": _sentinel2_nubes, "sentinel2_ndvi": _sentinel2_ndvi, "clsoilmaps": _clsoilmaps}
+             "sentinel2_nubes": _sentinel2_nubes, "relieve": _relieve, "sentinel2_ndvi": _sentinel2_ndvi,
+             "sentinel2_celdas": _sentinel2_celdas, "clsoilmaps": _clsoilmaps}
 
 
 def _sin_configurar(fuente: str) -> bool:
@@ -377,7 +519,7 @@ def _sin_configurar(fuente: str) -> bool:
     reintentar cada dia): la fuente se informa como 'sin_configurar'."""
     if fuente == "firms":
         return not os.environ.get("FIRMS_MAP_KEY")
-    if fuente == "sentinel2_ndvi":
+    if fuente in ("sentinel2_ndvi", "sentinel2_celdas"):
         return not (os.environ.get("COPERNICUS_CLIENT_ID") and os.environ.get("COPERNICUS_CLIENT_SECRET"))
     return False
 

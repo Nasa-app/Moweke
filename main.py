@@ -7,13 +7,14 @@ bloque de auth.
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 from datetime import date, timedelta
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,8 +36,8 @@ import services.cliente_solar as cliente_solar
 import services.ingesta_predio as ingesta_predio
 from services.auth import crear_token, decodificar_token, hash_password, verificar_password
 from services.db import obtener_sesion
-from services.repositorio_clima import (guardar_consulta_grilla, leer_clima_diario, leer_disponibilidad_optica,
-                                        leer_incendios, leer_ndvi, leer_sitio)
+from services.repositorio_clima import (CAPAS_MAPA, guardar_consulta_grilla, lado_celda_para, leer_clima_diario,
+                                        leer_disponibilidad_optica, leer_incendios, leer_mapa, leer_ndvi, leer_sitio)
 from services.repositorio_postgres import RepositorioPostgres
 
 _CACHE_CR2MET = ingesta_predio.CACHE_CR2MET
@@ -48,6 +49,8 @@ _CLSOILMAPS_ARCHIVO_INTERNO = ingesta_predio.CLSOILMAPS_ARCHIVO_INTERNO
 # partir del punto; el de parcelas por usuario acota cuantas ingestas externas puede
 # disparar una sola cuenta.
 HECTAREAS_MAX = 1000.0
+HECTAREAS_MIN_DIBUJADO = 0.05     # 500 m2: menos que eso es un clic de mas, no un predio
+VERTICES_MAX_PERIMETRO = 500
 PARCELAS_MAX_POR_USUARIO = 20
 CULTIVOS_MAX_POR_PARCELA = 50
 # Ventana aceptada para una fecha de siembra: hacia atras hasta donde llega el clima
@@ -93,9 +96,23 @@ class TokenOut(BaseModel):
 
 
 class ParcelaNueva(BaseModel):
-    lat: float = Field(ge=-90, le=90)
-    lon: float = Field(ge=-180, le=180)
-    hectareas: float = Field(gt=0, le=HECTAREAS_MAX)
+    """Dos formas de registrar un predio: `perimetro` (el poligono que el agricultor dibujo
+    sobre el mapa, GeoJSON en WGS84) o un punto con sus hectareas (se genera un cuadrado
+    aproximado). Una u otra, no las dos."""
+    lat: float | None = Field(None, ge=-90, le=90)
+    lon: float | None = Field(None, ge=-180, le=180)
+    hectareas: float | None = Field(None, gt=0, le=HECTAREAS_MAX)
+    perimetro: dict | None = None
+
+    @model_validator(mode="after")
+    def _una_forma(self):
+        punto = (self.lat, self.lon, self.hectareas)
+        if self.perimetro is not None:
+            if any(v is not None for v in punto):
+                raise ValueError("Envia `perimetro` o `lat`/`lon`/`hectareas`, no ambos")
+        elif any(v is None for v in punto):
+            raise ValueError("Faltan `lat`, `lon` y `hectareas`, o bien `perimetro`")
+        return self
 
 
 class CultivoNuevo(BaseModel):
@@ -180,7 +197,7 @@ async def _parcela_autorizada(id_parcela: int, usuario: dict, session: AsyncSess
         SELECT p.id, p.id_usuario, p.altitud_msnm,
                ST_Y(ST_Centroid(p.geometria)) AS lat, ST_X(ST_Centroid(p.geometria)) AS lon,
                ST_Area(p.geometria::geography) / 10000 AS hectareas,
-               ST_AsGeoJSON(p.geometria, 6) AS perimetro,
+               ST_AsGeoJSON(p.geometria, 6) AS perimetro, p.origen_perimetro, p.lado_celda_m,
                e.eco_name AS ecorregion, e.bioma_wwf AS bioma
         FROM parcela p LEFT JOIN ecoregion_wwf e ON e.id = p.id_ecoregion
         WHERE p.id = :id
@@ -197,16 +214,48 @@ async def _parcela_autorizada(id_parcela: int, usuario: dict, session: AsyncSess
     return parcela
 
 
+def _validar_perimetro(perimetro: dict) -> str:
+    """Primera validacion del poligono dibujado, sin tocar la base: forma del GeoJSON,
+    tope de vertices y coordenadas dentro de Chile. Devuelve el GeoJSON normalizado (un
+    solo anillo, cerrado, solo lon/lat) listo para ST_GeomFromGeoJSON. Levanta 422."""
+    def rechazar(motivo: str):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Perimetro invalido: {motivo}")
+
+    if perimetro.get("type") != "Polygon" or not isinstance(perimetro.get("coordinates"), list):
+        rechazar("debe ser un GeoJSON de tipo Polygon")
+    anillos = perimetro["coordinates"]
+    if len(anillos) != 1 or not isinstance(anillos[0], list):
+        rechazar("debe tener un solo contorno, sin huecos")
+    if not 3 <= len(anillos[0]) <= VERTICES_MAX_PERIMETRO:
+        rechazar(f"debe tener entre 3 y {VERTICES_MAX_PERIMETRO} vertices")
+    anillo = []
+    for punto in anillos[0]:
+        if (not isinstance(punto, (list, tuple)) or len(punto) < 2
+                or not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+                           for v in punto[:2])):
+            rechazar("cada vertice debe ser [longitud, latitud]")
+        lon, lat = float(punto[0]), float(punto[1])
+        if not (_CHILE["lat_min"] <= lat <= _CHILE["lat_max"] and _CHILE["lon_min"] <= lon <= _CHILE["lon_max"]):
+            rechazar("queda fuera de la cobertura actual (Chile continental)")
+        anillo.append([lon, lat])
+    if anillo[0] != anillo[-1]:
+        anillo.append(anillo[0])     # un dibujo sin cerrar se cierra aca
+    if len(anillo) < 4:
+        rechazar("necesita al menos tres vertices distintos")
+    return json.dumps({"type": "Polygon", "coordinates": [anillo]})
+
+
 @app.post("/api/parcelas", status_code=status.HTTP_201_CREATED)
 async def crear_parcela(datos: ParcelaNueva, tareas: BackgroundTasks,
                          session: AsyncSession = Depends(obtener_sesion),
                          usuario: dict = Depends(usuario_actual)):
-    """Flujo 1, paso 7: el agricultor da un punto y las hectareas; el perimetro es un
-    cuadrado de esa area centrado en el punto (aproximacion declarada, no un deslinde).
-    El cuadrado se arma en metros, en la zona UTM del punto, y se guarda en WGS84. Deja
-    encolada la ingesta de las fuentes de sitio y responde sin esperarla."""
-    if not (_CHILE["lat_min"] <= datos.lat <= _CHILE["lat_max"]
-            and _CHILE["lon_min"] <= datos.lon <= _CHILE["lon_max"]):
+    """Flujo 1, paso 7. Con `perimetro`, el predio es el poligono que el agricultor dibujo.
+    Sin el, da un punto y las hectareas y el perimetro es un cuadrado de esa area centrado
+    en el punto (aproximacion declarada, no un deslinde), armado en metros en la zona UTM
+    del punto. En los dos casos deja encolada la ingesta y responde sin esperarla."""
+    dibujado = _validar_perimetro(datos.perimetro) if datos.perimetro is not None else None
+    if dibujado is None and not (_CHILE["lat_min"] <= datos.lat <= _CHILE["lat_max"]
+                                 and _CHILE["lon_min"] <= datos.lon <= _CHILE["lon_max"]):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
                              "El punto queda fuera de la cobertura actual (Chile continental)")
     if usuario["rol"] != "admin":
@@ -216,16 +265,45 @@ async def crear_parcela(datos: ParcelaNueva, tareas: BackgroundTasks,
             raise HTTPException(status.HTTP_409_CONFLICT,
                                  f"Ya tienes {PARCELAS_MAX_POR_USUARIO} parcelas, el maximo permitido")
 
-    srid_utm = (32700 if datos.lat < 0 else 32600) + int((datos.lon + 180) // 6) + 1
-    medio_lado_m = (datos.hectareas * 10_000) ** 0.5 / 2
-    id_parcela = (await session.execute(text("""
-        INSERT INTO parcela (id_usuario, geometria)
-        VALUES (:usuario, ST_Transform(ST_Expand(ST_Transform(
-                    ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), CAST(:srid AS integer)),
-                    CAST(:medio_lado AS double precision)), 4326))
-        RETURNING id
-    """), {"usuario": usuario["id"], "lon": datos.lon, "lat": datos.lat,
-           "srid": srid_utm, "medio_lado": medio_lado_m})).scalar_one()
+    if dibujado is not None:
+        # Segunda validacion, geometrica, en PostGIS: que el poligono no se cruce a si
+        # mismo y que su superficie tenga sentido. Recien entonces se inserta.
+        forma = (await session.execute(text("""
+            SELECT ST_IsValid(g) AND ST_IsSimple(g) AS valido, ST_Area(g::geography) / 10000 AS hectareas
+            FROM (SELECT ST_SetSRID(ST_GeomFromGeoJSON(:gj), 4326) AS g) x
+        """), {"gj": dibujado})).mappings().first()
+        if not forma["valido"]:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                                 "El perimetro se cruza a si mismo; dibujalo de nuevo sin cruzar lineas")
+        if not HECTAREAS_MIN_DIBUJADO <= forma["hectareas"] <= HECTAREAS_MAX:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                                 f"El perimetro mide {forma['hectareas']:.2f} hectareas; debe medir entre "
+                                 f"{HECTAREAS_MIN_DIBUJADO} y {HECTAREAS_MAX:.0f}")
+        id_parcela = (await session.execute(text("""
+            INSERT INTO parcela (id_usuario, geometria, origen_perimetro)
+            VALUES (:usuario, ST_ForcePolygonCCW(ST_Force2D(ST_SetSRID(ST_GeomFromGeoJSON(:gj), 4326))), 'dibujado')
+            RETURNING id
+        """), {"usuario": usuario["id"], "gj": dibujado})).scalar_one()
+    else:
+        srid_utm = (32700 if datos.lat < 0 else 32600) + int((datos.lon + 180) // 6) + 1
+        medio_lado_m = (datos.hectareas * 10_000) ** 0.5 / 2
+        id_parcela = (await session.execute(text("""
+            INSERT INTO parcela (id_usuario, geometria)
+            VALUES (:usuario, ST_Transform(ST_Expand(ST_Transform(
+                        ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), CAST(:srid AS integer)),
+                        CAST(:medio_lado AS double precision)), 4326))
+            RETURNING id
+        """), {"usuario": usuario["id"], "lon": datos.lon, "lat": datos.lat,
+               "srid": srid_utm, "medio_lado": medio_lado_m})).scalar_one()
+    # Grilla del predio: zona UTM de su centro y lado de celda segun su superficie.
+    centro = (await session.execute(text("""
+        SELECT ST_Y(ST_Centroid(geometria)) AS lat, ST_X(ST_Centroid(geometria)) AS lon,
+               ST_Area(geometria::geography) AS m2 FROM parcela WHERE id = :id
+    """), {"id": id_parcela})).mappings().first()
+    await session.execute(
+        text("UPDATE parcela SET srid_utm = :srid, lado_celda_m = :lado WHERE id = :id"),
+        {"id": id_parcela, "lado": lado_celda_para(centro["m2"]),
+         "srid": (32700 if centro["lat"] < 0 else 32600) + int((centro["lon"] + 180) // 6) + 1})
     # Ecorregion: la que contiene el centroide o, si cae en un borde simplificado (costa),
     # la mas cercana a menos de 5 km. Sin ninguna, queda en NULL.
     await session.execute(text("""
@@ -261,6 +339,29 @@ async def ver_parcela(id_parcela: int, session: AsyncSession = Depends(obtener_s
     return {**parcela, "incendios_cercanos": await leer_incendios(session, id_parcela),
             "curva_satelital": await leer_disponibilidad_optica(session, id_parcela),
             "estado_ingesta": await ingesta_predio.estado_ingesta(session, id_parcela)}
+
+
+@app.get("/api/parcelas/{id_parcela}/mapa")
+async def mapa_parcela(id_parcela: int, tareas: BackgroundTasks,
+                        capa: str = Query("ndvi", pattern="^(" + "|".join(CAPAS_MAPA) + ")$"),
+                        session: AsyncSession = Depends(obtener_sesion),
+                        usuario: dict = Depends(usuario_actual)):
+    """El predio como mapa: un GeoJSON con una entidad por celda de su grilla, recortada
+    a la forma del perimetro, y en cada una el valor de la capa pedida -- ver
+    repositorio_clima.leer_mapa() y CAPAS_MAPA. Capas: 'ndvi' (vigor de la vegetacion,
+    Sentinel-2, el ultimo dato util), 'altitud' y 'pendiente' (relieve, dato fijo). Si
+    los datos de la capa faltan o estan vencidos los deja cargandose y responde con lo
+    que hay."""
+    parcela = await _parcela_autorizada(id_parcela, usuario, session)
+    fuente = CAPAS_MAPA[capa]["fuente_ingesta"]
+    jobs = await ingesta_predio.encolar(session, id_parcela, (fuente,))
+    if jobs:
+        tareas.add_task(ingesta_predio.ingerir_predio, id_parcela, jobs)
+    mapa = await leer_mapa(session, id_parcela, capa)
+    estado = await ingesta_predio.estado_ingesta(session, id_parcela)
+    return {**mapa, "id_parcela": id_parcela, "origen_perimetro": parcela["origen_perimetro"],
+            "lado_celda_m": parcela["lado_celda_m"], "hectareas": parcela["hectareas"],
+            "estado_ingesta": estado[fuente]}
 
 
 @app.post("/api/parcelas/{id_parcela}/ingesta", status_code=status.HTTP_202_ACCEPTED)

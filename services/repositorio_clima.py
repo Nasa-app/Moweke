@@ -12,6 +12,8 @@ para Explorador Solar ni Copernicus, solo valores nuevos de `capa`/`version_prod
 """
 from __future__ import annotations
 
+import json
+import math
 from datetime import date, timedelta
 
 import pandas as pd
@@ -342,3 +344,122 @@ async def leer_ndvi(session: AsyncSession, id_parcela: int, desde: date) -> list
     return [{"fecha": f["periodo_inicio"] + (f["periodo_fin"] - f["periodo_inicio"]) / 2,
              "ndvi": f["ndvi"], "visible": f["visible"]}
             for f in filas if f["ndvi"] is not None and (f["visible"] or 0) >= VISIBLE_MIN]
+
+
+# ---------------------------------------------------------------- mapa del predio (grilla)
+LADO_ACRE_M = 63.615       # lado de un cuadrado de un acre (4046,86 m2)
+# Tope de celdas por predio: cada celda es una consulta al satelite en cada refresco. Un
+# predio que con celdas de un acre pasaria el tope usa celdas de 2, 3... acres de lado.
+CELDAS_MAX = 150
+FRACCION_MIN_CELDA = 0.1   # una celda con menos que esto dentro del perimetro se dibuja pero no se consulta
+DIAS_MAPA_MAX = 120        # un dato de vegetacion mas viejo que esto ya no se muestra como estado actual
+CELDAS_COMUNES_MIN = 0.8   # fraccion de celdas que debe verse en una misma pasada para usarla como fecha comun
+
+
+# Capas que el mapa sabe dibujar. `capa_bd` es el nombre en cache_celda; `fuente_ingesta`,
+# la fuente de ingesta_predio que la llena; `dinamica` dice si cambia en el tiempo (se
+# elige una fecha) o es un dato fijo del terreno.
+CAPAS_MAPA = {
+    "ndvi": {"capa_bd": "ndvi", "dinamica": True, "fuente_ingesta": "sentinel2_celdas", "resolucion_m": 10,
+             "unidad": "NDVI (0 a 1; mas alto = vegetacion mas vigorosa)", "fuente": "Sentinel-2 L2A (Copernicus)"},
+    "altitud": {"capa_bd": "altitud_m", "dinamica": False, "fuente_ingesta": "relieve", "resolucion_m": 30,
+                "unidad": "metros sobre el nivel del mar", "fuente": "Copernicus DEM GLO-30 (modelo de superficie)"},
+    "pendiente": {"capa_bd": "pendiente_pct", "dinamica": False, "fuente_ingesta": "relieve", "resolucion_m": 30,
+                  "unidad": "% de pendiente", "fuente": "Copernicus DEM GLO-30 (modelo de superficie)"},
+}
+
+
+def lado_celda_para(area_m2: float) -> float:
+    """Lado de celda para un predio de esa superficie: un acre, o el multiplo entero de
+    ese lado que deja la grilla bajo CELDAS_MAX."""
+    factor = max(1, math.ceil(math.sqrt(area_m2 / LADO_ACRE_M ** 2 / CELDAS_MAX)))
+    return LADO_ACRE_M * factor
+
+
+async def leer_grilla(session: AsyncSession, id_parcela: int) -> list[dict]:
+    """Las celdas del predio, recortadas a su perimetro: [{'i', 'j', 'geometria' (GeoJSON
+    WGS84), 'fraccion' (parte de la celda que queda dentro), 'relleno' (parte de la caja
+    de la celda recortada que ocupa su geometria)}]. La grilla es ST_SquareGrid sobre el
+    perimetro en parcela.srid_utm con celdas de parcela.lado_celda_m: mientras esos dos
+    valores y el perimetro no cambien, los indices (i, j) son siempre los mismos."""
+    filas = (await session.execute(text("""
+        WITH p AS (SELECT ST_Transform(geometria, srid_utm) AS g, lado_celda_m AS lado FROM parcela WHERE id = :id),
+             c AS (SELECT s.i, s.j, p.lado, ST_CollectionExtract(ST_Intersection(s.geom, p.g), 3) AS dentro
+                   FROM p, LATERAL ST_SquareGrid(p.lado, p.g) s WHERE ST_Intersects(s.geom, p.g))
+        SELECT i, j, ST_AsGeoJSON(ST_Transform(dentro, 4326), 6) AS geojson,
+               ST_Area(dentro) / (lado * lado) AS fraccion,
+               ST_Area(dentro) / ST_Area(ST_Envelope(ST_Transform(dentro, 4326))::geography) AS relleno
+        FROM c WHERE ST_Area(dentro) > 1 ORDER BY j DESC, i
+    """), {"id": id_parcela})).mappings().all()
+    return [{"i": f["i"], "j": f["j"], "geometria": json.loads(f["geojson"]),
+             "fraccion": min(1.0, f["fraccion"]), "relleno": min(1.0, f["relleno"])} for f in filas]
+
+
+async def guardar_celdas(session: AsyncSession, filas: list[dict]) -> None:
+    """Upsert en cache_celda. Cada fila: id_parcela, celda_i, celda_j, capa, periodo_inicio,
+    periodo_fin, valor, visible."""
+    if filas:
+        await session.execute(text("""
+            INSERT INTO cache_celda (id_parcela, celda_i, celda_j, capa, periodo_inicio, periodo_fin, valor, visible)
+            VALUES (:id_parcela, :celda_i, :celda_j, :capa, :periodo_inicio, :periodo_fin, :valor, :visible)
+            ON CONFLICT (id_parcela, celda_i, celda_j, capa, periodo_inicio) DO UPDATE SET
+                periodo_fin = EXCLUDED.periodo_fin, valor = EXCLUDED.valor, visible = EXCLUDED.visible,
+                fecha_consulta = now()
+        """), filas)
+    await session.commit()
+
+
+async def leer_mapa(session: AsyncSession, id_parcela: int, capa: str = "ndvi", hoy: date | None = None) -> dict:
+    """El mapa del predio como GeoJSON: una entidad por celda, con la forma del perimetro,
+    y el ultimo valor util de `capa` en cada una.
+
+    Si hay una pasada reciente en que se vio la mayoria de las celdas, todas muestran esa
+    fecha (`fecha_comun`): asi las diferencias entre celdas son del terreno y no de la
+    fecha. Si no la hay (zona nublada), cada celda muestra su ultimo dato y trae su propia
+    fecha. Una celda sin dato util en DIAS_MAPA_MAX queda con valor None."""
+    hoy = hoy or date.today()
+    config = CAPAS_MAPA[capa]
+    grilla = await leer_grilla(session, id_parcela)
+    # Una capa fija del terreno (relieve) no tiene fecha que elegir ni nubes que descontar.
+    filas = (await session.execute(text("""
+        SELECT celda_i AS i, celda_j AS j, periodo_inicio, periodo_fin, valor, visible FROM cache_celda
+        WHERE id_parcela = :id AND capa = :capa AND valor IS NOT NULL
+          AND (NOT :dinamica OR (visible >= :visible AND periodo_inicio >= :desde))
+        ORDER BY periodo_inicio DESC
+    """), {"id": id_parcela, "capa": config["capa_bd"], "dinamica": config["dinamica"], "visible": VISIBLE_MIN,
+           "desde": hoy - timedelta(days=DIAS_MAPA_MAX)})).mappings().all()
+
+    consultables = {(c["i"], c["j"]) for c in grilla if c["fraccion"] >= FRACCION_MIN_CELDA}
+    por_fecha: dict[date, dict] = {}
+    ultimo: dict[tuple, dict] = {}
+    for f in filas:
+        clave = (f["i"], f["j"])
+        por_fecha.setdefault(f["periodo_inicio"], {})[clave] = f
+        ultimo.setdefault(clave, f)   # las filas vienen de la mas reciente a la mas antigua
+    fecha_comun = None
+    if config["dinamica"]:
+        fecha_comun = next((d for d in sorted(por_fecha, reverse=True)
+                            if consultables and len(por_fecha[d]) >= CELDAS_COMUNES_MIN * len(consultables)), None)
+    elegido = por_fecha[fecha_comun] if fecha_comun else ultimo
+
+    entidades, valores = [], []
+    for c in grilla:
+        f = elegido.get((c["i"], c["j"]))
+        centro = (f["periodo_inicio"] + (f["periodo_fin"] - f["periodo_inicio"]) / 2
+                  if f and config["dinamica"] else None)
+        if f:
+            valores.append(f["valor"])
+        entidades.append({"type": "Feature", "geometry": c["geometria"], "properties": {
+            "i": c["i"], "j": c["j"], "fraccion_dentro": round(c["fraccion"], 2),
+            "valor": round(f["valor"], 3) if f else None,
+            "fecha": centro.isoformat() if centro else None,
+            "dias_de_antiguedad": (hoy - centro).days if centro else None,
+            "visible": round(f["visible"], 2) if f and config["dinamica"] else None}})
+    valores.sort()
+    return {"type": "FeatureCollection", "features": entidades, "capa": capa,
+            "unidad": config["unidad"], "fuente": config["fuente"], "resolucion_de_la_fuente_m": config["resolucion_m"],
+            "fecha_comun": (fecha_comun + timedelta(days=2)).isoformat() if fecha_comun else None,
+            "celdas": len(grilla), "celdas_con_dato": len(valores),
+            "resumen": None if not valores else {
+                "minimo": round(valores[0], 3), "maximo": round(valores[-1], 3),
+                "mediana": round(valores[len(valores) // 2], 3)}}

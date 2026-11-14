@@ -32,12 +32,19 @@ caso de uso real (NDVI/backscatter agregado por parcela) sin necesitar el archiv
 from __future__ import annotations
 
 import json
+import time
 
 import requests
 
 URL_CATALOGO = "https://catalogue.dataspace.copernicus.eu/odata/v1/Products"
 URL_AUTH = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
 URL_STATISTICS = "https://sh.dataspace.copernicus.eu/api/v1/statistics"
+REINTENTOS_429 = 2
+ESPERA_429_MAX_S = 20.0
+
+
+class LimiteCopernicus(RuntimeError):
+    """El servicio siguio respondiendo 429 despues de los reintentos."""
 
 
 def obtener_token_oauth(client_id: str, client_secret: str, timeout: int = 20) -> str:
@@ -80,33 +87,55 @@ def _evalscript_backscatter(polarizacion: str) -> str:
     )
 
 
-def _estadistica_agregada(token: str, coleccion: str, evalscript: str, bbox: list[float],
+def _estadistica_agregada(token: str, coleccion: str, evalscript: str, bbox: list[float] | None,
                            fecha_inicio: str, fecha_fin: str, intervalo_dias: int,
-                           data_filter: dict | None, timeout: int) -> list[dict]:
+                           data_filter: dict | None, timeout: int, geometria: dict | None = None,
+                           lado_px: int | None = None) -> list[dict]:
+    """geometria (GeoJSON en WGS84) en vez de bbox: solo se promedian los pixeles dentro
+    de ese poligono; los de afuera cuentan como sin dato. lado_px fija el tamano de la
+    imagen de trabajo (sin el, la API usa 256x256, mucho mas de lo que hace falta para
+    una celda de decenas de metros)."""
+    limites = ({"geometry": geometria, "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"}}
+               if geometria is not None else {"bbox": bbox})
     cuerpo = {
-        "input": {"bounds": {"bbox": bbox},
+        "input": {"bounds": limites,
                    "data": [{"type": coleccion, **({"dataFilter": data_filter} if data_filter else {})}]},
         "aggregation": {
             "timeRange": {"from": f"{fecha_inicio}T00:00:00Z", "to": f"{fecha_fin}T23:59:59Z"},
             "aggregationInterval": {"of": f"P{intervalo_dias}D"},
             "evalscript": evalscript,
+            **({"width": lado_px, "height": lado_px} if lado_px else {}),
         },
         "calculations": {"default": {}},
     }
-    r = requests.post(URL_STATISTICS, json=cuerpo, headers={"Authorization": f"Bearer {token}"}, timeout=timeout)
+    # La cuenta tiene un tope de unidades de proceso por minuto (una consulta de una celda
+    # con ~80 intervalos gasta 1,58): pasado el tope responde 429. Se reintenta pocas veces
+    # y con esperas cortas; si el limite sigue, sube LimiteCopernicus para que quien llama
+    # corte la tanda. BUG REAL: con cinco reintentos de hasta 60 s por consulta, una tanda
+    # de 42 celdas limitada desde la celda 12 quedo 18 minutos sin avanzar ni fallar.
+    for intento in range(REINTENTOS_429 + 1):
+        r = requests.post(URL_STATISTICS, json=cuerpo, headers={"Authorization": f"Bearer {token}"}, timeout=timeout)
+        if r.status_code != 429:
+            break
+        espera = r.headers.get("Retry-After", "")
+        if intento == REINTENTOS_429:
+            raise LimiteCopernicus(f"Copernicus limito las consultas (429; Retry-After: {espera or 'sin dato'})")
+        segundos = float(espera) if espera.replace(".", "", 1).isdigit() else 5 * 2 ** intento
+        time.sleep(min(ESPERA_429_MAX_S, segundos / 1000 if segundos > 1000 else segundos))   # a veces viene en ms
     r.raise_for_status()
     return r.json()["data"]
 
 
-def ndvi_estadistico(token: str, bbox: list[float], fecha_inicio: str, fecha_fin: str,
-                      intervalo_dias: int = 10, timeout: int = 60) -> list[dict]:
+def ndvi_estadistico(token: str, bbox: list[float] | None, fecha_inicio: str, fecha_fin: str,
+                      intervalo_dias: int = 10, timeout: int = 60, geometria: dict | None = None,
+                      lado_px: int | None = None) -> list[dict]:
     """bbox: [lon_min, lat_min, lon_max, lat_max] -- el poligono de la parcela, no un punto.
     VERIFICADO: devuelve NDVI medio por intervalo, con los pixeles nublados (SCL) ya
     excluidos del promedio -- 'noDataCount' en cada intervalo dice cuantos pixeles del
     poligono quedaron fuera por nubes (65536/65536 = intervalo entero inservible, visto
     en vivo para Chiloe en un periodo real)."""
     datos = _estadistica_agregada(token, "sentinel-2-l2a", _evalscript_ndvi(), bbox,
-                                   fecha_inicio, fecha_fin, intervalo_dias, None, timeout)
+                                   fecha_inicio, fecha_fin, intervalo_dias, None, timeout, geometria, lado_px)
     return [{"desde": d["interval"]["from"], "hasta": d["interval"]["to"],
               **d["outputs"]["ndvi"]["bands"]["B0"]["stats"]} for d in datos]
 
