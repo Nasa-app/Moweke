@@ -60,6 +60,10 @@ regla_dano_especie = Table(
     Column("especie", String), Column("variedad_local", String), Column("fase", String),
     Column("peligro", String), Column("umbral", Float), Column("minimo", Integer),
     Column("efecto", String), Column("valor", Float), Column("fuente", String),
+    # Mitigacion por manejo real (ver services/motor_estres.Regla) -- NULL/0/0 para toda
+    # regla que no sea biotica (helada/calor/sequia/anegamiento/ceniza no se mitigan).
+    Column("mitigado_por", String), Column("factor_mitigacion", Float),
+    Column("ventana_mitigacion_dias", Integer),
 )
 
 

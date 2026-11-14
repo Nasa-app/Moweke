@@ -86,7 +86,12 @@ CREATE TABLE bioindicador_observado (
 CREATE TABLE manejo_predio (
   id SERIAL PRIMARY KEY,
   id_cultivo INT NOT NULL REFERENCES predio_cultivos(id),
-  tipo_labor VARCHAR NOT NULL, -- 'aporque' | 'fertilizacion' | 'riego' | 'drenaje'
+  -- 'fungicida'/'pesticida' agregados para alimentar la mitigacion de regla_dano_especie
+  -- (services/motor_estres.evaluar(), parametro `manejo`) -- 'fertilizacion' queda sin
+  -- conectar a ningun riesgo: no existe todavia una regla de estres nutricional con
+  -- umbral propio a la cual atenuar, agregar una inventada seria otro dato sin fuente.
+  tipo_labor VARCHAR NOT NULL CHECK (tipo_labor IN
+    ('aporque', 'fertilizacion', 'riego', 'drenaje', 'fungicida', 'pesticida')),
   fecha DATE NOT NULL
 );
 
@@ -166,7 +171,13 @@ CREATE TABLE regla_dano_especie (
   minimo INT NOT NULL DEFAULT 1,
   efecto VARCHAR NOT NULL CHECK (efecto IN ('parcial', 'total', 'atraso')),
   valor FLOAT NOT NULL DEFAULT 0,
-  fuente VARCHAR NOT NULL DEFAULT 'placeholder_sin_validar'
+  fuente VARCHAR NOT NULL DEFAULT 'placeholder_sin_validar',
+  -- Mitigacion por manejo real (manejo_predio.tipo_labor) -- ver services/motor_estres.Regla.
+  -- Solo tiene sentido para peligros bioticos (tizon via fungicida); NULL en el resto --
+  -- ningun insumo evita una helada o una sequia, no poner mitigado_por ahi.
+  mitigado_por VARCHAR,              -- tipo_labor de manejo_predio que atenua esta regla
+  factor_mitigacion FLOAT NOT NULL DEFAULT 0,      -- fraccion de 'valor' que se evita
+  ventana_mitigacion_dias INT NOT NULL DEFAULT 0   -- dias previos al evento que protegen
 );
 
 -- ============================================================

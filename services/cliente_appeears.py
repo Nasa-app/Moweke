@@ -86,17 +86,35 @@ def esperar_y_descargar(token: str, task_id: str, destino: str,
 
 
 def _descargar_bundle(token: str, task_id: str, destino: str, timeout: int = 60) -> str:
+    """VERIFICADO (Fase 4) con una extraccion real (MOD13Q1.061, Castro) -- un bundle 'point'
+    trae 5 archivos: el CSV de resultados, metadata.xml, README.md, request.json y
+    granule-list.txt. El viejo codigo tomaba `files[0]` a ciegas; hoy coincidia con el CSV
+    por orden de suerte, no por seleccion real -- se busca explicito `file_type == 'csv'`."""
     r = requests.get(f"{URL_BASE}/bundle/{task_id}",
                       headers={"Authorization": f"Bearer {token}"}, timeout=timeout)
     r.raise_for_status()
-    # Descarga del primer archivo del bundle -- un gran salto de proveedor real a "un
-    # archivo", sin verificar: en la practica un bundle de AppEEARS trae varios archivos
-    # (uno por capa/fecha). Esto queda simplificado a proposito porque no se pudo probar
-    # contra una respuesta real para saber la forma exacta.
-    archivo_id = r.json()["files"][0]["file_id"]
-    contenido = requests.get(f"{URL_BASE}/bundle/{task_id}/{archivo_id}",
+    archivos = r.json()["files"]
+    csv = next((f for f in archivos if f["file_type"] == "csv"), None)
+    if csv is None:
+        raise ValueError(f"bundle de la tarea {task_id} sin archivo csv: {[f['file_name'] for f in archivos]}")
+    contenido = requests.get(f"{URL_BASE}/bundle/{task_id}/{csv['file_id']}",
                               headers={"Authorization": f"Bearer {token}"}, timeout=timeout)
     contenido.raise_for_status()
     with open(destino, "wb") as f:
         f.write(contenido.content)
     return destino
+
+
+def nombre_columna_valor(producto: str, capa: str) -> str:
+    """VERIFICADO (Fase 4): el CSV de resultados no usa el nombre de la capa tal cual --
+    antepone el producto con puntos reemplazados por guion bajo, ej. producto='MOD13Q1.061'
+    + capa='_250m_16_days_EVI' -> columna 'MOD13Q1_061__250m_16_days_EVI' (doble guion bajo
+    porque la capa ya empieza con uno). Quien parsee el CSV (services/repositorio_clima.py,
+    Fase 5) tiene que construir el nombre de columna asi, no asumir que es `capa`."""
+    return f"{producto.replace('.', '_')}_{capa}"
+
+
+VALOR_SIN_DATOS = -3000.0  # relleno real observado (pixel nublado/sin cobertura) -- filtrar
+# antes de usar, no es un EVI valido (EVI real esta acotado aprox. [-1, 1]). Fechas del CSV
+# de resultados vienen 'YYYY-MM-DD' (columna 'Date') -- distinto al formato de ENVIO de la
+# tarea ('MM-DD-YYYY', ver solicitar_extraccion_puntual), no asumir que son el mismo formato.

@@ -63,11 +63,19 @@ def balance_agua(clima, lat, capacidad_mm):
 @dataclass(frozen=True)
 class Regla:
     fase: str        # "ini->fin", "cosecha" o "*" (cualquiera)
-    peligro: str     # helada | calor | sequia | anegamiento | lluvia_cosecha | ceniza
-    umbral: float    # C | fraccion de dias con agua < 30% | mm de exceso diario | mm acumulados
-    minimo: int      # dias minimos que deben cumplir el umbral
+    peligro: str     # helada | calor | sequia | anegamiento | lluvia_cosecha | ceniza | tizon
+    umbral: float    # C | fraccion de dias con agua < 30% | mm de exceso diario | mm acumulados | %RH
+    minimo: int      # dias minimos que deben cumplir el umbral (para tizon: dias CONSECUTIVOS)
     efecto: str      # parcial | total | atraso
     valor: float = 0 # fraccion perdida (parcial) o dias (atraso)
+    # Mitigacion por manejo real del predio (manejo_predio) -- pensado para peligros
+    # bioticos (plagas/enfermedades) donde una practica humana cambia el resultado, a
+    # diferencia de helada/calor/anegamiento que ningun insumo evita. Por eso solo
+    # tiene efecto sobre 'parcial'/'atraso': una 'total' no se reduce por mitigacion
+    # aqui (ver _reduccion_mitigacion) -- no usar mitigado_por en una regla 'total'.
+    mitigado_por: str | None = None   # tipo_labor de manejo_predio que atenua esta regla (ej. 'fungicida')
+    factor_mitigacion: float = 0.0    # fraccion de reduccion de 'valor' si se aplico dentro de la ventana
+    ventana_mitigacion_dias: int = 0  # dias previos al primer dia del evento en que la aplicacion protege
 
 
 R = Regla
@@ -145,9 +153,31 @@ def fases(siembra, fechas, c, dias_cosecha=14):
     return out
 
 
-def evaluar(clima, agua, siembra, fechas, c, reglas, externos=()):
+def _reduccion_mitigacion(r, cuando, manejo):
+    """Fraccion de reduccion de r.valor si hubo una aplicacion real de r.mitigado_por
+    (fila de manejo_predio: {'tipo_labor', 'fecha'}) dentro de la ventana de proteccion
+    antes del primer dia en que la regla se cumplio. Sin mitigado_por, sin manejo, o sin
+    aplicacion dentro de la ventana -> 0.0 (comportamiento identico al de antes de esto
+    existir). No actua sobre efecto 'total' -- ver comentario en Regla."""
+    if not r.mitigado_por or not manejo:
+        return 0.0
+    primer_dia = pd.Timestamp(cuando[0])
+    ventana_ini = primer_dia - pd.Timedelta(days=r.ventana_mitigacion_dias)
+    for app in manejo:
+        if app.get("tipo_labor") == r.mitigado_por and ventana_ini <= pd.Timestamp(app["fecha"]) <= primer_dia:
+            return r.factor_mitigacion
+    return 0.0
+
+
+def evaluar(clima, agua, siembra, fechas, c, reglas, externos=(), manejo=()):
     """Aplica las reglas al clima tal como viene (eventos naturales o inyectados).
-    externos: [(fecha, peligro)] para eventos que no estan en el clima (ceniza, granizo)."""
+    externos: [(fecha, peligro)] para eventos que no estan en el clima (ceniza, granizo).
+    manejo: [{'tipo_labor', 'fecha'}] -- aplicaciones reales sobre el predio (manejo_predio),
+    para que una regla con mitigado_por reduzca su dano si corresponde (ver Regla).
+    manejo=() (default) -- comportamiento identico a cuando esto no existia: pensado para
+    motor_rotacion.evaluar_cultivos(), que trabaja con anos sinteticos sin manejo real que
+    registrar. Quien evalue un cultivo real de una parcela real (calcular_fenologia_cultivo,
+    Fase 6) es quien debe leer manejo_predio y pasarlo aqui."""
     danos, fecha_perdida, atraso = [], None, 0
     ciclo_completo = c.etapas[-1][0] in fechas
     for nombre, ini, fin in fases(siembra, fechas, c):
@@ -169,16 +199,31 @@ def evaluar(clima, agua, siembra, fechas, c, reglas, externos=()):
                 ok, cuando = m.sum() >= r.minimo, a.index[m]
             elif r.peligro == "lluvia_cosecha":
                 ok, cuando = p.lluvia.sum() >= r.umbral, p.index
+            elif r.peligro == "tizon":
+                # Mismo criterio que pheno_engine.alertas(): no es un pico aislado de
+                # humedad, es humectacion foliar sostenida -- 'minimo' dias CONSECUTIVOS
+                # con rh >= umbral. BUG REAL encontrado al conectar esto con mitigacion:
+                # esta rama no existia -- tizon caia al 'else' (externos) y nunca
+                # disparaba, porque nada inyecta un externo 'tizon'. La alerta que ve el
+                # agricultor (pheno_engine.alertas) si lo evaluaba; el puntaje de
+                # rotacion (este archivo, via motor_rotacion) nunca penalizaba por tizon.
+                if "rh" not in p.columns:
+                    ok, cuando = False, p.index[:0]
+                else:
+                    m = (p.rh >= r.umbral).rolling(r.minimo, min_periods=r.minimo).sum().fillna(0) >= r.minimo
+                    ok, cuando = bool(m.any()), p.index[m]
             else:
                 ext = [pd.Timestamp(f) for f, pel in externos if pel == r.peligro and ini <= pd.Timestamp(f) <= fin]
                 ok, cuando = bool(ext), ext
             if ok:
-                danos.append((nombre, r.peligro, r.efecto, r.valor))
+                reduccion = _reduccion_mitigacion(r, cuando, manejo)
+                valor_ef = r.valor * (1 - reduccion)
+                danos.append((nombre, r.peligro, r.efecto, valor_ef))
                 if r.efecto == "total":
                     f0 = pd.Timestamp(cuando[0])
                     fecha_perdida = f0 if fecha_perdida is None else min(fecha_perdida, f0)
                 if r.efecto == "atraso":
-                    atraso += int(r.valor)
+                    atraso += int(valor_ef)
     if fecha_perdida is not None or not ciclo_completo:
         estado, perdida = "perdido", 1.0
     else:

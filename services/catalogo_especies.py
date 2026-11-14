@@ -130,7 +130,10 @@ async def construir_reglas(especie: str, variedad_local: str | None, repo: Repos
     ya trata 'sin reglas' como 'no modelado', no como 'sin riesgo'. No hay que fingir
     reglas aqui para evitar una tupla vacia."""
     filas = await repo.reglas_dano(especie, variedad_local)
-    return tuple(Regla(f["fase"], f["peligro"], f["umbral"], f["minimo"], f["efecto"], f.get("valor", 0)) for f in filas)
+    return tuple(Regla(
+        f["fase"], f["peligro"], f["umbral"], f["minimo"], f["efecto"], f.get("valor", 0),
+        f.get("mitigado_por"), f.get("factor_mitigacion") or 0.0, f.get("ventana_mitigacion_dias") or 0,
+    ) for f in filas)
 
 
 # ---------------------------------------------------------------- orquestacion para motor_rotacion

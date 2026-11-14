@@ -93,3 +93,14 @@ INSERT INTO regla_dano_especie (especie, variedad_local, fase, peligro, umbral, 
   ('haba', NULL, '*', 'ceniza', 0, 0, 'parcial', 0.3);
   -- pradera no tiene reglas: motor_rotacion.evaluar_cultivos() la trata via perenne=true,
   -- no via "sin reglas" -- son dos caminos distintos al mismo relleno neutro.
+
+-- ============================================================
+-- Mitigacion por manejo real (regla_dano_especie.mitigado_por) -- solo tizon de papa.
+-- Valores de ventana/factor sin fuente agronomica todavia (fungicida de contacto protege
+-- tipicamente 7-14 dias; se usa 14 como referencia conservadora) -- placeholder_sin_validar
+-- igual que el resto de esta tabla, calibrar contra ficha tecnica de producto real antes
+-- de confiar en el numero, no solo en el mecanismo. ajo_chilote/haba no tienen regla de
+-- tizon (es un hongo propio de Solanaceas) -- nada que mitigar ahi.
+UPDATE regla_dano_especie
+SET mitigado_por = 'fungicida', factor_mitigacion = 0.6, ventana_mitigacion_dias = 14
+WHERE especie = 'papa' AND peligro = 'tizon';
