@@ -118,6 +118,44 @@ CREATE TABLE bioindicador_observado (
   fecha_reporte_cliente TIMESTAMP
 );
 
+-- Indicadores locales configurables por la comunidad (aves, floracion de especies) y lo
+-- que anuncian. Informativos: no entran a la simulacion. Ver
+-- database/migracion_indicadores_locales.sql y services/indicadores_locales.py.
+CREATE TABLE zona_indicadores (
+  id SERIAL PRIMARY KEY,
+  nombre VARCHAR(120) NOT NULL UNIQUE,
+  geometria GEOMETRY(Polygon, 4326) NOT NULL
+);
+CREATE INDEX idx_zona_indicadores_geometria ON zona_indicadores USING GIST (geometria);
+
+CREATE TABLE indicador_local (
+  id SERIAL PRIMARY KEY,
+  id_zona INT NOT NULL REFERENCES zona_indicadores(id) ON DELETE CASCADE,
+  categoria VARCHAR NOT NULL CHECK (categoria IN ('aves', 'floracion')),
+  nombre VARCHAR(120) NOT NULL,
+  evento VARCHAR(200) NOT NULL,
+  significado VARCHAR NOT NULL CHECK (significado IN
+    ('precipitacion_alta', 'precipitacion_baja', 'helada', 'precipitacion_temprana', 'precipitacion_tardia')),
+  nota VARCHAR(300),
+  mes_desde SMALLINT NOT NULL CHECK (mes_desde BETWEEN 1 AND 12),
+  mes_hasta SMALLINT NOT NULL CHECK (mes_hasta BETWEEN 1 AND 12),
+  umbral_reportes SMALLINT NOT NULL DEFAULT 3 CHECK (umbral_reportes BETWEEN 1 AND 50),
+  vigencia_dias SMALLINT NOT NULL DEFAULT 90 CHECK (vigencia_dias BETWEEN 7 AND 365),
+  activo BOOLEAN NOT NULL DEFAULT true,
+  creado TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_indicador_local_zona ON indicador_local (id_zona) WHERE activo;
+
+CREATE TABLE observacion_indicador (
+  id SERIAL PRIMARY KEY,
+  id_indicador INT NOT NULL REFERENCES indicador_local(id) ON DELETE CASCADE,
+  id_usuario INT NOT NULL REFERENCES usuarios(id),
+  fecha_observada DATE NOT NULL,
+  creado TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (id_indicador, id_usuario, fecha_observada)
+);
+CREATE INDEX idx_observacion_indicador_fecha ON observacion_indicador (id_indicador, fecha_observada);
+
 CREATE TABLE manejo_predio (
   id SERIAL PRIMARY KEY,
   id_cultivo INT NOT NULL REFERENCES predio_cultivos(id),

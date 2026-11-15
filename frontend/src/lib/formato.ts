@@ -46,6 +46,35 @@ export function nombreFase(fase: string): string {
   return `De ${nombreClave(desde).toLowerCase()} a ${nombreClave(hasta).toLowerCase()}`
 }
 
+// Qué anuncia un indicador local, dicho como lo entiende el agricultor.
+const SIGNIFICADOS: Record<string, string> = {
+  precipitacion_alta: 'Mucha lluvia',
+  precipitacion_baja: 'Poca lluvia',
+  helada: 'Heladas',
+  precipitacion_temprana: 'Lluvias tempranas',
+  precipitacion_tardia: 'Lluvias tardías',
+}
+
+export function nombreSignificado(clave: string): string {
+  return SIGNIFICADOS[clave] ?? nombreClave(clave)
+}
+
+export function nombreCategoria(categoria: string): string {
+  return categoria === 'aves' ? 'Ave' : 'Floración'
+}
+
+// Si el mes de una fecha ISO cae en la ventana de un indicador; la ventana puede cruzar el
+// fin de año (de noviembre a febrero incluye diciembre y enero). Es la misma regla que
+// aplica el API al recibir el reporte.
+export function mesEnVentana(fechaIso: string, desde: number, hasta: number): boolean {
+  const mes = Number(fechaIso.slice(5, 7))
+  return desde <= hasta ? mes >= desde && mes <= hasta : mes >= desde || mes <= hasta
+}
+
+export function ventanaEnMeses(desde: number, hasta: number): string {
+  return desde === hasta ? MESES[desde - 1] : `${MESES[desde - 1]} a ${MESES[hasta - 1]}`
+}
+
 // Las especies curadas vienen con clave propia en español (ajo_chilote). Las de EcoCrop
 // usan como clave su nombre científico (chenopodium_quinoa) y traen una lista de nombres
 // comunes, casi siempre en inglés: se muestra el primero y, si no hay, el científico.

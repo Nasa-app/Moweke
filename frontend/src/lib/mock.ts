@@ -57,12 +57,3 @@ export const fuentesDatos = [
   { titulo: 'Saber williche', detalle: 'Luna, vientos y señales para sembrar', nota: 'Comunidades williche de Chiloé · en validación' },
   { titulo: 'Incendios', detalle: 'Focos de calor cerca de tu parcela', nota: 'Satélites de NASA (FIRMS) · alertas oficiales: SENAPRED' },
 ]
-
-export const senalesFenologicas = [
-  { clave: 'floracion', nombre: 'Floración', detalle: 'En tu cultivo' },
-  { clave: 'aves', nombre: 'Aves que llegan', detalle: '[Ave 1], [Ave 2]' },
-  { clave: 'nativas', nombre: 'Nativos en flor', detalle: '[Nativa 1], [Nativa 2]' },
-  { clave: 'abejas', nombre: 'Abejas y abejorros', detalle: 'Visitan flores' },
-  { clave: 'hojas_caen', nombre: 'Hojas que caen', detalle: 'En árboles' },
-  { clave: 'lluvias', nombre: 'Primeras lluvias', detalle: 'Después de seco' },
-]

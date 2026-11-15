@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Screen } from '../components/Screen'
 import { BottomNav } from '../components/BottomNav'
 import { MoonStrip } from '../components/MoonStrip'
+import { SenalesLocales } from '../components/SenalesLocales'
 import { IconoIncendio, IconoPerfil, IconoSiguiente, IconoTelefono } from '../components/icons'
 import { useSeguimiento } from '../state/useSeguimiento'
 import { verParcela, type DiaConFocos, type EventoDano } from '../lib/api'
@@ -122,6 +123,8 @@ export default function Inicio() {
           <IconoSiguiente stroke="var(--precaucion-texto)" />
         </Link>
       ) : null}
+
+      {idParcela ? <SenalesLocales idParcela={idParcela} /> : null}
 
       {idParcela ? (
         <div className="ps-grid-2" style={{ margin: '14px 16px 0 16px' }}>

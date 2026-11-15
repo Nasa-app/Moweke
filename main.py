@@ -13,10 +13,10 @@ import sys
 from datetime import date, timedelta
 from typing import Literal
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +35,7 @@ import services.cliente_cr2met as cliente_cr2met
 import services.cliente_firms as cliente_firms
 import services.cliente_soilgrids as cliente_soilgrids
 import services.cliente_solar as cliente_solar
+import services.indicadores_locales as indicadores_locales
 import services.ingesta_predio as ingesta_predio
 import services.multianual as multianual
 from services.auth import crear_token, decodificar_token, hash_password, verificar_password
@@ -97,6 +98,9 @@ _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 _REGISTROS_POR_IP = LimiteIntentos(10, 60 * 60)
 _LOGINS_POR_IP = LimiteIntentos(30, 5 * 60)
 _LOGINS_POR_CUENTA = LimiteIntentos(10, 15 * 60)
+# Reportes de indicadores locales: por usuario, para que una cuenta no llene la base ni
+# fabrique ella sola una senal "confirmada" (eso ademas exige agricultores distintos).
+_OBSERVACIONES_POR_USUARIO = LimiteIntentos(60, 60 * 60)
 ESCENARIOS_CALENTAMIENTO = {"observado": None, "moderado": 0.3, "fuerte": 0.6}   # °C por decada hasta 2040
 _ALMACEN_CATALOGO: dict = {}   # catalogo de especies en memoria del proceso (ver multianual.RepositorioCacheado)
 # Detras de un proxy la conexion llega desde el proxy, no desde el cliente. Si
@@ -181,6 +185,44 @@ class CultivoNuevo(BaseModel):
     especie: str = Field(min_length=1, max_length=120)
     variedad_local: str | None = Field(None, min_length=1, max_length=120)
     fecha_siembra: date
+
+
+class ZonaNueva(BaseModel):
+    nombre: str = Field(min_length=1, max_length=120)
+    perimetro: dict
+
+    @field_validator("nombre")
+    @classmethod
+    def _nombre_limpio(cls, valor: str) -> str:
+        return indicadores_locales.limpiar_texto(valor)
+
+
+class IndicadorNuevo(BaseModel):
+    """Lo que la comunidad define: que se observa y que anuncia. El texto libre se limpia
+    en el borde porque otros usuarios lo ven."""
+    id_zona: int
+    categoria: indicadores_locales.Categoria
+    nombre: str = Field(min_length=1, max_length=120)
+    evento: str = Field(min_length=1, max_length=200)
+    significado: indicadores_locales.Significado
+    nota: str | None = Field(None, min_length=1, max_length=300)
+    mes_desde: int = Field(ge=1, le=12)
+    mes_hasta: int = Field(ge=1, le=12)
+    umbral_reportes: int = Field(3, ge=1, le=50)
+    vigencia_dias: int = Field(90, ge=7, le=365)
+
+    @field_validator("nombre", "evento", "nota")
+    @classmethod
+    def _texto_limpio(cls, valor: str | None) -> str | None:
+        return None if valor is None else indicadores_locales.limpiar_texto(valor)
+
+
+class EstadoIndicador(BaseModel):
+    activo: bool
+
+
+class ObservacionNueva(BaseModel):
+    fecha_observada: date
 
 
 # ---------------------------------------------------------------- dependencias de autorizacion
@@ -720,6 +762,91 @@ async def especies_con_seguimiento(session: AsyncSession = Depends(obtener_sesio
                          "nivel_madurez": await catalogo_especies.nivel_madurez(especie, None, repo),
                          "siembra_mes": rasgos.get("siembra_mes"), "siembra_dia": rasgos.get("siembra_dia")})
     return {"especies": especies}
+
+
+# ---------------------------------------------------------------- indicadores locales
+# Conocimiento de la comunidad (aves, floracion de especies) y lo que anuncia, por zona.
+# Informativo y sin validar: no toca la proyeccion del cultivo. Ver services/indicadores_locales.py.
+
+@app.get("/api/parcelas/{id_parcela}/indicadores")
+async def indicadores_parcela(id_parcela: int, session: AsyncSession = Depends(obtener_sesion),
+                               usuario: dict = Depends(usuario_actual)):
+    """Los indicadores activos de la zona del predio y su condicion: cuantos agricultores
+    distintos los reportaron dentro de su vigencia y si ya salen 'confirmados'. `resumen`
+    junta lo que anuncian hoy las senales confirmadas."""
+    await _parcela_autorizada(id_parcela, usuario, session)
+    indicadores = await indicadores_locales.senales_del_predio(session, id_parcela, usuario["id"], date.today())
+    return {"indicadores": indicadores, "resumen": indicadores_locales.resumen_por_significado(indicadores),
+            "validado": False}
+
+
+@app.post("/api/indicadores/{id_indicador}/observaciones", status_code=status.HTTP_201_CREATED)
+async def reportar_indicador(id_indicador: int, datos: ObservacionNueva, respuesta: Response,
+                              session: AsyncSession = Depends(obtener_sesion),
+                              usuario: dict = Depends(usuario_actual)):
+    """El agricultor reporta que vio el evento de un indicador de su zona. Solo puede
+    hacerlo si tiene un predio dentro de ella. Repetir el mismo reporte (mismo dia) responde
+    200 y no cuenta otra vez: el telefono sin senal puede reintentar."""
+    _frenar(_OBSERVACIONES_POR_USUARIO, f"usuario:{usuario['id']}")
+    hoy = date.today()
+    if not hoy - timedelta(days=indicadores_locales.OBSERVACION_DIAS_ATRAS_MAX) <= datos.fecha_observada <= hoy:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                             f"La fecha debe estar entre {indicadores_locales.OBSERVACION_DIAS_ATRAS_MAX} días atrás y hoy")
+    indicador = await indicadores_locales.indicador_para_reportar(session, id_indicador, usuario["id"])
+    if indicador is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Indicador no existe")
+    if not indicadores_locales.mes_en_ventana(datos.fecha_observada, indicador["mes_desde"], indicador["mes_hasta"]):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                             f"Ese día queda fuera de los meses en que cuenta este indicador "
+                             f"({indicador['mes_desde']} a {indicador['mes_hasta']})")
+    nueva = await indicadores_locales.registrar_observacion(session, id_indicador, usuario["id"], datos.fecha_observada)
+    if not nueva:
+        respuesta.status_code = status.HTTP_200_OK
+    return {"registrada": nueva}
+
+
+@app.post("/api/admin/zonas-indicadores", status_code=status.HTTP_201_CREATED)
+async def admin_crear_zona(datos: ZonaNueva, session: AsyncSession = Depends(obtener_sesion),
+                            _admin: dict = Depends(requerir_admin)):
+    """Una zona es un poligono (GeoJSON, WGS84): por ejemplo una comuna o un sector. Los
+    indicadores se definen para una zona y los ven los predios cuyo centro cae dentro."""
+    geojson = _validar_perimetro(datos.perimetro)
+    try:
+        id_zona = await indicadores_locales.crear_zona(session, datos.nombre, geojson)
+    except indicadores_locales.ZonaInvalida as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error))
+    if id_zona is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ya hay una zona con ese nombre")
+    return {"id": id_zona, "nombre": datos.nombre}
+
+
+@app.get("/api/admin/zonas-indicadores")
+async def admin_listar_zonas(session: AsyncSession = Depends(obtener_sesion),
+                              _admin: dict = Depends(requerir_admin)):
+    return {"zonas": await indicadores_locales.listar_zonas(session)}
+
+
+@app.post("/api/admin/indicadores-locales", status_code=status.HTTP_201_CREATED)
+async def admin_crear_indicador(datos: IndicadorNuevo, session: AsyncSession = Depends(obtener_sesion),
+                                 _admin: dict = Depends(requerir_admin)):
+    if not await indicadores_locales.zona_existe(session, datos.id_zona):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Zona no existe")
+    return {"id": await indicadores_locales.crear_indicador(session, datos.model_dump())}
+
+
+@app.get("/api/admin/indicadores-locales")
+async def admin_listar_indicadores(id_zona: int | None = Query(None), session: AsyncSession = Depends(obtener_sesion),
+                                    _admin: dict = Depends(requerir_admin)):
+    return {"indicadores": await indicadores_locales.listar_indicadores(session, date.today(), id_zona)}
+
+
+@app.post("/api/admin/indicadores-locales/{id_indicador}/estado")
+async def admin_estado_indicador(id_indicador: int, datos: EstadoIndicador,
+                                  session: AsyncSession = Depends(obtener_sesion),
+                                  _admin: dict = Depends(requerir_admin)):
+    if not await indicadores_locales.cambiar_estado(session, id_indicador, datos.activo):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Indicador no existe")
+    return {"id": id_indicador, "activo": datos.activo}
 
 
 _FUENTES_CLIMA_DIARIO = ("power", "open_meteo")

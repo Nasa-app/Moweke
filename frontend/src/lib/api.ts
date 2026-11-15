@@ -485,4 +485,56 @@ export function fenologiaCultivo(idCultivo: number) {
   return conMemoria(`fenologia/${idCultivo}`, () => peticion<Fenologia>(`/api/cultivos/${idCultivo}/fenologia`))
 }
 
+// ---------------------------------------------------------------- indicadores locales
+// Conocimiento de la comunidad (aves, floración de especies) y lo que anuncia, por zona.
+// Informativo y sin validar: no cambia la proyección del cultivo.
+export type CategoriaIndicador = 'aves' | 'floracion'
+export type SignificadoIndicador =
+  | 'precipitacion_alta'
+  | 'precipitacion_baja'
+  | 'helada'
+  | 'precipitacion_temprana'
+  | 'precipitacion_tardia'
+export type EstadoSenal = 'confirmada' | 'en_observacion' | 'sin_reportes'
+
+export interface IndicadorLocal {
+  id: number
+  categoria: CategoriaIndicador
+  nombre: string
+  evento: string
+  significado: SignificadoIndicador
+  nota: string | null
+  mes_desde: number
+  mes_hasta: number
+  umbral_reportes: number
+  vigencia_dias: number
+  zona: string
+  observadores: number
+  ultima_observacion: string | null
+  ya_reportaste: boolean
+  estado: EstadoSenal
+}
+
+export interface IndicadoresPredio {
+  indicadores: IndicadorLocal[]
+  resumen: Partial<Record<SignificadoIndicador, string[]>>
+  validado: false
+}
+
+export function indicadoresParcela(idParcela: number, fresco = false) {
+  return conMemoria(
+    `indicadores/${idParcela}`,
+    () => peticion<IndicadoresPredio>(`/api/parcelas/${idParcela}/indicadores`),
+    fresco,
+  )
+}
+
+export function reportarIndicador(idIndicador: number, fechaObservada: string) {
+  olvidarLecturas()
+  return peticion<{ registrada: boolean }>(`/api/indicadores/${idIndicador}/observaciones`, {
+    method: 'POST',
+    body: { fecha_observada: fechaObservada },
+  })
+}
+
 export { BASE_URL }
