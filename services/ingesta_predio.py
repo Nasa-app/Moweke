@@ -9,6 +9,8 @@ dispararse a mano por los endpoints /api/admin/.../ingesta/*.
   clsoilmaps        agua disponible total del suelo (0-200 cm)
   relieve           altitud y pendiente de cada celda de la grilla del predio (Copernicus
                     DEM GLO-30, datos abiertos, sin credenciales). Dato fijo: corre una vez
+  inundacion        altura sobre el cauce mas cercano (HAND de ASF, 30 m, sobre Copernicus
+                    DEM GLO-30; abierto, sin credenciales) por celda de la grilla. Dato fijo
   sentinel2_nubes   cuantas pasadas despejadas de Sentinel-2 hubo en 24 meses (catalogo
                     publico, sin credenciales): decide si en el predio vale la pena
                     seguir el cultivo con la curva optica del satelite
@@ -63,7 +65,7 @@ from rasterio.transform import xy
 from rasterio.warp import transform as reproyectar
 
 from services import (cliente_clsoilmaps, cliente_copernicus, cliente_cr2met, cliente_dem, cliente_firms,
-                      cliente_openmeteo, cliente_power, cliente_soilgrids, cliente_solar, db)
+                      cliente_hand, cliente_openmeteo, cliente_power, cliente_soilgrids, cliente_solar, db)
 from services.motor_estres import calibrar_et0_mensual
 from services.repositorio_clima import (CAPAS_ET0_FACTOR_MENSUAL, CAPAS_GHI_MENSUAL, CAPAS_GHI_POWER,
                                         CAPAS_DISPONIBILIDAD_OPTICA,
@@ -90,6 +92,7 @@ PRODUCTOS = {
     "firms": "VIIRS_NOAA20_NOAA21_NRT_5d",
     "sentinel2_nubes": "catalogo_L2A_24_meses",
     "relieve": "copernicus_dem_glo30",
+    "inundacion": "asf_hand_glo30_v1",
     "sentinel2_ndvi": "L2A_ndvi_5d",
     "sentinel2_celdas": "L2A_ndvi_5d_por_celda",
     "clsoilmaps": "awc_total_0_200cm",
@@ -557,14 +560,16 @@ async def _sentinel2_celdas(session: AsyncSession, id_parcela: int, lat: float, 
     return None if con_dato else "sin_cobertura"
 
 
-def relieve_por_celda(baldosas: list[dict], perimetro: dict, srid_utm: int, lado: float) -> dict:
-    """Promedia la altitud y la pendiente de los pixeles del modelo de elevacion que tocan
-    el perimetro, agrupados por celda de la grilla: {(i, j): {'altitud', 'pendiente',
-    'pixeles'}}. Un pixel pertenece a la celda donde cae su centro; la celda (i, j) de
-    ST_SquareGrid empieza en (i * lado, j * lado) en la zona UTM del predio."""
+def relieve_por_celda(baldosas: list[dict], perimetro: dict, srid_utm: int, lado: float,
+                      campos: tuple[str, ...] = ("altitud", "pendiente")) -> dict:
+    """Promedia `campos` (por defecto altitud y pendiente) de los pixeles del raster que tocan
+    el perimetro, agrupados por celda de la grilla: {(i, j): {campo: media, 'pixeles'}}. Un
+    pixel pertenece a la celda donde cae su centro; la celda (i, j) de ST_SquareGrid empieza
+    en (i * lado, j * lado) en la zona UTM del predio. Se descarta el pixel sin dato en el
+    primer campo."""
     suma: dict[tuple, list] = {}
     for b in baldosas:
-        filas, columnas = b["altitud"].shape
+        filas, columnas = b[campos[0]].shape
         dentro = geometry_mask([perimetro], out_shape=(filas, columnas), transform=b["transform"],
                                invert=True, all_touched=True)
         f, c = np.nonzero(dentro)
@@ -573,14 +578,16 @@ def relieve_por_celda(baldosas: list[dict], perimetro: dict, srid_utm: int, lado
         lon, lat = xy(b["transform"], f, c)
         x, y = reproyectar(b["crs"], f"EPSG:{srid_utm}", list(lon), list(lat))
         ci, cj = np.floor(np.asarray(x) / lado).astype(int), np.floor(np.asarray(y) / lado).astype(int)
-        for i, j, alt, pen in zip(ci, cj, b["altitud"][f, c], b["pendiente"][f, c]):
-            if alt != alt:
+        valores = [b[campo][f, c] for campo in campos]
+        for k, (i, j) in enumerate(zip(ci, cj)):
+            if valores[0][k] != valores[0][k]:
                 continue
-            acum = suma.setdefault((int(i), int(j)), [0.0, 0.0, 0])
-            acum[0] += float(alt)
-            acum[1] += float(pen)
-            acum[2] += 1
-    return {clave: {"altitud": a / n, "pendiente": p / n, "pixeles": n} for clave, (a, p, n) in suma.items()}
+            acum = suma.setdefault((int(i), int(j)), [0] + [0.0] * len(campos))
+            acum[0] += 1
+            for n, v in enumerate(valores):
+                acum[n + 1] += float(v[k])
+    return {clave: {**{campo: acum[n + 1] / acum[0] for n, campo in enumerate(campos)}, "pixeles": acum[0]}
+            for clave, acum in suma.items()}
 
 
 # Copernicus DEM se levanto con TanDEM-X entre 2011 y 2015: se usa como marca del dato fijo.
@@ -607,9 +614,28 @@ async def _relieve(session: AsyncSession, id_parcela: int, lat: float, lon: floa
     return None if filas else "sin_cobertura"
 
 
+# El HAND de ASF se calculo sobre el mismo DEM: el periodo es el de ese insumo.
+async def _inundacion(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
+    """Altura media sobre el cauce (HAND) de cada celda de la grilla, en la capa 'hand_m'."""
+    p = (await session.execute(text("""
+        SELECT srid_utm, lado_celda_m, ST_AsGeoJSON(geometria) AS perimetro,
+               ST_XMin(geometria) AS a, ST_YMin(geometria) AS b, ST_XMax(geometria) AS c, ST_YMax(geometria) AS d
+        FROM parcela WHERE id = :id"""), {"id": id_parcela})).mappings().first()
+    baldosas = await asyncio.to_thread(cliente_hand.leer_hand, p["a"], p["b"], p["c"], p["d"])
+    por_celda = relieve_por_celda(baldosas, json.loads(p["perimetro"]), p["srid_utm"], p["lado_celda_m"],
+                                  campos=("altitud",))
+    validas = {(c["i"], c["j"]) for c in await leer_grilla(session, id_parcela)}
+    filas = [dict(id_parcela=id_parcela, celda_i=ci, celda_j=cj, capa="hand_m", periodo_inicio=_PERIODO_DEM[0],
+                  periodo_fin=_PERIODO_DEM[1], valor=round(v["altitud"], 2), visible=1.0)
+             for (ci, cj), v in por_celda.items() if (ci, cj) in validas]
+    await guardar_celdas(session, filas)
+    return None if filas else "sin_cobertura"
+
+
 _INGESTAS = {"explorador_solar": _solar, "soilgrids": _soilgrids, "cr2met": _cr2met,
              "clima_historico": _clima_historico, "power": _power, "open_meteo": _open_meteo, "firms": _firms,
-             "sentinel2_nubes": _sentinel2_nubes, "relieve": _relieve, "sentinel2_ndvi": _sentinel2_ndvi,
+             "sentinel2_nubes": _sentinel2_nubes, "relieve": _relieve, "inundacion": _inundacion,
+             "sentinel2_ndvi": _sentinel2_ndvi,
              "sentinel2_celdas": _sentinel2_celdas, "clsoilmaps": _clsoilmaps}
 
 

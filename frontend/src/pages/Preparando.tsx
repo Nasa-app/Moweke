@@ -15,6 +15,7 @@ const GRUPOS = [
   { titulo: 'Suelo', detalle: 'Acidez y agua que guarda', fuentes: ['soilgrids', 'clsoilmaps'], origenes: ['Otras fuentes', 'Chile'], fuente: 'SoilGrids, de ISRIC (acidez y textura), y CLSoilMaps, de Chile (agua que guarda)' },
   { titulo: 'Sol', detalle: 'Sol de cada mes', fuentes: ['explorador_solar'], origenes: ['NASA', 'Chile'], fuente: 'NASA POWER y Explorador Solar de Chile (respaldo)' },
   { titulo: 'Relieve', detalle: 'Altura y pendiente', fuentes: ['relieve'], origenes: ['Copernicus'], fuente: 'Modelo de elevación Copernicus GLO-30' },
+  { titulo: 'Cauces cercanos', detalle: 'Altura sobre el cauce', fuentes: ['inundacion'], origenes: ['NASA'], fuente: 'HAND de 30 m, del centro de datos ASF de NASA' },
   { titulo: 'Satélite', detalle: 'Verdor del campo', fuentes: ['sentinel2_nubes', 'sentinel2_ndvi', 'sentinel2_celdas'], origenes: ['Copernicus'], fuente: 'Sentinel-2, de la ESA (Copernicus)' },
   { titulo: 'Focos de calor', detalle: 'Incendios cerca de tu parcela', fuentes: ['firms'], origenes: ['NASA'], fuente: 'NASA FIRMS (satélites VIIRS)' },
 ] as const

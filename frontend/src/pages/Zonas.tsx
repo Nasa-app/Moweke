@@ -43,8 +43,16 @@ const CAPAS: Record<CapaMapa, {
     bajo: 'Plano',
     alto: 'Muy inclinado',
   },
+  hand: {
+    nombre: 'Cauce',
+    colores: ['#2f6f9f', '#9cc3d8', '#eef4d9'],
+    dominio: () => [0, 10],
+    formato: (v) => `${numero(v, 1)} m`,
+    bajo: 'Pegado al cauce',
+    alto: 'Bien sobre el cauce',
+  },
 }
-const ORDEN: CapaMapa[] = ['ndvi', 'altitud', 'pendiente']
+const ORDEN: CapaMapa[] = ['ndvi', 'altitud', 'pendiente', 'hand']
 const SEGUNDOS_ENTRE_CONSULTAS = 5
 
 function mezclar(desde: string, hasta: string, t: number): string {
@@ -142,7 +150,7 @@ export default function Zonas() {
       <Titulo>{t('zonas_titulo')}</Titulo>
 
       <div className="ps-pad-16" style={{ marginTop: 14 }}>
-        <div role="tablist" aria-label="Capa del mapa" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 4, padding: 4, borderRadius: 30, background: 'var(--hundido)' }}>
+        <div role="tablist" aria-label="Capa del mapa" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 4, padding: 4, borderRadius: 30, background: 'var(--hundido)' }}>
           {ORDEN.map((clave) => (
             <button key={clave} type="button" role="tab" aria-selected={capa === clave} onClick={() => cambiarCapa(clave)} className={`ps-pill ${capa === clave ? 'activo' : ''}`} style={{ borderRadius: 26, minHeight: 48 }}>
               {CAPAS[clave].nombre}
@@ -202,7 +210,9 @@ export default function Zonas() {
                 ? actual.fecha_comun
                   ? ` · imagen del ${fechaCorta(actual.fecha_comun)}`
                   : ' · cada cuadro con su última foto sin nubes'
-                : ' · incluye árboles y construcciones'}
+                : capa === 'hand'
+                  ? ' · altura sobre el cauce más cercano, no es un aviso de crecida'
+                  : ' · incluye árboles y construcciones'}
               {` · ${actual.celdas_con_dato} de ${actual.celdas} cuadros con dato`}
             </Link>
           </div>

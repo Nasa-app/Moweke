@@ -470,7 +470,40 @@ CAPAS_MAPA = {
                 "unidad": "metros sobre el nivel del mar", "fuente": "Copernicus DEM GLO-30 (modelo de superficie)"},
     "pendiente": {"capa_bd": "pendiente_pct", "dinamica": False, "fuente_ingesta": "relieve", "resolucion_m": 30,
                   "unidad": "% de pendiente", "fuente": "Copernicus DEM GLO-30 (modelo de superficie)"},
+    "hand": {"capa_bd": "hand_m", "dinamica": False, "fuente_ingesta": "inundacion", "resolucion_m": 30,
+             "unidad": "metros sobre el cauce mas cercano",
+             "fuente": "HAND global 30 m del ASF DAAC de NASA (sobre Copernicus DEM GLO-30)"},
 }
+
+# Clases de cercania al cauce segun el HAND medio de la celda. Son un criterio de lectura, no un
+# umbral de crecida: el HAND no conoce caudales, lluvia, diques ni mareas.
+HAND_MUY_CERCA_M = 2.0
+HAND_CERCA_M = 5.0
+FRACCION_MIN_CERCANIA = 0.1   # parte del predio que debe caer en una clase para que el predio entero la tome
+
+
+async def leer_cercania_cauce(session: AsyncSession, id_parcela: int) -> dict:
+    """Resumen de la cercania al cauce del predio, a partir de la capa 'hand_m' por celda:
+    `clase` ('muy_cerca' bajo HAND_MUY_CERCA_M, 'cerca' bajo HAND_CERCA_M, 'lejos'), la parte del
+    predio en cada franja y el HAND minimo y mediano. Cada celda pesa por la parte de ella
+    que cae dentro del perimetro. `clase` es None mientras no haya dato."""
+    celdas = {(c["i"], c["j"]): c["fraccion"] for c in await leer_grilla(session, id_parcela)}
+    filas = (await session.execute(text("""
+        SELECT DISTINCT ON (celda_i, celda_j) celda_i AS i, celda_j AS j, valor FROM cache_celda
+        WHERE id_parcela = :id AND capa = 'hand_m' AND valor IS NOT NULL ORDER BY celda_i, celda_j, periodo_inicio DESC
+    """), {"id": id_parcela})).mappings().all()
+    datos = [(f["valor"], celdas.get((f["i"], f["j"]), 0.0)) for f in filas]
+    area = sum(w for _, w in datos)
+    if not datos or area <= 0:
+        return {"clase": None, "celdas_con_dato": 0, "umbrales_m": [HAND_MUY_CERCA_M, HAND_CERCA_M]}
+    parte = lambda tope: sum(w for v, w in datos if v < tope) / area
+    muy_cerca, cerca = parte(HAND_MUY_CERCA_M), parte(HAND_CERCA_M)
+    valores = sorted(v for v, _ in datos)
+    clase = ("muy_cerca" if muy_cerca >= FRACCION_MIN_CERCANIA
+             else "cerca" if cerca >= FRACCION_MIN_CERCANIA else "lejos")
+    return {"clase": clase, "celdas_con_dato": len(datos), "umbrales_m": [HAND_MUY_CERCA_M, HAND_CERCA_M],
+            "parte_muy_cerca": round(muy_cerca, 2), "parte_cerca": round(cerca, 2),
+            "hand_minimo_m": round(valores[0], 1), "hand_mediano_m": round(valores[len(valores) // 2], 1)}
 
 
 def lado_celda_para(area_m2: float) -> float:
