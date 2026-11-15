@@ -7,20 +7,17 @@ import { leer, guardar } from '../../state/storage'
 import { useI18n } from '../../i18n'
 
 const OPCIONES = ['Papa', 'Ajo', 'Haba', 'Avena', 'Nada', 'Otro']
+// Nada viene elegido de antemano: lo que no se responde queda sin responder, no como "Papa".
 const TEMPORADAS = [
-  { clave: 'esta', etiqueta: 'Esta temporada', porDefecto: 'Papa' },
-  { clave: 'pasado', etiqueta: 'Año pasado', porDefecto: 'Ajo' },
-  { clave: 'hace2', etiqueta: 'Hace 2 años', porDefecto: 'Papa' },
+  { clave: 'esta', etiqueta: 'Esta temporada' },
+  { clave: 'pasado', etiqueta: 'Año pasado' },
+  { clave: 'hace2', etiqueta: 'Hace 2 años' },
 ] as const
 
 export default function OnbAntes() {
   const { t } = useI18n()
   const navigate = useNavigate()
-  const elegido = leer<Record<string, string>>('onboarding_antes', {
-    esta: 'Papa',
-    pasado: 'Ajo',
-    hace2: 'Papa',
-  })
+  const elegido = leer<Record<string, string>>('onboarding_antes', {})
 
   // Sobre la parcela ya marcada: opcional, y queda en este dispositivo (el servidor todavía no lo guarda).
   const [sector, setSector] = useState(() => leerBorrador().sector)
@@ -35,13 +32,13 @@ export default function OnbAntes() {
       <BarraSuperior volverA="/onboarding/predio" derecha={<StepDots paso={2} total={4} />} />
       <Titulo sub={t('onb_antes_sub')}>{t('onb_antes_titulo')}</Titulo>
 
-      {TEMPORADAS.map(({ clave, etiqueta, porDefecto }) => (
+      {TEMPORADAS.map(({ clave, etiqueta }) => (
         <fieldset key={clave} className="ps-pad-16" style={{ marginTop: 14, border: 'none', padding: 0 }}>
           <legend style={{ padding: '0 4px', marginBottom: 8, fontSize: 18, fontWeight: 800 }}>{etiqueta}</legend>
           <div className="ps-grid-3">
             {OPCIONES.map((op) => (
-              <label key={op} className={`ps-pill ${(elegido[clave] ?? porDefecto) === op ? 'activo' : ''}`}>
-                <input type="radio" name={`t-${clave}`} defaultChecked={(elegido[clave] ?? porDefecto) === op} onChange={() => elegir(clave, op)} className="visually-hidden" />
+              <label key={op} className={`ps-pill ${elegido[clave] === op ? 'activo' : ''}`}>
+                <input type="radio" name={`t-${clave}`} defaultChecked={elegido[clave] === op} onChange={() => elegir(clave, op)} className="visually-hidden" />
                 {op}
               </label>
             ))}

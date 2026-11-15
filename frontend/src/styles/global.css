@@ -398,3 +398,8 @@ button {
     background: var(--arena);
   }
 }
+
+/* Un enlace con aspecto de botón conserva el color de su botón al pasar el cursor. Sin esto, a:hover (arriba)
+   lo pintaba de verde oscuro: texto verde sobre fondo verde en cada botón hecho con <Link>. */
+a.ps-btn:hover { color: var(--sobre-verde); }
+a.ps-btn-secundario:hover { color: var(--carbon); }

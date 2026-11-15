@@ -1,12 +1,14 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Screen, BarraSuperior, Titulo } from '../components/Screen'
 import { IconoFoto, IconoAudio } from '../components/icons'
 import { usePredio } from '../state/PredioContext'
 import { encolarReporte } from '../lib/colaReportes'
+import { nombreEspecie } from '../lib/formato'
 import { useI18n } from '../i18n'
 
-const FASES = ['Brote', 'Hojas', 'Flor', 'Papas', 'Amarilla', 'Cosecha']
+// Etapas que sirven para cualquier cultivo: ninguna nombra una especie.
+const FASES = ['Brote', 'Hojas', 'Flor', 'Fruto o raíz', 'Amarilla', 'Cosecha']
 
 export default function Reportar() {
   const { t } = useI18n()
@@ -19,10 +21,25 @@ export default function Reportar() {
     navigate('/reportar/confirmacion')
   }
 
+  // Sin un cultivo declarado no hay de qué informar: no se inventa uno.
+  if (!idCultivoActivo || !especieActiva) {
+    return (
+      <Screen>
+        <BarraSuperior volverA="/cultivo" />
+        <Titulo sub="Para contarnos cómo va, primero dinos qué sembraste.">Todavía no tienes un cultivo</Titulo>
+        <div style={{ marginTop: 'auto', padding: '16px 16px 32px 16px' }}>
+          <Link to="/onboarding/cultivos" className="ps-btn">
+            Agregar qué sembraste
+          </Link>
+        </div>
+      </Screen>
+    )
+  }
+
   return (
     <Screen>
       <BarraSuperior volverA="/cultivo" />
-      <Titulo>{especieActiva ? `¿Cómo está tu ${especieActiva}?` : t('reportar_titulo')}</Titulo>
+      <Titulo>{`¿Cómo está tu ${nombreEspecie(especieActiva).toLowerCase()}?`}</Titulo>
 
       <fieldset className="ps-pad-16" style={{ marginTop: 16, border: 'none', paddingBlock: 0 }}>
         <legend className="visually-hidden">Elige la foto que más se parece</legend>

@@ -115,7 +115,20 @@ export default function Especies() {
         </div>
       </div>
 
-      <div className="ps-pad-16" style={{ marginTop: 10 }}>
+      {/* Lo principal es el tipo de cultivo. El agua, el clima a futuro y el filtro cambian el cálculo, pero se
+          tocan menos: quedan recogidos en una línea que dice qué está activo. */}
+      <details className="ps-pad-16" style={{ marginTop: 10 }}>
+        <summary
+          style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 44, padding: '0 14px', borderRadius: 14, background: 'var(--hundido)', fontSize: 15, fontWeight: 700 }}
+        >
+          <span>
+            {riego ? 'Con riego' : 'Solo lluvia'}
+            {serie ? ` · Clima ${NOMBRE_ESCENARIO[escenario].toLowerCase()}` : ''}
+            {vista !== 'todas' ? ` · ${VISTAS.find((v) => v.clave === vista)?.nombre}` : ''}
+          </span>
+          <span style={{ color: 'var(--verde)', fontWeight: 800 }}>Cambiar</span>
+        </summary>
+      <div style={{ marginTop: 10 }}>
         <div role="radiogroup" aria-label="Agua del cultivo" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4, padding: 4, borderRadius: 30, background: 'var(--hundido)' }}>
           {([[false, 'Solo lluvia'], [true, 'Con riego']] as const).map(([valor, nombre]) => (
             <button key={nombre} type="button" role="radio" aria-checked={riego === valor} onClick={() => elegirRiego(valor)} className={`ps-pill ${riego === valor ? 'activo' : ''}`} style={{ borderRadius: 26, minHeight: 48 }}>
@@ -153,6 +166,7 @@ export default function Especies() {
           </details>
         </div>
       ) : null}
+      </details>
 
       {ranking && textoDatosFaltantes(ranking.datos_faltantes) ? (
         <p className="ps-pad ps-nota" role="status" style={{ margin: '8px 0 0 0', color: 'var(--precaucion-texto)' }}>
@@ -188,7 +202,7 @@ export default function Especies() {
             ? 'Con este clima a futuro, ninguna especie de este grupo pasa a ser buena opción para tu parcela. Prueba con “Más calor”.'
             : vista === 'en_riesgo'
               ? 'Con este clima a futuro, ninguna especie de este grupo pierde terreno en tu parcela.'
-              : 'Ninguna especie de este grupo resulta apta con el clima y el suelo de tu parcela.'}
+              : `Ninguna de las ${ranking.especies_evaluadas} especies evaluadas de este grupo resulta apta con el clima y el suelo de tu parcela${riego ? '' : ' contando solo la lluvia'}.${riego ? '' : ' Prueba con riego: toca “Cambiar” arriba.'}`}
         </p>
       ) : null}
 
