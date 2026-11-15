@@ -1,5 +1,5 @@
--- Mogewe — schema de base de datos
--- Basado en docs/modelo-conceptual-phenoshield.md (sección 6) y docs/arquitectura-flujos-mogewe.md
+-- mogen — schema de base de datos
+-- Basado en docs/modelo-conceptual-phenoshield.md (sección 6) y docs/arquitectura-flujos-mogen.md
 
 CREATE EXTENSION IF NOT EXISTS postgis;
 

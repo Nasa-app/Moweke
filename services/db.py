@@ -3,7 +3,7 @@ Sesion de base de datos — Fase 3 del plan de MVP.
 
 Lee la cadena de conexion de la variable de entorno DATABASE_URL (en Railway, la
 inyecta el servicio PostGIS; en local, viene de `railway run` o de un .env no
-versionado — ver docs/arquitectura-flujos-mogewe.md, "Secretos y configuracion").
+versionado — ver docs/arquitectura-flujos-mogen.md, "Secretos y configuracion").
 
 Railway entrega DATABASE_URL con el esquema `postgres://`, que SQLAlchemy async
 con asyncpg no acepta tal cual -- necesita `postgresql+asyncpg://`. La conversion

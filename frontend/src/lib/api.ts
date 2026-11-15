@@ -1,4 +1,4 @@
-// Cliente del API real de Mogewe (ver ../../main.py). Cubre auth, parcelas (predio, mapa
+// Cliente del API real de mogen (ver ../../main.py). Cubre auth, parcelas (predio, mapa
 // por celdas, clima diario, especies candidatas), cultivos y fenología. Lo que todavía no
 // tiene endpoint (reportes, observaciones, rotación comparada, red de semillas) usa datos
 // de ejemplo desde lib/mock.ts, marcados como tal en la UI.

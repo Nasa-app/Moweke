@@ -11,7 +11,7 @@ Es conocimiento local sin validar: aca no se compara con datos de estacion, y na
 entra a la simulacion de fechas ni de perdidas (services/pheno_engine.py). Lo que se le
 muestra al agricultor lo marca asi. Un reporte aislado no confirma nada: hacen falta
 `umbral_reportes` agricultores distintos, igual que el resto del diseno (ver
-docs/arquitectura-flujos-mogewe.md, "por que un solo reporte no mueve nada grande").
+docs/arquitectura-flujos-mogen.md, "por que un solo reporte no mueve nada grande").
 
 La logica de arriba no toca la base y se prueba sola (tests/test_indicadores_locales.py);
 las funciones async de abajo son el SQL.

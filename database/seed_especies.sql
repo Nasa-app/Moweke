@@ -1,9 +1,9 @@
--- Mogewe — datos de semilla para las especies del proyecto.
+-- mogen — datos de semilla para las especies del proyecto.
 -- Esto reemplaza a los diccionarios CULTIVOS/PERFIL/REGLAS que vivian hardcodeados en
 -- services/pheno_engine.py, motor_estres.py y motor_rotacion.py. services/catalogo_especies.py
 -- construye los objetos de simulacion leyendo estas filas, no codigo Python.
 --
--- Alcance: solo papa, ajo_chilote, haba y pradera -- las especies reales de Mogewe.
+-- Alcance: solo papa, ajo_chilote, haba y pradera -- las especies reales de mogen.
 -- trigo_primavera/maiz/avena/arveja/raps_invierno del codigo original eran ejemplos
 -- genericos de demostracion, no parte del alcance de Chiloe -- se dejan fuera a proposito,
 -- no se migran.

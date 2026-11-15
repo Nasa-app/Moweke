@@ -1,4 +1,4 @@
-# Mogewe — Modelo conceptual consolidado
+# mogen — Modelo conceptual consolidado
 
 Documento de referencia para la postulación a NASA Space Apps Challenge. Consolida el diseño conceptual completo trabajado hasta ahora. No es código — es la especificación sobre la cual se implementa.
 
@@ -368,4 +368,4 @@ Núcleo universal (cualquier predio del mundo): POWER, SMAP, HLS, MOD13Q1/MCD12Q
 
 - **PhenChile** (PUCV + CONAF): red fenológica nacional ya operando, 10 cámaras en 7 parques de Chile central, combina satélite NASA con fotografía terrestre, ya implementa un semáforo de alerta (RFD > 0.95). No cubre Chiloé ni cultivos, pero es precedente técnico real en Chile — hay que citarlo, no presentar la idea como inédita en el país.
 - **iNaturalist Chile**: ciencia ciudadana de biodiversidad, administrado por el Ministerio del Medio Ambiente.
-- **FAO ZARC**: ya desplegado en Guatemala/Honduras/El Salvador, ajusta fechas de siembra con zonificación de riesgo climático — precedente de la mitad "ajuste de calendario" de este proyecto, sin la capa de ground truth en tiempo real ni la salida de cambio de variedad que Mogewe sí tiene.
+- **FAO ZARC**: ya desplegado en Guatemala/Honduras/El Salvador, ajusta fechas de siembra con zonificación de riesgo climático — precedente de la mitad "ajuste de calendario" de este proyecto, sin la capa de ground truth en tiempo real ni la salida de cambio de variedad que mogen sí tiene.

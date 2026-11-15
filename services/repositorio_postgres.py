@@ -221,7 +221,7 @@ class RepositorioPostgres:
 
 # ---------------------------------------------------------------- dependencia de FastAPI
 """
-Como se conecta con los endpoints (docs/arquitectura-flujos-mogewe.md):
+Como se conecta con los endpoints (docs/arquitectura-flujos-mogen.md):
 
     from fastapi import Depends
     from sqlalchemy.ext.asyncio import AsyncSession

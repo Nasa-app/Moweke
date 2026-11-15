@@ -1,4 +1,4 @@
-# Mogewe — Arquitectura por flujos
+# mogen — Arquitectura por flujos
 
 Base: el modelo conceptual en `modelo-conceptual-phenoshield.md`. Este documento traduce ese modelo a flujos de sistema para construcción.
 

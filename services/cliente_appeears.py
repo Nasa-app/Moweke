@@ -9,7 +9,7 @@ corrio ni una vez. Probar contra una cuenta real antes de confiar en el.
 
 Patron, muy distinto al de POWER: no es una consulta sincrona que devuelve el dato al
 tiro. Es un trabajo asincrono -- se pide, se espera (minutos a horas, no segundos), se
-descarga cuando esta listo. Por eso Flujo 1/2 (docs/arquitectura-flujos-mogewe.md) tienen
+descarga cuando esta listo. Por eso Flujo 1/2 (docs/arquitectura-flujos-mogen.md) tienen
 una tabla `job_extraccion` en vez de llamar esto directo desde un endpoint que el usuario
 espera en pantalla.
 

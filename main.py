@@ -1,5 +1,5 @@
 """
-Mogewe — API. Autenticacion (Fase 2), el flujo del agricultor punto -> predio ->
+mogen — API. Autenticacion (Fase 2), el flujo del agricultor punto -> predio ->
 especies candidatas (/api/parcelas) y las ingestas de verificacion solo para admin
 (/api/admin). Las fases siguientes agregan fenologia, rotacion y alertas sin tocar el
 bloque de auth.
@@ -84,7 +84,7 @@ _CHILE = {"lat_min": -56.0, "lat_max": -17.4, "lon_min": -76.0, "lon_max": -66.0
 # La documentacion interactiva lista todos los endpoints, incluidos los de admin: solo se
 # publica si API_DOCS=1 (desarrollo). En produccion queda apagada.
 _DOCS = os.environ.get("API_DOCS") == "1"
-app = FastAPI(title="Mogewe", docs_url="/docs" if _DOCS else None, redoc_url=None,
+app = FastAPI(title="mogen", docs_url="/docs" if _DOCS else None, redoc_url=None,
               openapi_url="/openapi.json" if _DOCS else None)
 
 # El frontend (Vite, otro origen) llama a esta API desde el navegador con el token en la

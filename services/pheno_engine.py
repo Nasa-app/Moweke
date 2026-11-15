@@ -18,7 +18,7 @@ abajo solo trabajan con el objeto Cultivo que les pasen.
 Cubre el nucleo biofisico y de calibracion con indicadores. No integra satelite
 (HLS/EVI), no corre el dispatcher por bioma, y no tiene I/O con la base de datos mas
 alla de lo que catalogo_especies le entrega ya construido — eso vive en la capa que
-llama a este motor (docs/arquitectura-flujos-mogewe.md, Flujo 4).
+llama a este motor (docs/arquitectura-flujos-mogen.md, Flujo 4).
 `actualizar_calendario_con_confirmacion`, mas abajo, es el punto de enganche para
 reanclar el reloj a la ultima etapa confirmada por el agricultor.
 """
@@ -288,7 +288,7 @@ def confianza(componentes):
 # construyen en tiempo de ejecucion desde la base de datos -- ver services/catalogo_especies.py
 # y database/seed_especies.sql. Este archivo no conoce ninguna especie por nombre.
 def actualizar_calendario_con_confirmacion(clima, etapa_confirmada, fecha_confirmada, lat, c, delta=0.0):
-    """Punto de enganche con Flujo 3/4 (docs/arquitectura-flujos-mogewe.md): cuando llega
+    """Punto de enganche con Flujo 3/4 (docs/arquitectura-flujos-mogen.md): cuando llega
     un reporte de campo confirmando una etapa, el reloj se reancla a esa fecha real en vez
     de seguir acumulando desde la siembra original. Devuelve las fechas proyectadas para
     las etapas que quedan despues de la confirmada.

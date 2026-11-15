@@ -1,4 +1,4 @@
-# Mogewe — Plan de construcción (estado real y fases restantes)
+# mogen — Plan de construcción (estado real y fases restantes)
 
 Reemplaza en vigencia al plan original de puesta en marcha del MVP (Fases 0-11). Esa estructura sigue siendo la referencia de qué se quería construir; este documento es honesto sobre qué de eso existe de verdad hoy, qué se desvió del plan original (y por qué), y qué falta en concreto para llegar a un sistema que un agricultor real use desde un teléfono.
 

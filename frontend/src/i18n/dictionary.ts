@@ -87,7 +87,7 @@ export const diccionario: Record<string, { es: string; en: string }> = {
   hoy_ves_flores: { es: '¿Ves flores en la papa?', en: 'Do you see flowers on the potato?' },
   hoy_fases_luna: { es: 'Fases de la luna', en: 'Moon phases' },
   hoy_saber_williche: { es: 'Saber williche', en: 'Williche knowledge' },
-  emergencia_aviso: { es: 'Aviso preventivo de Mowege', en: 'Mowege preventive notice' },
+  emergencia_aviso: { es: 'Aviso preventivo de mogen', en: 'mogen preventive notice' },
   emergencia_que_hacer: { es: 'Qué hacer', en: 'What to do' },
 
   // cultivo
