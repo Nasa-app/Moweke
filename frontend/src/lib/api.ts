@@ -2,6 +2,7 @@
 // por celdas, clima diario, especies candidatas), cultivos y fenología. Lo que todavía no
 // tiene endpoint (reportes, observaciones, rotación comparada, red de semillas) usa datos
 // de ejemplo desde lib/mock.ts, marcados como tal en la UI.
+import { guardar, leer } from '../state/storage'
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000'
 
@@ -140,6 +141,7 @@ export interface DiaConFocos {
 }
 
 export interface ParcelaDetalle extends Parcela {
+  suelo: SueloDeclarado
   incendios_cercanos: { radio_km: number; revisado: [string, string] | null; dias_con_focos: DiaConFocos[] }
   curva_satelital: { viable: boolean | null; ventanas_con_pasada_pct?: number | null }
 }
@@ -208,7 +210,47 @@ export interface CultivoDeclarado extends Cultivo {
   etapas: string[]
 }
 
-export type Factor = 'temperatura' | 'humedad' | 'helada' | 'ph' | 'radiacion'
+export type Factor =
+  | 'temperatura' | 'humedad' | 'helada' | 'ph' | 'radiacion' | 'altitud' | 'textura'
+  | 'drenaje' | 'salinidad' | 'profundidad' | 'fertilidad'
+
+// Lo que el agricultor responde sobre su suelo; null = sin responder. No se puede medir desde el satélite.
+export interface SueloDeclarado {
+  drenaje: 'poorly' | 'well' | 'excessive' | null
+  salinidad: 'low' | 'medium' | 'high' | null
+  profundidad: 'very_shallow' | 'shallow' | 'medium' | 'deep' | null
+  fertilidad: 'low' | 'moderate' | 'high' | null
+}
+
+export type CategoriaClima = 'tradicional' | 'emergente' | 'en_riesgo'
+export type Escenario = 'observado' | 'moderado' | 'fuerte'
+
+// Compatibilidad de una especie en un periodo: la de un año típico (la mediana) y la de un año difícil (el peor decil).
+export interface PeriodoClima {
+  tipico: number | null
+  dificil: number | null
+}
+
+export interface ClimaEspecie {
+  historico: PeriodoClima
+  reciente: PeriodoClima
+  proyectado: PeriodoClima
+  categoria: CategoriaClima | null
+  cambio_tipico_hasta_horizonte: number
+}
+
+export interface SerieClimatica {
+  anios: number
+  primer_anio: number
+  ultimo_anio: number
+  periodo_historico: [number, number]
+  periodo_reciente: [number, number]
+  horizonte: number
+  temp_c_por_decada_observada: number
+  temp_c_por_decada_usada: number
+  lluvia_pct_por_decada_observada: number
+  escenario: 'observado' | 'supuesto'
+}
 
 export interface Candidata {
   especie: string
@@ -218,6 +260,11 @@ export interface Candidata {
   apta: boolean | null
   marginal?: boolean
   puntaje: number | null
+  puntaje_ano_dificil?: number
+  clima?: ClimaEspecie
+  puntaje_simulacion?: number | null
+  puntaje_ecocrop?: number | null
+  correcciones?: { tipo: string; ph_sitio?: number; ph_minimo?: number; fertilidad_sitio?: string; fertilidad_requerida?: string }[]
   factores: Partial<Record<Factor, number>>
   factor_limitante?: Factor | null
   mes_inicio_temporada?: number | null
@@ -237,6 +284,11 @@ export interface DatosSitio {
   ghi_mensual_kwh_m2_dia: number[] | null
   ph: number | null
   agua_disponible_suelo_mm: number | null
+  altitud_m: number | null
+  altitud_celda_m: number | null
+  correccion_temperatura_c: number
+  textura: 'light' | 'medium' | 'heavy' | null
+  suelo: SueloDeclarado
 }
 
 export interface CandidatasSiembra {
@@ -246,6 +298,13 @@ export interface CandidatasSiembra {
   datos_sitio: DatosSitio
   especies_evaluadas: number
   especies_aptas: number
+  criterio: 'multianual' | 'un_ano'
+  serie_climatica: SerieClimatica | null
+  escenario: Escenario
+  especies_por_categoria_clima: Record<CategoriaClima, number> | null
+  riego: boolean
+  datos_faltantes: string[]
+  suelo_sin_declarar: string[]
   candidatas: Candidata[]
 }
 
@@ -342,6 +401,12 @@ export function verParcela(idParcela: number, fresco = false) {
   return conMemoria(`parcela/${idParcela}`, () => peticion<ParcelaDetalle>(`/api/parcelas/${idParcela}`), fresco)
 }
 
+// Guarda solo lo que cambia; null borra la respuesta. Olvida las lecturas guardadas: la lista de especies cambia.
+export function guardarSuelo(idParcela: number, cambios: Partial<SueloDeclarado>) {
+  olvidarLecturas()
+  return peticion<{ suelo: SueloDeclarado }>(`/api/parcelas/${idParcela}/suelo`, { method: 'PUT', body: cambios })
+}
+
 export function mapaParcela(idParcela: number, capa: CapaMapa) {
   return peticion<MapaPredio>(`/api/parcelas/${idParcela}/mapa`, { query: { capa } })
 }
@@ -360,6 +425,18 @@ export function reintentarIngesta(idParcela: number) {
   )
 }
 
+// El agricultor dice si riega: se guarda en el dispositivo y todas las pantallas lo usan.
+export const leerRiego = () => leer<boolean>('riego', false)
+export const guardarRiego = (riega: boolean) => guardar('riego', riega)
+
+// Cómo sube la temperatura hasta 2040 al evaluar el futuro: lo observado en la parcela o un supuesto.
+export const ESCENARIOS: readonly Escenario[] = ['observado', 'moderado', 'fuerte']
+export const leerEscenario = (): Escenario => {
+  const guardado = leer<string>('escenario_clima', 'observado')
+  return ESCENARIOS.find((e) => e === guardado) ?? 'observado'
+}
+export const guardarEscenario = (escenario: Escenario) => guardar('escenario_clima', escenario)
+
 // Categorías de EcoCrop que el agricultor reconoce como comida.
 export const CATEGORIAS_COMIDA = ['vegetables', 'roots/tubers', 'pulses (grain legumes)', 'cereals & pseudocereals'] as const
 
@@ -368,13 +445,19 @@ export const CATEGORIAS_COMIDA = ['vegetables', 'roots/tubers', 'pulses (grain l
 // esa (apta o no); `limite` en 1 sirve cuando solo importan los datos del sitio.
 export function candidatasSiembra(
   idParcela: number,
-  opciones: { categorias?: readonly string[]; limite?: number; especie?: string } = {},
+  opciones: {
+    categorias?: readonly string[]; limite?: number; especie?: string; riego?: boolean
+    escenario?: Escenario; climaFuturo?: CategoriaClima
+  } = {},
 ) {
   const query = {
     limite: opciones.limite ?? 20,
     incluir_no_aptas: false,
     categorias: opciones.categorias?.length ? opciones.categorias.join(',') : undefined,
     especie: opciones.especie,
+    riego: opciones.riego ?? leerRiego(),
+    escenario: opciones.escenario ?? leerEscenario(),
+    clima_futuro: opciones.climaFuturo,
   }
   return conMemoria(`candidatas/${idParcela}/${JSON.stringify(query)}`, () =>
     peticion<CandidatasSiembra>(`/api/parcelas/${idParcela}/candidatas_siembra`, { query }),

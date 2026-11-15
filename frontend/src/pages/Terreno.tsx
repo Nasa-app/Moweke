@@ -4,9 +4,14 @@ import { Screen, BarraSuperior, Titulo } from '../components/Screen'
 import { MoonStrip } from '../components/MoonStrip'
 import { Chip } from '../components/Chip'
 import { SourceLink } from '../components/SourceLink'
+import { PreguntaSuelo } from '../components/PreguntaSuelo'
 import { IconoIncendio, IconoSiguiente, IconoUbicacion } from '../components/icons'
 import { usePredio } from '../state/PredioContext'
-import { ApiError, candidatasSiembra, mensajeDeError, verParcela, type DatosSitio, type ParcelaDetalle } from '../lib/api'
+import {
+  ApiError, candidatasSiembra, guardarSuelo, mensajeDeError, verParcela,
+  type DatosSitio, type ParcelaDetalle, type SueloDeclarado,
+} from '../lib/api'
+import { PREGUNTAS_SUELO } from '../lib/suelo'
 import { fechaCorta, nombreMes, numero } from '../lib/formato'
 import { useI18n } from '../i18n'
 
@@ -21,6 +26,8 @@ export default function Terreno() {
   const { idParcela } = usePredio()
   const [parcela, setParcela] = useState<ParcelaDetalle | null>(null)
   const [sitio, setSitio] = useState<DatosSitio | null>(null)
+  const [suelo, setSuelo] = useState<SueloDeclarado | null>(null)
+  const [errorSuelo, setErrorSuelo] = useState<string | null>(null)
   const [sinClima, setSinClima] = useState(false)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -29,7 +36,11 @@ export default function Terreno() {
     if (!idParcela) return
     let vigente = true
     Promise.all([
-      verParcela(idParcela).then((p) => vigente && setParcela(p)),
+      verParcela(idParcela).then((p) => {
+        if (!vigente) return
+        setParcela(p)
+        setSuelo(p.suelo)
+      }),
       candidatasSiembra(idParcela, { limite: 1 })
         .then((r) => vigente && setSitio(r.datos_sitio))
         .catch((err) => {
@@ -46,6 +57,19 @@ export default function Terreno() {
   }, [idParcela])
 
   if (!idParcela) return <Navigate to="/terreno/perimetro" replace />
+
+  function elegirSuelo(campo: keyof SueloDeclarado, valor: string | null) {
+    if (!idParcela || !suelo) return
+    const anterior = suelo
+    setErrorSuelo(null)
+    setSuelo({ ...suelo, [campo]: valor })
+    guardarSuelo(idParcela, { [campo]: valor })
+      .then((r) => setSuelo(r.suelo))
+      .catch((err) => {
+        setSuelo(anterior)
+        setErrorSuelo(mensajeDeError(err, 'No pudimos guardar tu respuesta. Revisa tu conexión e inténtalo de nuevo.'))
+      })
+  }
 
   const masFrio = extremo(sitio?.temperatura_media_mensual ?? null, Math.min)
   const masCalido = extremo(sitio?.temperatura_media_mensual ?? null, Math.max)
@@ -174,8 +198,34 @@ export default function Terreno() {
             <SourceLink>Explorador Solar · Sentinel-2</SourceLink>
           </div>
         </div>
+        {sitio && sitio.altitud_m != null && Math.abs(sitio.correccion_temperatura_c) >= 0.3 ? (
+          <p className="ps-nota" style={{ margin: '8px 4px 0 4px' }}>
+            La temperatura está ajustada a la altura de tu parcela ({numero(sitio.altitud_m)} m): es {numero(Math.abs(sitio.correccion_temperatura_c), 1)}° {sitio.correccion_temperatura_c > 0 ? 'más cálida' : 'más fría'} que el promedio de su zona de 5 km.
+          </p>
+        ) : null}
         {cargando ? <p className="ps-nota" style={{ marginTop: 8 }}>{t('cargando')}</p> : null}
       </section>
+
+      {suelo ? (
+        <section aria-labelledby="suelo" className="ps-pad-16" style={{ marginTop: 16 }}>
+          <h2 id="suelo" style={{ padding: '0 4px 8px 4px', margin: 0, fontSize: 14, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--texto-tenue)' }}>
+            Cuéntanos de tu suelo
+          </h2>
+          <div className="ps-card" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <p className="ps-cuerpo" style={{ margin: 0 }}>
+              Esto no se ve desde el satélite. Responde lo que sepas: mejora la lista de qué sembrar. Toca una respuesta otra vez para quitarla.
+            </p>
+            {PREGUNTAS_SUELO.map((p) => (
+              <PreguntaSuelo key={p.campo} pregunta={p.pregunta} ayuda={p.ayuda} opciones={p.opciones} valor={suelo[p.campo]} onElegir={(v) => elegirSuelo(p.campo, v)} />
+            ))}
+            {errorSuelo ? (
+              <p className="ps-nota" role="alert" style={{ margin: 0, color: 'var(--riesgo-texto)' }}>
+                {errorSuelo}
+              </p>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       <MoonStrip />
 

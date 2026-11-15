@@ -5,17 +5,26 @@ import { CompatRing } from '../components/CompatRing'
 import { Chip } from '../components/Chip'
 import { SourceLink } from '../components/SourceLink'
 import { usePredio } from '../state/PredioContext'
-import { candidatasSiembra, declararCultivo, mensajeDeError, type Candidata, type Factor } from '../lib/api'
-import { aIso, aPorcentaje, fechaCorta, nombreClave, nombreEspecie, nombreMes } from '../lib/formato'
+import { candidatasSiembra, declararCultivo, mensajeDeError, type Candidata, type Factor, type PeriodoClima, type SerieClimatica } from '../lib/api'
+import { TEXTO_CATEGORIA_CLIMA, aIso, aPorcentaje, fechaCorta, nombreClave, nombreEspecie, nombreMes, textoDatosFaltantes } from '../lib/formato'
 import { useI18n } from '../i18n'
 
-const ORDEN_FACTORES: Factor[] = ['temperatura', 'helada', 'humedad', 'ph', 'radiacion']
+const ORDEN_FACTORES: Factor[] = [
+  'temperatura', 'helada', 'humedad', 'ph', 'radiacion', 'altitud', 'textura',
+  'drenaje', 'salinidad', 'profundidad', 'fertilidad',
+]
 const DETALLE_FACTOR: Record<Factor, string> = {
   temperatura: 'Calor promedio de la temporada',
   helada: 'Que la noche más fría no la mate',
   humedad: 'Lluvia de la temporada, sin riego',
   ph: 'Qué tan ácido o alcalino es el suelo (pH) para ella',
   radiacion: 'Sol que recibe en la temporada',
+  altitud: 'Altura de tu parcela sobre el mar frente al máximo que tolera',
+  textura: 'Qué tan arenoso o arcilloso es el suelo para ella',
+  drenaje: 'Si tu terreno se inunda o se seca muy rápido frente a lo que tolera',
+  salinidad: 'Cuánta sal tolera en el suelo',
+  profundidad: 'Qué tan profundo es tu suelo frente a lo que necesita',
+  fertilidad: 'Qué tan rica es tu tierra frente a lo que necesita',
 }
 const SEGUIMIENTO: Record<string, { texto: string; detalle: string }> = {
   perfil_calibrado: { texto: 'Te avisamos etapa por etapa', detalle: 'Las etapas están ajustadas con datos de la zona.' },
@@ -35,6 +44,8 @@ export default function Analisis() {
   const clave = params.get('especie')
   const { idParcela, setCultivoActivo } = usePredio()
   const [candidata, setCandidata] = useState<Candidata | null | undefined>(undefined)
+  const [faltantes, setFaltantes] = useState<string[]>([])
+  const [serie, setSerie] = useState<SerieClimatica | null>(null)
   const [variedad, setVariedad] = useState('')
   const [fechaSiembra, setFechaSiembra] = useState(() => aIso(new Date()))
   const [enviando, setEnviando] = useState(false)
@@ -44,7 +55,12 @@ export default function Analisis() {
     if (!idParcela || !clave) return
     let vigente = true
     candidatasSiembra(idParcela, { especie: clave })
-      .then((r) => vigente && setCandidata(r.candidatas.find((c) => c.especie === clave) ?? null))
+      .then((r) => {
+        if (!vigente) return
+        setCandidata(r.candidatas.find((c) => c.especie === clave) ?? null)
+        setFaltantes(r.datos_faltantes)
+        setSerie(r.serie_climatica)
+      })
       .catch((err) => vigente && setError(mensajeDeError(err, 'No pudimos cargar el análisis. Revisa tu conexión e inténtalo de nuevo.')))
     return () => {
       vigente = false
@@ -132,9 +148,30 @@ export default function Analisis() {
               )
             })}
           </ul>
+          {candidata.clima && serie ? (
+            <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
+              Las barras y la mejor temporada son del último año de clima. El porcentaje de arriba resume los años de {serie.periodo_reciente[0]} a {serie.periodo_reciente[1]}.
+            </p>
+          ) : null}
+          {candidata.clima && serie ? <ClimaEnElTiempo clima={candidata.clima} serie={serie} apta={!!candidata.apta} /> : null}
           {candidata.metodo === 'simulacion_por_fase' ? (
             <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
-              El porcentaje de arriba sale de simular el cultivo etapa por etapa con el clima de tu parcela. Las barras muestran lo que esta especie aguanta, según la guía de la FAO.
+              El porcentaje de arriba es el menor entre dos cálculos: simular el cultivo etapa por etapa con el clima de tu parcela, y las barras, que muestran lo que esta especie aguanta según la guía de la FAO.
+            </p>
+          ) : null}
+          {candidata.correcciones?.some((c) => c.tipo === 'encalado') ? (
+            <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
+              Tu suelo es más ácido de lo que esta especie tolera. Se puede corregir con cal (encalado): pide a un técnico la dosis según el análisis de tu suelo.
+            </p>
+          ) : null}
+          {candidata.correcciones?.some((c) => c.tipo === 'fertilizacion') ? (
+            <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
+              Tu tierra tiene menos fertilidad de la que pide esta especie. Se puede mejorar con abono o compost.
+            </p>
+          ) : null}
+          {textoDatosFaltantes(faltantes) ? (
+            <p className="ps-pad ps-nota" role="status" style={{ margin: '8px 0 0 0', color: 'var(--precaucion-texto)' }}>
+              {textoDatosFaltantes(faltantes)}
             </p>
           ) : null}
           {candidata.fuera_de_rangos_ecocrop ? (
@@ -198,6 +235,45 @@ export default function Analisis() {
         </button>
       </div>
     </Screen>
+  )
+}
+
+function FilaPeriodo({ nombre, periodo }: { nombre: string; periodo: PeriodoClima }) {
+  const tipico = aPorcentaje(periodo.tipico)
+  return (
+    <li className="ps-card-plana" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '12px 14px' }}>
+      <span style={{ fontSize: 17, fontWeight: 800 }}>{nombre}</span>
+      <span style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
+        <span style={{ fontSize: 17, fontWeight: 800 }} aria-label={`${tipico} por ciento compatible en un año típico`}>{tipico}% compatible</span>
+        <span className="ps-detalle">{aPorcentaje(periodo.dificil)}% en un año difícil</span>
+      </span>
+    </li>
+  )
+}
+
+// Cómo le fue y le iría a la especie en tu parcela: antes, ahora y hacia el futuro, con el mismo cálculo año por año.
+function ClimaEnElTiempo({ clima, serie, apta }: { clima: NonNullable<Candidata['clima']>; serie: SerieClimatica; apta: boolean }) {
+  const categoria = clima.categoria ? TEXTO_CATEGORIA_CLIMA[clima.categoria] : null
+  return (
+    <>
+      <h2 className="ps-h2" style={{ margin: '18px 20px 0 20px' }}>
+        Cómo cambia con el clima
+      </h2>
+      {categoria ? (
+        <p className="ps-pad ps-cuerpo" style={{ margin: '8px 0 0 0' }}>
+          <b>{categoria.chip}.</b> {categoria.detalle}
+          {!apta && clima.categoria === 'emergente' ? ' Todavía no es apta: lo sería más adelante.' : ''}
+        </p>
+      ) : null}
+      <ul className="ps-pad-16" style={{ margin: '10px 0 0 0', listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <FilaPeriodo nombre={`${serie.periodo_historico[0]} a ${serie.periodo_historico[1]}`} periodo={clima.historico} />
+        <FilaPeriodo nombre={`${serie.periodo_reciente[0]} a ${serie.periodo_reciente[1]}`} periodo={clima.reciente} />
+        <FilaPeriodo nombre={`Hacia ${serie.horizonte}`} periodo={clima.proyectado} />
+      </ul>
+      <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
+        “Hacia {serie.horizonte}” sigue la tendencia del clima de tu parcela (o el escenario que elegiste): sirve para comparar, no es un pronóstico. La compatibilidad dice si el lugar le sirve, no cuánto vas a cosechar.
+      </p>
+    </>
   )
 }
 

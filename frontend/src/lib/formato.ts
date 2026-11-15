@@ -1,5 +1,6 @@
 // Cómo se muestran al agricultor los nombres y fechas que el API entrega como claves
 // (ajo_chilote, emergencia->tuberizacion, 2026-11-14).
+import type { CategoriaClima, Escenario, SerieClimatica } from './api'
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
@@ -22,6 +23,12 @@ const PALABRAS: Record<string, string> = {
   humedad: 'Lluvia',
   ph: 'Acidez del suelo',
   radiacion: 'Sol',
+  altitud: 'Altura',
+  textura: 'Tipo de suelo',
+  drenaje: 'Drenaje',
+  salinidad: 'Sal en el suelo',
+  profundidad: 'Profundidad del suelo',
+  fertilidad: 'Fertilidad',
 }
 
 function capitalizar(texto: string): string {
@@ -84,8 +91,59 @@ export function numero(valor: number | null | undefined, decimales = 0): string 
 }
 
 // Fracción de 0 a 1 (puntaje, pérdida) como porcentaje entero.
+export const NOMBRE_ESCENARIO: Record<Escenario, string> = {
+  observado: 'Como hasta ahora',
+  moderado: 'Más calor',
+  fuerte: 'Mucho más calor',
+}
+
+const grados = (v: number) => v.toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: 'exceptZero' })
+
+// Qué clima a futuro se está suponiendo, dicho en simple.
+export function textoEscenario(escenario: Escenario, serie: SerieClimatica | null): string {
+  if (escenario === 'moderado') return 'Suponemos que la temperatura sube 0,3 °C por década hasta 2040. Es un supuesto, no un pronóstico.'
+  if (escenario === 'fuerte') return 'Suponemos que la temperatura sube 0,6 °C por década hasta 2040. Es un supuesto, no un pronóstico.'
+  if (!serie) return 'Seguimos la tendencia que ha tenido el clima de tu parcela.'
+  const observada = serie.temp_c_por_decada_observada
+  return observada > 0
+    ? `En ${serie.anios} años, la temperatura de tu parcela subió ${grados(observada)} °C por década. Seguimos esa tendencia hasta ${serie.horizonte}.`
+    : `En ${serie.anios} años, la temperatura de tu parcela no ha subido (${grados(observada)} °C por década). No suponemos que baje: sin calentamiento, casi nada cambia hacia ${serie.horizonte}.`
+}
+
+export const TEXTO_CATEGORIA_CLIMA: Record<CategoriaClima, { chip: string; detalle: string }> = {
+  tradicional: { chip: 'Se da bien hace años', detalle: 'Con el clima de los últimos años y el que viene, esta especie se mantiene.' },
+  emergente: { chip: 'Nueva para tu zona', detalle: 'Antes le costaba, y con el clima que viene le iría cada vez mejor.' },
+  en_riesgo: { chip: 'Cada vez menos apta', detalle: 'Hasta ahora se daba, y con el clima que viene le iría peor.' },
+}
+
 export function aPorcentaje(fraccion: number | null | undefined): number {
   return Math.round((fraccion ?? 0) * 100)
+}
+
+const DATOS_FALTANTES: Record<string, string> = {
+  temperatura: 'la temperatura',
+  helada: 'las heladas',
+  lluvia: 'la lluvia',
+  ph: 'la acidez del suelo (pH)',
+  radiacion: 'el sol',
+  agua_suelo: 'el agua que guarda el suelo',
+}
+
+// Aviso para cuando el servidor no pudo medir algo de la parcela: sin ese dato, ese factor no
+// descarta nada y la lista puede traer especies que la parcela no tolera.
+export function textoDatosFaltantes(claves: string[] | undefined): string | null {
+  if (!claves?.length) return null
+  const nombres = claves.map((c) => DATOS_FALTANTES[c] ?? c)
+  const lista = nombres.length > 1 ? `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}` : nombres[0]
+  return `No pudimos medir ${lista} de tu parcela. La lista puede incluir especies que no se den bien aquí.`
+}
+
+// Las preguntas sobre el suelo que el agricultor todavia no responde. Sin ellas la lista no las toma en cuenta.
+export function textoSueloSinDeclarar(claves: string[] | undefined): string | null {
+  if (!claves?.length) return null
+  const nombres = claves.map((c) => PALABRAS[c] ?? c).map((n) => n.toLowerCase())
+  const lista = nombres.length > 1 ? `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}` : nombres[0]
+  return `Cuéntanos de tu suelo (${lista}) para afinar la lista.`
 }
 
 const EFECTOS: Record<string, string> = {
