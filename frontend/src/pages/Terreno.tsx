@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { Screen, BarraSuperior, Titulo } from '../components/Screen'
-import { MoonStrip } from '../components/MoonStrip'
+import { Screen, Titulo } from '../components/Screen'
+import { BottomNav } from '../components/BottomNav'
+import { EscenaTerreno } from '../components/EscenaTerreno'
 import { Chip } from '../components/Chip'
 import { SourceLink } from '../components/SourceLink'
 import { PreguntaSuelo } from '../components/PreguntaSuelo'
@@ -9,9 +10,10 @@ import { IconoIncendio, IconoSiguiente, IconoUbicacion } from '../components/ico
 import { usePredio } from '../state/PredioContext'
 import {
   ApiError, candidatasSiembra, guardarSuelo, mensajeDeError, verParcela,
-  type DatosSitio, type ParcelaDetalle, type SueloDeclarado,
+  type DatosSitio, type ParcelaDetalle, type Poligono, type SueloDeclarado,
 } from '../lib/api'
 import { PREGUNTAS_SUELO } from '../lib/suelo'
+import { leerBorrador } from '../lib/comunas'
 import { fechaCorta, nombreMes, numero } from '../lib/formato'
 import { useI18n } from '../i18n'
 
@@ -19,6 +21,25 @@ function extremo(serie: number[] | null, elegir: (...valores: number[]) => numbe
   if (!serie || serie.length === 0) return null
   const valor = elegir(...serie)
   return { valor, mes: serie.indexOf(valor) }
+}
+
+// El contorno real de la parcela marcada, escalado a un recuadro (el este-oeste se acorta con la latitud).
+function MiniPerimetro({ perimetro }: { perimetro: Poligono }) {
+  const anillo = perimetro.coordinates[0] ?? []
+  if (anillo.length < 3) return <IconoUbicacion stroke="var(--verde)" />
+  const lat0 = anillo.reduce((suma, p) => suma + p[1], 0) / anillo.length
+  const k = Math.cos((lat0 * Math.PI) / 180)
+  const xs = anillo.map((p) => p[0] * k)
+  const ys = anillo.map((p) => -p[1])
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]
+  const lado = Math.max(x1 - x0, y1 - y0) || 1
+  const escala = 36 / lado
+  const puntos = anillo.map((_, i) => `${((xs[i] - x0) * escala + (36 - (x1 - x0) * escala) / 2 + 8).toFixed(1)},${((ys[i] - y0) * escala + (36 - (y1 - y0) * escala) / 2 + 8).toFixed(1)}`).join(' ')
+  return (
+    <svg width={52} height={52} viewBox="0 0 52 52" aria-hidden="true">
+      <polygon points={puntos} fill="var(--ilus-verde, #829E30)" fillOpacity={0.35} stroke="var(--verde)" strokeWidth={2} strokeLinejoin="round" />
+    </svg>
+  )
 }
 
 export default function Terreno() {
@@ -71,6 +92,14 @@ export default function Terreno() {
       })
   }
 
+  const predio = leerBorrador()
+  const subtitulo = parcela
+    ? [predio.sector ? `${predio.sector}, ${predio.comuna}` : predio.comuna,
+        `${numero(parcela.hectareas, 2)} ha`,
+        parcela.altitud_msnm !== null ? `${numero(parcela.altitud_msnm)} msnm` : null,
+        parcela.ecorregion?.nombre].filter(Boolean).join(' · ')
+    : undefined
+
   const masFrio = extremo(sitio?.temperatura_media_mensual ?? null, Math.min)
   const masCalido = extremo(sitio?.temperatura_media_mensual ?? null, Math.max)
   const helada = extremo(sitio?.temperatura_minima_mas_baja_mensual ?? null, Math.min)
@@ -87,32 +116,26 @@ export default function Terreno() {
 
   return (
     <Screen>
-      <BarraSuperior volverA="/planificar" />
-      <Titulo
-        sub={
-          parcela
-            ? [`${numero(parcela.hectareas, 2)} ha`, parcela.altitud_msnm !== null ? `${numero(parcela.altitud_msnm)} msnm` : null, parcela.ecorregion?.nombre]
-                .filter(Boolean)
-                .join(' · ')
-            : undefined
-        }
-      >
-        {t('terreno_titulo')}
-      </Titulo>
+      <div className="ps-topbar" style={{ paddingBottom: 0 }} />
+      <Titulo sub={subtitulo}>{t('terreno_titulo')}</Titulo>
 
       <Link to="/terreno/zonas" className="ps-card" style={{ margin: '12px 16px 0 16px', textDecoration: 'none', color: 'var(--carbon)', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <span aria-hidden="true" style={{ width: 40, height: 40, borderRadius: 12, background: 'var(--menta)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <IconoUbicacion stroke="var(--verde)" />
+        <span aria-hidden="true" style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--menta)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {parcela ? <MiniPerimetro perimetro={parcela.perimetro} /> : <IconoUbicacion stroke="var(--verde)" />}
         </span>
         <span style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <span style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.1 }}>{t('terreno_zonas_sembrar')}</span>
-          <span className="ps-detalle">Qué tan verde, alta e inclinada está cada parte</span>
+          <span className="ps-detalle">{parcela ? `${numero(parcela.hectareas, 2)} ha marcadas · ` : ''}Qué tan verde, alta e inclinada está cada parte</span>
         </span>
         <IconoSiguiente stroke="var(--verde)" />
       </Link>
       <Link to="/terreno/perimetro" className="ps-btn-texto" style={{ margin: '4px 20px 0 20px', justifyContent: 'flex-start', fontSize: 15 }}>
         {t('terreno_cambiar_perimetro')}
       </Link>
+
+      <div className="ps-pad-16" style={{ margin: '8px 16px 0 16px' }}>
+        <EscenaTerreno etiqueta="Ilustración de un predio con casa, árboles y un paño de tierra labrada" />
+      </div>
 
       {sinClima ? (
         <Link to="/terreno/preparando" className="ps-card-plana" style={{ margin: '8px 16px 0 16px', textDecoration: 'none', color: 'var(--carbon)', display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -227,13 +250,13 @@ export default function Terreno() {
         </section>
       ) : null}
 
-      <MoonStrip />
-
       <div style={{ marginTop: 'auto', padding: '16px 16px 32px 16px' }}>
         <Link to="/especies" className="ps-btn">
           {t('onb_ver_que_sembrar')}
         </Link>
       </div>
+
+      <BottomNav />
     </Screen>
   )
 }

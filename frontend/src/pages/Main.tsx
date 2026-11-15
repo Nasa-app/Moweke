@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Screen } from '../components/Screen'
 import { BottomNav } from '../components/BottomNav'
-import { MoonStrip } from '../components/MoonStrip'
 import { Chip } from '../components/Chip'
 import { IconoCheck } from '../components/icons'
 import { useSeguimiento } from '../state/useSeguimiento'
@@ -164,8 +163,6 @@ export default function Main() {
               i
             </Link>
           </div>
-
-          <MoonStrip nota="Creciente: la savia sube a las hojas. Menguante: baja a la raíz." />
         </>
       )}
 

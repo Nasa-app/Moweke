@@ -10,7 +10,7 @@ export const diccionario: Record<string, { es: string; en: string }> = {
   nav_cultivos: { es: 'Cultivos', en: 'Crops' },
   nav_reportar: { es: 'Reportar', en: 'Report' },
   nav_planificar: { es: 'Planificar', en: 'Plan' },
-  nav_semillas: { es: 'Semillas', en: 'Seeds' },
+  nav_terreno: { es: 'Terreno', en: 'Land' },
 
   // acciones comunes
   volver: { es: 'Volver', en: 'Back' },
@@ -72,10 +72,6 @@ export const diccionario: Record<string, { es: string; en: string }> = {
   // perfil
   perfil_mi_parcela: { es: 'Mi parcela', en: 'My plot' },
   perfil_anio_pasado: { es: 'Año pasado', en: 'Last year' },
-  perfil_lo_que_importa: { es: 'Lo que importa', en: 'What matters' },
-  perfil_avisos: { es: 'Avisos', en: 'Alerts' },
-  perfil_leer_voz_alta: { es: 'Leer en voz alta', en: 'Read aloud' },
-  perfil_ayuda_tecnico: { es: 'Ayuda de un técnico', en: 'Help from a technician' },
   perfil_idioma: { es: 'Idioma', en: 'Language' },
   perfil_borrar_datos: { es: 'Borrar mis datos', en: 'Delete my data' },
   perfil_privacidad: { es: 'Privacidad', en: 'Privacy' },
@@ -195,17 +191,6 @@ export const diccionario: Record<string, { es: string; en: string }> = {
   historial_titulo: { es: 'Lo que sembraste', en: 'What you planted' },
   historial_agregar_temporada: { es: 'Agregar temporada', en: 'Add season' },
   historial_que_siembro: { es: '¿Qué siembro ahora?', en: 'What should I plant now?' },
-  plan_titulo: { es: 'Tu plan', en: 'Your plan' },
-  plan_tienes_semilla: { es: '¿Tienes semilla?', en: 'Do you have seed?' },
-  plan_buscar: { es: 'Buscar', en: 'Search' },
-  plan_guardar: { es: 'Guardar plan', en: 'Save plan' },
-  plan_cambiar: { es: 'Cambiar', en: 'Change' },
-  red_titulo: { es: 'Semillas', en: 'Seeds' },
-  red_anonimo: { es: 'Anónimo', en: 'Anonymous' },
-  red_piden: { es: 'Piden', en: 'Requests' },
-  red_mis_pedidos: { es: 'Mis pedidos', en: 'My requests' },
-  red_tengo: { es: 'Tengo', en: 'I have it' },
-  red_pedir_semilla: { es: 'Pedir semilla', en: 'Request seed' },
 
   // fuentes
   fuentes_titulo: { es: '¿De dónde salen los datos?', en: 'Where does the data come from?' },

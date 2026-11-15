@@ -3,7 +3,7 @@ import { Screen, BarraSuperior } from '../components/Screen'
 import { LangSwitch } from '../components/LangSwitch'
 import { useAuth } from '../state/AuthContext'
 import { usePredio } from '../state/PredioContext'
-import { IconoCandado, IconoUbicacion, IconoReloj, IconoCampana, IconoPerfil } from '../components/icons'
+import { IconoCandado, IconoUbicacion, IconoReloj } from '../components/icons'
 import { useI18n } from '../i18n'
 
 export default function Perfil() {
@@ -21,10 +21,6 @@ export default function Perfil() {
   const mosaicos = [
     { a: '/terreno/perimetro', icono: IconoUbicacion, titulo: t('perfil_mi_parcela'), chip: idParcela ? 'Marcada' : 'Sin marcar', tonoChip: idParcela ? 'ps-chip-favorable' : 'ps-chip-precaucion' },
     { a: '/historial', icono: IconoReloj, titulo: t('perfil_anio_pasado'), chip: 'Agregar', tonoChip: 'ps-chip-neutro' },
-    { a: '/fuentes', icono: IconoPerfil, titulo: t('perfil_lo_que_importa'), chip: 'Suelo', tonoChip: 'ps-chip-acento' },
-    { a: '/alertas', icono: IconoCampana, titulo: t('perfil_avisos'), chip: 'WhatsApp', tonoChip: 'ps-chip-acento' },
-    { a: '/fuentes', icono: IconoCampana, titulo: t('perfil_leer_voz_alta'), chip: 'Apagado', tonoChip: 'ps-chip-neutro' },
-    { a: '/fuentes', icono: IconoPerfil, titulo: t('perfil_ayuda_tecnico'), chip: 'Pedir visita', tonoChip: 'ps-chip-clima' },
   ] as const
 
   return (

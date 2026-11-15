@@ -84,7 +84,7 @@ export default function OnbListo() {
       </fieldset>
 
       <div style={{ marginTop: 'auto', padding: '20px 16px 32px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <Link to="/terreno" className="ps-btn">
+        <Link to="/especies" className="ps-btn">
           {t('onb_ver_que_sembrar')}
         </Link>
         <Link to="/hoy" className="ps-btn-texto">

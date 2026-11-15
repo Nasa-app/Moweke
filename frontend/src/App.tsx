@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { I18nProvider } from './i18n'
 import { AuthProvider } from './state/AuthContext'
 import { PredioProvider } from './state/PredioContext'
@@ -21,8 +21,6 @@ import Zonas from './pages/Zonas'
 import Especies from './pages/Especies'
 import Analisis from './pages/Analisis'
 import Historial from './pages/Historial'
-import Plan from './pages/Plan'
-import Red from './pages/Red'
 import Inicio from './pages/Inicio'
 import Main from './pages/Main'
 import Reportar from './pages/Reportar'
@@ -59,8 +57,6 @@ function App() {
               <Route path="/especies" element={<RutaPrivada><Especies /></RutaPrivada>} />
               <Route path="/especies/analisis" element={<RutaPrivada><Analisis /></RutaPrivada>} />
               <Route path="/historial" element={<RutaPrivada><Historial /></RutaPrivada>} />
-              <Route path="/plan" element={<RutaPrivada><Plan /></RutaPrivada>} />
-              <Route path="/semillas" element={<RutaPrivada><Red /></RutaPrivada>} />
 
               <Route path="/hoy" element={<RutaPrivada><Inicio /></RutaPrivada>} />
               <Route path="/cultivo" element={<RutaPrivada><Main /></RutaPrivada>} />
@@ -70,6 +66,7 @@ function App() {
               <Route path="/alertas" element={<RutaPrivada><Alertas /></RutaPrivada>} />
               <Route path="/clima" element={<RutaPrivada><Clima /></RutaPrivada>} />
               <Route path="/fuentes" element={<RutaPrivada><Fuentes /></RutaPrivada>} />
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </BrowserRouter>
         </PredioProvider>

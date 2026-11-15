@@ -77,11 +77,12 @@ export function IconoPlanificar(props: Props) {
   )
 }
 
-export function IconoSemillas(props: Props) {
+export function IconoTerreno(props: Props) {
   return (
-    <svg {...base(props)} stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
-      <ellipse cx="12" cy="13" rx="5" ry="7" />
-      <path d="M12 6v14" />
+    <svg {...base(props)} stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3.5l8.5 4.7-8.5 4.8-8.5-4.8z" />
+      <path d="M3.5 12.2l8.5 4.8 8.5-4.8" />
+      <path d="M3.5 16.2l8.5 4.8 8.5-4.8" />
     </svg>
   )
 }

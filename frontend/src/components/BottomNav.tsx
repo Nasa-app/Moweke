@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { IconoCultivos, IconoHoy, IconoMas, IconoPlanificar, IconoSemillas } from './icons'
+import { IconoCultivos, IconoHoy, IconoMas, IconoPlanificar, IconoTerreno } from './icons'
 import { useI18n } from '../i18n'
 
 const ITEMS = [
@@ -8,8 +8,8 @@ const ITEMS = [
 ] as const
 
 const ITEMS_DERECHA = [
+  { ruta: '/terreno', clave: 'nav_terreno', Icono: IconoTerreno },
   { ruta: '/planificar', clave: 'nav_planificar', Icono: IconoPlanificar },
-  { ruta: '/semillas', clave: 'nav_semillas', Icono: IconoSemillas },
 ] as const
 
 export function BottomNav() {
