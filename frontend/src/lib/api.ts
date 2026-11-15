@@ -146,9 +146,20 @@ export interface ParcelaDetalle extends Parcela {
   suelo: SueloDeclarado
   incendios_cercanos: { radio_km: number; revisado: [string, string] | null; dias_con_focos: DiaConFocos[] }
   curva_satelital: { viable: boolean | null; ventanas_con_pasada_pct?: number | null }
+  cercania_cauce: CercaniaCauce
 }
 
-export type CapaMapa = 'ndvi' | 'altitud' | 'pendiente'
+export interface CercaniaCauce {
+  clase: 'muy_cerca' | 'cerca' | 'lejos' | null
+  celdas_con_dato: number
+  umbrales_m: [number, number]
+  parte_muy_cerca?: number
+  parte_cerca?: number
+  hand_minimo_m?: number
+  hand_mediano_m?: number
+}
+
+export type CapaMapa = 'ndvi' | 'altitud' | 'pendiente' | 'hand'
 
 export interface CeldaMapa {
   type: 'Feature'

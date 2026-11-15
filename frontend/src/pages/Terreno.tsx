@@ -103,6 +103,7 @@ export default function Terreno() {
     null,
   )
   const pasadas = parcela?.curva_satelital.ventanas_con_pasada_pct
+  const cauce = parcela?.cercania_cauce
 
   return (
     <Screen>
@@ -167,8 +168,27 @@ export default function Terreno() {
             </Chip>
           ) : null}
         </div>
+        <div style={{ marginTop: 8, padding: '12px 14px', borderRadius: 16, background: 'var(--blanco)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.15 }}>Cercanía a un cauce</span>
+            <span className="ps-detalle">
+              {!cauce
+                ? t('cargando')
+                : cauce.clase === null
+                  ? 'Todavía sin calcular'
+                  : cauce.clase === 'lejos'
+                    ? `Tu parcela queda a más de ${numero(cauce.umbrales_m[1])} m sobre el cauce más cercano`
+                    : `${numero(Math.round((cauce.clase === 'muy_cerca' ? cauce.parte_muy_cerca : cauce.parte_cerca)! * 100))} % de tu parcela queda a menos de ${numero(cauce.umbrales_m[cauce.clase === 'muy_cerca' ? 0 : 1])} m sobre el cauce`}
+            </span>
+          </span>
+          {cauce?.clase ? (
+            <Chip tono={cauce.clase === 'muy_cerca' ? 'riesgo' : cauce.clase === 'cerca' ? 'precaucion' : 'favorable'}>
+              {cauce.clase === 'muy_cerca' ? 'Muy cerca' : cauce.clase === 'cerca' ? 'Cerca' : 'Lejos'}
+            </Chip>
+          ) : null}
+        </div>
         <p className="ps-nota" style={{ margin: '8px 4px 0 4px' }}>
-          Todavía no avisamos de deslizamientos ni inundaciones. Para eso, sigue los avisos de SENAPRED.
+          La cercanía al cauce es orientativa: mide la altura, no la lluvia ni el caudal. Para deslizamientos y crecidas, sigue los avisos de SENAPRED.
         </p>
       </section>
 

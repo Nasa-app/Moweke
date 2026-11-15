@@ -45,8 +45,8 @@ from services.auth import (EXPIRACION_ANONIMO_MINUTOS, crear_token, decodificar_
 from services.db import obtener_sesion
 from services.limite_intentos import LimiteIntentos
 from services.repositorio_clima import (CAPAS_MAPA, guardar_consulta_grilla, lado_celda_para, leer_clima_diario,
-                                        leer_disponibilidad_optica, leer_factores_et0, leer_historia, leer_humedad_suelo_nasa, leer_incendios,
-                                        leer_mapa, leer_ndvi, leer_sitio)
+                                        leer_cercania_cauce, leer_disponibilidad_optica, leer_factores_et0,
+                                        leer_historia, leer_humedad_suelo_nasa, leer_incendios, leer_mapa, leer_ndvi, leer_sitio)
 from services.repositorio_postgres import RepositorioPostgres
 from motor_estres import PROFUNDIDAD_SUELO_M
 
@@ -503,10 +503,11 @@ async def ver_parcela(id_parcela: int, tareas: BackgroundTasks, session: AsyncSe
     # Los focos de calor se leen aca (Tu terreno, Hoy): si la revision esta vencida, o nunca corrio para esta
     # parcela, se deja refrescandose. Antes solo se refrescaba al pedir el seguimiento de un cultivo, asi que
     # una parcela sin cultivos se quedaba con los focos del dia en que se marco, o sin revisar para siempre.
-    jobs = await ingesta_predio.encolar(session, id_parcela, ("firms",))
+    jobs = await ingesta_predio.encolar(session, id_parcela, ("firms", "inundacion"))
     if jobs:
         tareas.add_task(ingesta_predio.ingerir_predio, id_parcela, jobs)
     return {**parcela, "incendios_cercanos": await leer_incendios(session, id_parcela),
+            "cercania_cauce": await leer_cercania_cauce(session, id_parcela),
             "curva_satelital": await leer_disponibilidad_optica(session, id_parcela),
             "estado_ingesta": await ingesta_predio.estado_ingesta(session, id_parcela)}
 
@@ -536,7 +537,8 @@ async def mapa_parcela(id_parcela: int, tareas: BackgroundTasks,
     """El predio como mapa: un GeoJSON con una entidad por celda de su grilla, recortada
     a la forma del perimetro, y en cada una el valor de la capa pedida -- ver
     repositorio_clima.leer_mapa() y CAPAS_MAPA. Capas: 'ndvi' (vigor de la vegetacion,
-    Sentinel-2, el ultimo dato util), 'altitud' y 'pendiente' (relieve, dato fijo). Si
+    Sentinel-2, el ultimo dato util), 'altitud' y 'pendiente' (relieve, dato fijo) y 'hand'
+    (altura sobre el cauce mas cercano, dato fijo). Si
     los datos de la capa faltan o estan vencidos los deja cargandose y responde con lo
     que hay."""
     parcela = await _parcela_autorizada(id_parcela, usuario, session)

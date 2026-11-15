@@ -50,6 +50,12 @@ export const FUENTES: FuenteDato[] = [
     nota: 'Modelo de elevación Copernicus GLO-30',
   },
   {
+    titulo: 'Cercanía al cauce',
+    detalle: 'Qué tan alto queda tu parcela sobre el cauce más cercano',
+    origenes: ['NASA'],
+    nota: 'HAND de 30 m del centro de datos ASF de NASA, sobre Copernicus GLO-30 · no es un aviso de crecida',
+  },
+  {
     titulo: 'Clima de 35 años',
     detalle: 'Cómo ha sido el clima de tu zona, para elegir qué sembrar',
     origenes: ['Copernicus'],
