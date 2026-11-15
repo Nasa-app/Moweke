@@ -29,14 +29,16 @@ const TEMPORADAS = [
 export default function OnbAntes() {
   const { t } = useI18n()
   const navigate = useNavigate()
-  const elegido = leer<Record<string, string>>('onboarding_antes', {})
+  const [elegido, setElegido] = useState(() => leer<Record<string, string>>('onboarding_antes', {}))
 
   // Sobre la parcela ya marcada: opcional, y queda en este dispositivo (el servidor todavía no lo guarda).
   const [sector, setSector] = useState(() => leerBorrador().sector)
   const [terreno, setTerreno] = useState(() => leerBorrador().terreno)
 
   function elegir(temporada: string, valor: string) {
-    guardar('onboarding_antes', { ...elegido, [temporada]: valor })
+    const nuevo = { ...elegido, [temporada]: valor }
+    setElegido(nuevo)
+    guardar('onboarding_antes', nuevo)
   }
 
   return (
@@ -50,7 +52,7 @@ export default function OnbAntes() {
           <div className="ps-grid-3">
             {OPCIONES.map(({ valor, etiqueta: etiquetaOpcion }) => (
               <label key={valor} className={`ps-pill ${elegido[clave] === valor ? 'activo' : ''}`}>
-                <input type="radio" name={`t-${clave}`} defaultChecked={elegido[clave] === valor} onChange={() => elegir(clave, valor)} className="visually-hidden" />
+                <input type="radio" name={`t-${clave}`} checked={elegido[clave] === valor} onChange={() => elegir(clave, valor)} className="visually-hidden" />
                 {t(etiquetaOpcion)}
               </label>
             ))}

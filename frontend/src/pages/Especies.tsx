@@ -17,6 +17,7 @@ import {
 } from '../lib/formato'
 import { useI18n } from '../i18n'
 import { tr } from '../i18n/dictionary'
+import { PREGUNTAS_SUELO } from '../lib/suelo'
 
 // Grupos de las categorías de uso de EcoCrop (el campo `categorias` de cada candidata).
 const GRUPOS = [
@@ -96,6 +97,11 @@ export default function Especies() {
 
   // En 'Nuevas' y 'En riesgo' el servidor ya filtró por esa categoría, y entran también las que todavía no son aptas.
   const aptas = (ranking?.candidatas ?? []).filter((c) => vista !== 'todas' || c.apta)
+  // Lo que el agricultor respondió sobre su suelo: si ninguna especie resulta apta, puede ser por una de estas respuestas.
+  const respuestasDeSuelo = PREGUNTAS_SUELO.flatMap((p) => {
+    const valor = ranking?.datos_sitio.suelo?.[p.campo]
+    return p.opciones.filter((o) => o.valor === valor).map((o) => o.texto)
+  })
   // Dos especies distintas pueden compartir nombre común (cebollín, bledo): se distinguen con su nombre científico.
   const veces = new Map<string, number>()
   for (const c of ranking?.candidatas ?? []) {
@@ -228,6 +234,14 @@ export default function Especies() {
             : vista === 'en_riesgo'
               ? t('especies_vacio_en_riesgo')
               : t(riego ? 'especies_vacio_riego' : 'especies_vacio_secano', { n: ranking.especies_evaluadas })}
+        </p>
+      ) : null}
+      {ranking && aptas.length === 0 && vista === 'todas' && respuestasDeSuelo.length ? (
+        <p className="ps-pad ps-cuerpo" style={{ margin: '8px 0 0 0' }}>
+          {t('especies_vacio_suelo', { respuestas: respuestasDeSuelo.join(' · ') })}{' '}
+          <Link to="/terreno" style={{ fontWeight: 800 }}>
+            {t('especies_vacio_suelo_cambiar')}
+          </Link>
         </p>
       ) : null}
 

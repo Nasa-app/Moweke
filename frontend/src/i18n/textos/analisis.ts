@@ -233,4 +233,6 @@ export const textos: Record<string, { es: string; en: string }> = {
   preparando_ver_mapa: { es: 'Ver el mapa de mi parcela', en: 'See the map of my plot' },
   preparando_mapa_nota: { es: 'Verdor, altura y pendiente de cada parte. Es opcional.', en: 'Greenness, height and slope of each part. Optional.' },
   preparando_marcar_de_nuevo: { es: 'Marcar la parcela de nuevo', en: 'Mark the plot again' },
+  especies_vacio_suelo: { es: 'Puede deberse a lo que respondiste sobre tu suelo: {respuestas}. Si no estás seguro de una respuesta, quítala y la lista se recalcula.', en: 'This may be because of what you answered about your soil: {respuestas}. If you are not sure about an answer, remove it and the list is recalculated.' },
+  especies_vacio_suelo_cambiar: { es: 'Cambiar mis respuestas', en: 'Change my answers' },
 }
