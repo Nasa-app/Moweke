@@ -126,3 +126,38 @@ def leer_valor_punto(archivo_tif: str, lat: float, lon: float) -> float | None:
         if valor != valor:  # NaN real dentro de la extension (ej. mar, segun el propio raster)
             return None
         return float(valor)
+
+
+# El mapa trae huecos sin dato repartidos por todo el territorio (cerca de dos de cada diez pixeles de la costa de
+# Chiloe, y la mitad de los que rodean un predio tipico): el pixel justo en el centro de un predio suele caer en un
+# hueco aunque el de al lado tenga valor. Se lee entonces el entorno: la mediana de los pixeles con dato, ampliando
+# el radio hasta juntar suficientes.
+RADIOS_ENTORNO_M = (150, 300, 600, 1000)
+PIXELES_MINIMOS = 3
+
+
+def leer_valor_entorno(archivo_tif: str, lat: float, lon: float,
+                       radios_m: tuple[int, ...] = RADIOS_ENTORNO_M) -> tuple[float, int] | None:
+    """(mediana de los pixeles con dato, radio usado en metros) o None si ni el radio mayor tiene dato."""
+    import numpy as np
+    from rasterio.errors import WindowError
+    from rasterio.windows import Window, from_bounds
+
+    with rasterio.open(archivo_tif) as ds:
+        for i, radio in enumerate(radios_m):
+            dlat = radio / 110_574
+            dlon = radio / (111_320 * max(np.cos(np.radians(lat)), 0.01))
+            ventana = from_bounds(lon - dlon, lat - dlat, lon + dlon, lat + dlat, ds.transform)
+            ventana = ventana.round_offsets().round_lengths()
+            try:
+                ventana = ventana.intersection(Window(0, 0, ds.width, ds.height))
+            except WindowError:
+                return None  # el punto cae fuera del raster
+            datos = ds.read(1, window=ventana).astype("float64")
+            validos = datos[np.isfinite(datos)]
+            if ds.nodata is not None and ds.nodata == ds.nodata:
+                validos = validos[validos != ds.nodata]
+            ultimo = i == len(radios_m) - 1
+            if len(validos) >= PIXELES_MINIMOS or (ultimo and len(validos) >= 1):
+                return float(np.median(validos)), radio
+    return None

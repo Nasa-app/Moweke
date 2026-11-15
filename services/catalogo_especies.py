@@ -775,6 +775,7 @@ async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.Da
         out.append({"especie": nombre, "especie_ecocrop": clave if clave != nombre else None,
                     "nombre_cientifico": identidad.get("nombre_cientifico"),
                     "nombres_comunes": identidad.get("nombres_comunes"),
+                    "nombre_es": identidad.get("nombre_es"), "nombre_en": identidad.get("nombre_en"),
                     "categorias": sorted(cats), "forma_vida": identidad.get("forma_vida"),
                     "nivel_madurez": nivel, "fuente_requisitos": req.get("fuente"), **resultado})
 

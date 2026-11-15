@@ -36,6 +36,7 @@ import services.cliente_firms as cliente_firms
 import services.cliente_soilgrids as cliente_soilgrids
 import services.cliente_solar as cliente_solar
 import services.indicadores_locales as indicadores_locales
+from services.riego import lluvia_reciente
 import services.ingesta_predio as ingesta_predio
 import services.multianual as multianual
 from services.auth import (EXPIRACION_ANONIMO_MINUTOS, crear_token, decodificar_token, hash_password,
@@ -487,16 +488,23 @@ async def listar_parcelas(session: AsyncSession = Depends(obtener_sesion),
                            usuario: dict = Depends(usuario_actual)):
     filas = (await session.execute(text("""
         SELECT id, altitud_msnm, ST_Y(ST_Centroid(geometria)) AS lat, ST_X(ST_Centroid(geometria)) AS lon,
-               round((ST_Area(geometria::geography) / 10000)::numeric, 2)::float AS hectareas
+               round((ST_Area(geometria::geography) / 10000)::numeric, 2)::float AS hectareas,
+               ST_AsGeoJSON(geometria, 6) AS perimetro
         FROM parcela WHERE id_usuario = :u ORDER BY id
     """), {"u": usuario["id"]})).mappings().all()
-    return {"parcelas": [dict(f) for f in filas]}
+    return {"parcelas": [{**f, "perimetro": json.loads(f["perimetro"])} for f in filas]}
 
 
 @app.get("/api/parcelas/{id_parcela}")
-async def ver_parcela(id_parcela: int, session: AsyncSession = Depends(obtener_sesion),
+async def ver_parcela(id_parcela: int, tareas: BackgroundTasks, session: AsyncSession = Depends(obtener_sesion),
                        usuario: dict = Depends(usuario_actual)):
     parcela = await _parcela_autorizada(id_parcela, usuario, session)
+    # Los focos de calor se leen aca (Tu terreno, Hoy): si la revision esta vencida, o nunca corrio para esta
+    # parcela, se deja refrescandose. Antes solo se refrescaba al pedir el seguimiento de un cultivo, asi que
+    # una parcela sin cultivos se quedaba con los focos del dia en que se marco, o sin revisar para siempre.
+    jobs = await ingesta_predio.encolar(session, id_parcela, ("firms",))
+    if jobs:
+        tareas.add_task(ingesta_predio.ingerir_predio, id_parcela, jobs)
     return {**parcela, "incendios_cercanos": await leer_incendios(session, id_parcela),
             "curva_satelital": await leer_disponibilidad_optica(session, id_parcela),
             "estado_ingesta": await ingesta_predio.estado_ingesta(session, id_parcela)}
@@ -762,6 +770,9 @@ async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
     humedad_nasa = await leer_humedad_suelo_nasa(session, id_parcela)
     if humedad_nasa and "agua_pct" in resultado["riego"]:
         resultado["riego"]["humedad_suelo_nasa"] = humedad_nasa
+    # Lo que llovio estos dias en el predio: es parte del mismo balance, dicho en dias y milimetros.
+    if "agua_pct" in resultado["riego"]:
+        resultado["riego"]["lluvia_reciente"] = lluvia_reciente(clima["lluvia"], date.today())
     # Eventos que no salen del clima: focos de calor cerca del predio desde la siembra,
     # cada uno con la fase en que estaba el cultivo. Son alerta, no perdida calculada:
     # no hay una regla de dano por incendio con respaldo.
@@ -848,6 +859,14 @@ async def anular_riego(id_cultivo: int, datos: RiegoDeclarado, session: AsyncSes
         {"c": id_cultivo, "f": datos.fecha})).all()
     await session.commit()
     return {"anulado": bool(borrados)}
+
+
+@app.get("/api/especies/nombres")
+async def nombres_especies(response: Response, session: AsyncSession = Depends(obtener_sesion)):
+    """Nombre en espanol e ingles de cada especie y de las variedades conocidas. Es el
+    catalogo publico, sin datos de nadie: no pide sesion para que la interfaz lo cargue al abrir."""
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return await RepositorioPostgres(session).nombres_especies()
 
 
 @app.get("/api/especies/con_seguimiento")
@@ -979,9 +998,15 @@ async def clima_parcela(id_parcela: int, tareas: BackgroundTasks,
         raise HTTPException(status.HTTP_409_CONFLICT, {
             "mensaje": "Todavía no hay clima diario para este predio", "estado_ingesta": estado})
     numero = lambda v: None if v is None or v != v else round(float(v), 1)
+    # Como estuvo o va a estar el cielo: el codigo de tiempo (WMO) que trae el modelo de Open-Meteo para el dia.
+    codigos = {f["fecha"]: int(f["valor"]) for f in (await session.execute(text(
+        "SELECT periodo_inicio AS fecha, valor FROM cache_consulta_grilla WHERE id_parcela = :id "
+        "AND capa = 'openmeteo_codigo_tiempo' AND valor IS NOT NULL AND periodo_inicio >= :desde"),
+        {"id": id_parcela, "desde": hoy - timedelta(days=dias_atras)})).mappings().all()}
     return {"id_parcela": id_parcela, "hoy": hoy.isoformat(),
             "dias": [{"fecha": fecha.date().isoformat(), "tmin": numero(d["tmin"]), "tmax": numero(d["tmax"]),
                       "lluvia_mm": numero(d["lluvia"]), "humedad_relativa": numero(d["rh"]),
+                      "codigo_tiempo": codigos.get(fecha.date()),
                       "fuente": d["fuente"], "horizonte": d["horizonte"]}
                      for fecha, d in serie.iterrows()],
             "correccion_sesgo": serie.attrs.get("correccion_sesgo"), "estado_ingesta": estado}

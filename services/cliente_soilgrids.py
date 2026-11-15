@@ -45,3 +45,38 @@ def consultar_suelo(lat: float, lon: float, profundidad: str = "0-5cm", timeout:
         valor = capa["depths"][0]["values"]["mean"]
         out[nombre] = None if valor is None else valor / factor
     return out
+
+
+# SoilGrids enmascara pixeles de 250 m (agua, roca, urbano) y el del centro de un predio puede ser uno de ellos
+# aunque los de al lado tengan dato. Si el centro viene vacio se prueban cuatro puntos a 250 m (norte, este, sur,
+# oeste) y se saca la mediana de lo que haya. La API publica limita a unas 5 consultas por minuto: son como mucho 5.
+DISTANCIA_VECINOS_M = 250
+VALIDOS_BUSCADOS = 2
+
+
+def consultar_suelo_entorno(lat: float, lon: float, profundidad: str = "0-5cm", timeout: int = 30) -> dict:
+    """Como consultar_suelo(), pero con vecinos si el punto central no tiene dato. Agrega 'pixeles' (cuantos
+    puntos aportaron) y 'vecinos' (True si el valor no es el del centro)."""
+    from statistics import median
+    import math
+
+    centro = consultar_suelo(lat, lon, profundidad, timeout)
+    if centro["ph"] is not None:
+        return {**centro, "pixeles": 1, "vecinos": False}
+    dlat = DISTANCIA_VECINOS_M / 110_574
+    dlon = DISTANCIA_VECINOS_M / (111_320 * max(math.cos(math.radians(lat)), 0.01))
+    validos = []
+    for la, lo in ((lat + dlat, lon), (lat, lon + dlon), (lat - dlat, lon), (lat, lon - dlon)):
+        try:
+            punto = consultar_suelo(la, lo, profundidad, timeout)
+        except requests.RequestException:
+            continue
+        if punto["ph"] is not None:
+            validos.append(punto)
+            if len(validos) >= VALIDOS_BUSCADOS:
+                break
+    if not validos:
+        return {**centro, "pixeles": 0, "vecinos": False}
+    claves = [k for k in centro if k != "profundidad"]
+    mediana = {k: median(p[k] for p in validos if p[k] is not None) if any(p[k] is not None for p in validos) else None for k in claves}
+    return {"profundidad": profundidad, **mediana, "pixeles": len(validos), "vecinos": True}

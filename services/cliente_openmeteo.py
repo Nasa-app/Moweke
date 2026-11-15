@@ -26,6 +26,7 @@ URL_BASE = "https://api.open-meteo.com/v1/forecast"
 MAPEO_COLUMNAS = {
     "temperature_2m_min": "tmin", "temperature_2m_max": "tmax", "precipitation_sum": "lluvia",
     "relative_humidity_2m_mean": "rh", "shortwave_radiation_sum": "radiacion",
+    "weather_code": "codigo_tiempo",   # codigo WMO del dia: 0 despejado ... 3 cubierto, 6x lluvia, 7x nieve, 9x tormenta
 }
 
 DIAS_PRONOSTICO_MAX = 16  # tope real de la API

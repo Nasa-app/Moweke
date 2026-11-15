@@ -165,12 +165,13 @@ async def _solar(session: AsyncSession, id_parcela: int, lat: float, lon: float)
 
 
 async def _soilgrids(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
-    datos = await asyncio.to_thread(cliente_soilgrids.consultar_suelo, lat, lon)
+    datos = await asyncio.to_thread(cliente_soilgrids.consultar_suelo_entorno, lat, lon)
     inicio, fin = date(2020, 1, 1), date(2020, 12, 31)  # version de SoilGrids v2.0
     capas = {"soilgrids_ph": "ph", "soilgrids_arcilla_pct": "arcilla_pct", "soilgrids_arena_pct": "arena_pct",
              "soilgrids_limo_pct": "limo_pct", "soilgrids_carbono_organico_g_kg": "carbono_organico_g_kg"}
+    producto = "SoilGrids_v2.0_vecinos" if datos["vecinos"] else "SoilGrids_v2.0"
     await guardar_consultas_grilla(session, [
-        _fila(id_parcela, capa, inicio, fin, datos[clave], "250m", "SoilGrids_v2.0") for capa, clave in capas.items()])
+        _fila(id_parcela, capa, inicio, fin, datos[clave], "250m", producto) for capa, clave in capas.items()])
     return "sin_cobertura" if datos["ph"] is None else None
 
 
@@ -257,11 +258,13 @@ async def _clsoilmaps(session: AsyncSession, id_parcela: int, lat: float, lon: f
     destino = os.path.join(CACHE_CLSOILMAPS, "Total_AWC_0_200cm.tif")
     async with _candado_clsoilmaps:
         archivo = await asyncio.to_thread(cliente_clsoilmaps.extraer_archivo, CLSOILMAPS_ARCHIVO_INTERNO, destino)
-    valor = await asyncio.to_thread(cliente_clsoilmaps.leer_valor_punto, archivo, lat, lon)
-    # Mapa estatico: se marca con el ano de publicacion (Zenodo, dic-2022).
+    entorno = await asyncio.to_thread(cliente_clsoilmaps.leer_valor_entorno, archivo, lat, lon)
+    valor, radio = entorno if entorno else (None, None)
+    # Mapa estatico: se marca con el ano de publicacion (Zenodo, dic-2022). Es la mediana de los pixeles con dato
+    # alrededor del predio; el radio usado queda en el nombre del producto.
     await guardar_consultas_grilla(session, [
         _fila(id_parcela, "clsoilmaps_awc_total_mm", date(2022, 1, 1), date(2022, 12, 31), valor,
-              "100m", "CLSoilMaps_v1")])
+              "100m", "CLSoilMaps_v1" if radio is None else f"CLSoilMaps_v1_mediana_{radio}m")])
     return "sin_cobertura" if valor is None else None
 
 
@@ -271,7 +274,8 @@ def _celda(lat: float, lon: float) -> tuple[float, float]:
     return round(lat, 2), round(lon, 2)
 
 
-COLUMNAS_DIARIAS = ("tmin", "tmax", "lluvia", "rh", "radiacion", "humedad_suelo_raiz", "humedad_suelo_superficie")
+COLUMNAS_DIARIAS = ("tmin", "tmax", "lluvia", "rh", "radiacion", "humedad_suelo_raiz", "humedad_suelo_superficie",
+                    "codigo_tiempo")
 
 
 def _filas_diarias(id_parcela: int, clima, prefijo: str, resolucion: str, producto: str) -> list[dict]:

@@ -54,8 +54,15 @@ especie = Table(
     "especie", metadata,
     Column("especie", String, primary_key=True),
     Column("nombre_cientifico", String), Column("nombres_comunes", Text),
+    Column("nombre_es", String), Column("nombre_en", String),
     Column("familia_botanica", String), Column("forma_vida", String),
     Column("categorias", ARRAY(Text)), Column("fuente", String),
+)
+
+variedad_especie = Table(
+    "variedad_especie", metadata,
+    Column("especie", String, primary_key=True), Column("clave", String, primary_key=True),
+    Column("nombre_es", String), Column("nombre_en", String), Column("fuente", String),
 )
 
 parametros_agua_cultivo = Table(
@@ -151,6 +158,19 @@ class RepositorioPostgres:
     async def identidades(self) -> dict[str, dict]:
         filas = (await self._s.execute(select(especie))).mappings().all()
         return {f["especie"]: dict(f) for f in filas}
+
+    async def nombres_especies(self) -> dict:
+        """Nombre de cada especie y variedad conocida en espanol e ingles, para que la interfaz
+        los muestre segun el idioma sin pedir el catalogo completo de requisitos."""
+        filas = (await self._s.execute(
+            select(especie.c.especie, especie.c.nombre_es, especie.c.nombre_en, especie.c.nombre_cientifico))).all()
+        variedades = (await self._s.execute(select(variedad_especie).order_by(
+            variedad_especie.c.especie, variedad_especie.c.nombre_es))).mappings().all()
+        return {
+            "especies": {f.especie: {"es": f.nombre_es or f.nombre_cientifico, "en": f.nombre_en or f.nombre_cientifico}
+                         for f in filas},
+            "variedades": [{"especie": v["especie"], "clave": v["clave"], "es": v["nombre_es"], "en": v["nombre_en"]}
+                           for v in variedades]}
 
     async def parametros_agua(self, especie: str) -> dict | None:
         q = select(parametros_agua_cultivo).where(parametros_agua_cultivo.c.especie == especie)

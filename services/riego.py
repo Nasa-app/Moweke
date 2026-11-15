@@ -61,3 +61,23 @@ def recomendar_riego(agua: pd.DataFrame, taw_mm: float, raw_mm: float, horizonte
                          lamina_mm=round(float(agotamiento.loc[dia])),
                          fecha_limite=dia.date().isoformat(), dias_para_riego=int((dia - hoy).days))
     return resultado
+
+
+UMBRAL_LLUVIA_MM = 1.0   # menos que esto no se cuenta como dia de lluvia (rocio, llovizna)
+
+
+def lluvia_reciente(lluvia: pd.Series, hoy, dias: int = 7, horizonte: pd.Series | None = None) -> dict:
+    """Lo que llovio en el predio en los `dias` dias que terminaron antes de hoy, de la serie diaria del predio
+    (CR2MET y, donde todavia no llega, el analisis de Open-Meteo): la lluvia total, cuantos de esos dias
+    traen dato, y hace cuantos dias fue la ultima lluvia de al menos UMBRAL_LLUVIA_MM. Hoy no entra: el dia
+    no termino y su lluvia todavia es de modelo; tampoco el pronostico ni el estimado."""
+    hoy = pd.Timestamp(hoy).normalize()
+    ventana = lluvia.loc[hoy - pd.Timedelta(days=dias):hoy - pd.Timedelta(days=1)].dropna()
+    mojados = ventana[ventana >= UMBRAL_LLUVIA_MM]
+    ultima = None
+    if len(mojados):
+        dia = mojados.index[-1]
+        ultima = {"hace_dias": int((hoy - dia).days), "mm": round(float(mojados.iloc[-1]), 1)}
+    return {"dias": dias, "dias_con_dato": int(len(ventana)), "total_mm": round(float(ventana.sum()), 1),
+            "ultima_lluvia": ultima}
+

@@ -116,11 +116,11 @@ WHERE especie = 'papa' AND peligro = 'tizon';
 -- con su fila equivalente de EcoCrop (ej. papa <-> solanum_tuberosum) para que el ranking
 -- de idoneidad muestre una sola vez la especie, con el perfil mas maduro.
 -- ============================================================
-INSERT INTO especie (especie, nombre_cientifico, nombres_comunes, familia_botanica, categorias, fuente) VALUES
-  ('papa', 'Solanum tuberosum', 'papa', 'Solanaceae', ARRAY['roots/tubers'], 'curado_a_mano'),
-  ('ajo_chilote', 'Allium ampeloprasum', 'ajo chilote', 'Amaryllidaceae', ARRAY['vegetables'], 'curado_a_mano'),
-  ('haba', 'Vicia faba', 'haba', 'Fabaceae', ARRAY['pulses (grain legumes)'], 'curado_a_mano'),
-  ('pradera', NULL, 'pradera', NULL, ARRAY['forage/pasture'], 'curado_a_mano');
+INSERT INTO especie (especie, nombre_cientifico, nombres_comunes, nombre_es, nombre_en, familia_botanica, categorias, fuente) VALUES
+  ('papa', 'Solanum tuberosum', 'papa', 'Papa', 'Potato', 'Solanaceae', ARRAY['roots/tubers'], 'curado_a_mano'),
+  ('ajo_chilote', 'Allium ampeloprasum', 'ajo chilote', 'Ajo chilote', 'Chiloé garlic', 'Amaryllidaceae', ARRAY['vegetables'], 'curado_a_mano'),
+  ('haba', 'Vicia faba', 'haba', 'Haba', 'Faba bean', 'Fabaceae', ARRAY['pulses (grain legumes)'], 'curado_a_mano'),
+  ('pradera', NULL, 'pradera', 'Pradera', 'Pasture', NULL, ARRAY['forage/pasture'], 'curado_a_mano');
 
 -- ============================================================
 -- equivalencia_luz_ghi: categorias de luz de EcoCrop -> GHI del sitio (kWh/m2/dia).

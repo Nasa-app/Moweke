@@ -271,10 +271,24 @@ CREATE TABLE especie (
   especie VARCHAR PRIMARY KEY,
   nombre_cientifico VARCHAR,
   nombres_comunes TEXT,          -- texto libre multilingue tal como viene de la fuente
+  nombre_es VARCHAR,             -- nombre para mostrar en espanol / ingles; NULL = usar el cientifico
+  nombre_en VARCHAR,
   familia_botanica VARCHAR,
   forma_vida VARCHAR,
   categorias TEXT[],
   fuente VARCHAR NOT NULL
+);
+
+-- Variedades locales conocidas de una especie, con su nombre por idioma. variedad_local (en
+-- predio_cultivos) sigue siendo texto libre: si coincide con `clave` se muestra el nombre del
+-- idioma activo, si no, tal como lo escribio el agricultor.
+CREATE TABLE variedad_especie (
+  especie VARCHAR NOT NULL REFERENCES especie(especie),
+  clave VARCHAR NOT NULL,
+  nombre_es VARCHAR NOT NULL,
+  nombre_en VARCHAR NOT NULL,
+  fuente VARCHAR NOT NULL,
+  PRIMARY KEY (especie, clave)
 );
 
 -- Equivalencia entre las categorias de luz de EcoCrop y la radiacion global horizontal
