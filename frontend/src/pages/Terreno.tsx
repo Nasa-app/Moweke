@@ -195,7 +195,7 @@ export default function Terreno() {
             <span style={{ fontSize: 15, fontWeight: 700 }}>
               {pasadas != null ? `El satélite ve tu parcela sin nubes el ${numero(pasadas)}% de las veces` : 'Promedio del año'}
             </span>
-            <SourceLink>Explorador Solar · Sentinel-2</SourceLink>
+            <SourceLink>{sitio?.fuente_radiacion ?? 'Radiación solar'} · Sentinel-2 (Copernicus)</SourceLink>
           </div>
         </div>
         {sitio && sitio.altitud_m != null && Math.abs(sitio.correccion_temperatura_c) >= 0.3 ? (

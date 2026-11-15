@@ -33,8 +33,14 @@ URL_BASE = "https://power.larc.nasa.gov/api/temporal/daily/point"
 
 # Nombres de columna de POWER -> nombres que el motor espera. RH2M entra directo como
 # `rh` porque motor_estres.alertas() y pheno_engine lo usan tal cual (riesgo de tizon).
+#
+# GWETROOT / GWETTOP: humedad del suelo de NASA, "la proporcion del maximo que el suelo puede almacenar"
+# (0 a 1), para la zona de raices (~1 m) y la superficie. Es un reanalisis de ~50 km de celda: sirve de
+# contexto regional, no es una medicion del predio ni equivale al agua aprovechable del balance FAO-56.
+# VERIFICADO en vivo (Castro, nov-2026): se piden en la misma llamada, sin credenciales.
 MAPEO_COLUMNAS = {"T2M_MIN": "tmin", "T2M_MAX": "tmax", "PRECTOTCORR": "lluvia", "RH2M": "rh",
-                   "ALLSKY_SFC_SW_DWN": "radiacion"}
+                   "ALLSKY_SFC_SW_DWN": "radiacion",
+                   "GWETROOT": "humedad_suelo_raiz", "GWETTOP": "humedad_suelo_superficie"}
 
 VALOR_SIN_DATO = -999.0  # asi marca POWER los dias sin dato -- NO es un cero real
 
@@ -99,6 +105,18 @@ def consultar_climatologia(lat: float, lon: float, timeout: int = 20) -> pd.Data
     datos = r.json()["properties"]["parameter"]
     return pd.DataFrame({MAPEO_CLIMATOLOGIA[col]: [valores[m] for m in MESES]
                           for col, valores in datos.items()}, index=MESES)
+
+
+MJ_POR_KWH = 3.6
+# Periodo que POWER declara para su climatologia (encabezado v2.10.1 del 15-nov-2026: "25-year ... January
+# 2001 - December 2025"). La radiacion viene de CERES SYN1deg, celda de 1 grado (~100 km).
+PERIODO_CLIMATOLOGIA = ("2001-01-01", "2025-12-31")
+
+
+def ghi_mensual_kwh(climatologia: pd.DataFrame) -> list[float | None]:
+    """Radiacion global horizontal media de cada mes (kWh/m2/dia, enero primero) a partir de
+    consultar_climatologia(), que la entrega en MJ/m2/dia. Un mes sin dato (-999) queda en None."""
+    return [None if v != v or v < 0 else float(v) / MJ_POR_KWH for v in climatologia.loc[MESES, "radiacion"]]
 
 
 def anomalia_diaria(clima_actual: pd.DataFrame, climatologia: pd.DataFrame) -> pd.DataFrame:

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Screen, BarraSuperior, Titulo } from '../components/Screen'
 import { IconoUbicacion } from '../components/icons'
-import { fuentesDatos } from '../lib/mock'
+import { CLASE_ORIGEN, FUENTES } from '../lib/fuentes'
 import { useI18n } from '../i18n'
 
 export default function Fuentes() {
@@ -12,8 +12,13 @@ export default function Fuentes() {
       <Titulo>{t('fuentes_titulo')}</Titulo>
 
       <div className="ps-pad-16" style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {fuentesDatos.map((f) => (
+        {FUENTES.map((f) => (
           <article key={f.titulo} className="ps-card" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {f.origenes.map((o) => (
+                <span key={o} className={`ps-chip ${CLASE_ORIGEN[o]}`}>{o}</span>
+              ))}
+            </span>
             <h2 style={{ margin: 0, fontWeight: 800, fontSize: 20 }}>{f.titulo}</h2>
             <span style={{ fontSize: 16, fontWeight: 700 }}>{f.detalle}</span>
             <span className="ps-nota">{f.nota}</span>

@@ -75,6 +75,11 @@ def ventana_clima(hoy: date) -> tuple[date, date]:
 
 
 CAPAS_GHI_MENSUAL = tuple(f"explorador_solar_ghi_mes_{m:02d}" for m in range(1, 13))
+# La misma radiacion mensual (kWh/m2/dia), de la climatologia de 25 anos de NASA POWER. Es global y manda en
+# leer_sitio(); el Explorador Solar (solo Chile, mas fino) queda de respaldo.
+CAPAS_GHI_POWER = tuple(f"power_ghi_mes_{m:02d}" for m in range(1, 13))
+FUENTE_RADIACION_POWER = "NASA POWER"
+FUENTE_RADIACION_EXPLORADOR = "Explorador Solar (Chile)"
 # Factor por mes que lleva la ET0 de Hargreaves (con el clima de CR2MET) al nivel de Penman-Monteith (ERA5): ver
 # ingesta_predio._clima_historico. Enero = mes 1.
 CAPAS_ET0_FACTOR_MENSUAL = tuple(f"et0_factor_hargreaves_mes_{m:02d}" for m in range(1, 13))
@@ -126,12 +131,19 @@ async def leer_sitio(session: AsyncSession, id_parcela: int, hoy: date | None = 
     que falte queda en None -- quien llama decide que hacer, aca no se inventa nada."""
     inicio, fin = ventana_clima(hoy or date.today())
     estaticas = ["soilgrids_ph", "soilgrids_arcilla_pct", "soilgrids_arena_pct", "clsoilmaps_awc_total_mm",
-                 "cr2met_elevacion_celda_m", *CAPAS_ET0_FACTOR_MENSUAL, *CAPAS_GHI_MENSUAL]
+                 "cr2met_elevacion_celda_m", *CAPAS_ET0_FACTOR_MENSUAL, *CAPAS_GHI_MENSUAL, *CAPAS_GHI_POWER]
     filas = (await session.execute(text(
         "SELECT capa, valor FROM cache_consulta_grilla WHERE id_parcela = :id AND capa = ANY(:capas)"
     ), {"id": id_parcela, "capas": estaticas})).mappings().all()
     valores = {f["capa"]: f["valor"] for f in filas}
-    ghi = [valores.get(c) for c in CAPAS_GHI_MENSUAL]
+    ghi_power = [valores.get(c) for c in CAPAS_GHI_POWER]
+    ghi_explorador = [valores.get(c) for c in CAPAS_GHI_MENSUAL]
+    if all(v is not None for v in ghi_power):
+        ghi, fuente_radiacion = ghi_power, FUENTE_RADIACION_POWER
+    elif all(v is not None for v in ghi_explorador):
+        ghi, fuente_radiacion = ghi_explorador, FUENTE_RADIACION_EXPLORADOR
+    else:
+        ghi, fuente_radiacion = [None], None
     et0_factor = [valores.get(c) for c in CAPAS_ET0_FACTOR_MENSUAL]
 
     filas_clima = (await session.execute(text("""
@@ -155,7 +167,7 @@ async def leer_sitio(session: AsyncSession, id_parcela: int, hoy: date | None = 
             "arcilla_pct": valores.get("soilgrids_arcilla_pct"), "arena_pct": valores.get("soilgrids_arena_pct"),
             "altitud_celda_m": valores.get("cr2met_elevacion_celda_m"),
             "altitud_dem_m": None if altitud_dem is None else float(altitud_dem),
-            "ghi_mensual": ghi if all(v is not None for v in ghi) else None,
+            "ghi_mensual": ghi if all(v is not None for v in ghi) else None, "fuente_radiacion": fuente_radiacion,
             "et0_factor_mensual": et0_factor if all(v is not None for v in et0_factor) else None,
             "clima": clima, "periodo_clima": (inicio, fin)}
 
@@ -335,6 +347,39 @@ async def leer_clima_diario(session: AsyncSession, id_parcela: int, desde: date,
 RADIO_INCENDIO_KM = 10.0
 _CAPAS_INCENDIO = {"firms_focos_dia": "focos", "firms_distancia_min_km": "distancia_min_km",
                    "firms_frp_max_dia": "frp_max_mw"}
+
+
+HUMEDAD_SUELO_VENTANA_DIAS = 14   # POWER publica con unos dias de atraso: se mira un tramo, no solo hoy
+HUMEDAD_SUELO_DIAS_MOSTRADOS = 7
+RESOLUCION_HUMEDAD_SUELO_KM = 50  # celda de 0,5 grado de latitud
+
+
+def resumir_humedad_suelo(filas) -> dict | None:
+    """De las filas (capa, fecha, valor) de la humedad del suelo de NASA POWER, el dato mas reciente de la zona de
+    raices y su recorrido de los ultimos dias. None si no hay ninguno. Los valores son la proporcion (0 a 1) del
+    maximo que el suelo puede almacenar, en una celda de unos 50 km: contexto regional, no una medicion del predio."""
+    raiz = {f["fecha"]: f["valor"] for f in filas if f["capa"] == "power_humedad_suelo_raiz"}
+    if not raiz:
+        return None
+    superficie = {f["fecha"]: f["valor"] for f in filas if f["capa"] == "power_humedad_suelo_superficie"}
+    ultimo = max(raiz)
+    return {"zona_raices": round(raiz[ultimo], 2),
+            "superficie": round(superficie[ultimo], 2) if ultimo in superficie else None,
+            "fecha": ultimo.isoformat(),
+            "ultimos_dias": [{"fecha": d.isoformat(), "zona_raices": round(v, 2)}
+                             for d, v in sorted(raiz.items())[-HUMEDAD_SUELO_DIAS_MOSTRADOS:]],
+            "fuente": "NASA POWER", "resolucion_km": RESOLUCION_HUMEDAD_SUELO_KM}
+
+
+async def leer_humedad_suelo_nasa(session: AsyncSession, id_parcela: int, hoy: date | None = None) -> dict | None:
+    hoy = hoy or date.today()
+    filas = (await session.execute(text("""
+        SELECT capa, periodo_inicio AS fecha, valor FROM cache_consulta_grilla
+        WHERE id_parcela = :id AND capa IN ('power_humedad_suelo_raiz', 'power_humedad_suelo_superficie')
+          AND valor IS NOT NULL AND periodo_inicio <= :hoy AND periodo_inicio > :desde
+        ORDER BY periodo_inicio
+    """), {"id": id_parcela, "hoy": hoy, "desde": hoy - timedelta(days=HUMEDAD_SUELO_VENTANA_DIAS)})).mappings().all()
+    return resumir_humedad_suelo(filas)
 
 
 async def leer_incendios(session: AsyncSession, id_parcela: int, desde: date | None = None) -> dict:

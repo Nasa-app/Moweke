@@ -7,6 +7,13 @@ type RiegoConEstimacion = Extract<Riego, { estado: 'regar_ya' | 'proximos_dias' 
 
 const dias = (n: number) => `${n} ${n === 1 ? 'día' : 'días'}`
 
+// Cómo viene cambiando la humedad del suelo de NASA en la última semana; menos de 3 puntos no se llama cambio.
+function tendencia(ultimos: { zona_raices: number }[]): string {
+  if (ultimos.length < 2) return ''
+  const cambio = ultimos[ultimos.length - 1].zona_raices - ultimos[0].zona_raices
+  return cambio >= 0.03 ? 'subiendo' : cambio <= -0.03 ? 'bajando' : 'estable'
+}
+
 // Cuándo regar según el balance de agua del cultivo. Es una estimación con el clima y el suelo de
 // la parcela, no una medición: la tarjeta lo dice y deja anotar un riego para que el cálculo parta de ahí.
 export function TarjetaRiego({ riego, idCultivo, hoy, onCambio }: {
@@ -65,6 +72,22 @@ export function TarjetaRiego({ riego, idCultivo, hoy, onCambio }: {
         {t('riego_agua')}: {r.agua_pct}% · {t('riego_umbral')} {r.umbral_pct}%
         {r.ultimo_riego ? ` · ${t('riego_ultimo')}: ${fechaCorta(r.ultimo_riego)}` : ''}
       </span>
+
+      {r.humedad_suelo_nasa ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="ps-chip ps-chip-clima">NASA</span>
+            <span style={{ fontSize: 16, fontWeight: 700 }}>
+              Humedad del suelo en tu región: {Math.round(r.humedad_suelo_nasa.zona_raices * 100)}%
+              {tendencia(r.humedad_suelo_nasa.ultimos_dias) ? ` · ${tendencia(r.humedad_suelo_nasa.ultimos_dias)}` : ''}
+            </span>
+          </span>
+          <span className="ps-nota">
+            {r.humedad_suelo_nasa.fuente}, al {fechaCorta(r.humedad_suelo_nasa.fecha)}. Es una celda de unos {r.humedad_suelo_nasa.resolucion_km} km:
+            sirve de referencia de la región, no mide tu parcela.
+          </span>
+        </div>
+      ) : null}
 
       {regoHoy ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

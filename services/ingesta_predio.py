@@ -65,7 +65,8 @@ from rasterio.warp import transform as reproyectar
 from services import (cliente_clsoilmaps, cliente_copernicus, cliente_cr2met, cliente_dem, cliente_firms,
                       cliente_openmeteo, cliente_power, cliente_soilgrids, cliente_solar, db)
 from services.motor_estres import calibrar_et0_mensual
-from services.repositorio_clima import (CAPAS_ET0_FACTOR_MENSUAL, CAPAS_GHI_MENSUAL, CAPAS_DISPONIBILIDAD_OPTICA,
+from services.repositorio_clima import (CAPAS_ET0_FACTOR_MENSUAL, CAPAS_GHI_MENSUAL, CAPAS_GHI_POWER,
+                                        CAPAS_DISPONIBILIDAD_OPTICA,
                                         FRACCION_MIN_CELDA, NUBOSIDAD_ESCENA_MAX_PCT, RADIO_INCENDIO_KM,
                                         VENTANA_OPTICA_DIAS, corregir_contra_cr2met, guardar_celdas,
                                         guardar_consultas_grilla, guardar_historia, leer_disponibilidad_optica,
@@ -270,10 +271,16 @@ def _celda(lat: float, lon: float) -> tuple[float, float]:
     return round(lat, 2), round(lon, 2)
 
 
+COLUMNAS_DIARIAS = ("tmin", "tmax", "lluvia", "rh", "radiacion", "humedad_suelo_raiz", "humedad_suelo_superficie")
+
+
 def _filas_diarias(id_parcela: int, clima, prefijo: str, resolucion: str, producto: str) -> list[dict]:
+    """Una fila por dia y columna. Solo se guardan las columnas que la fuente trae: POWER entrega tambien la
+    humedad del suelo; Open-Meteo no."""
     filas = []
+    columnas = [c for c in COLUMNAS_DIARIAS if c in clima.columns]
     for fecha, dia in clima.iterrows():
-        for columna in ("tmin", "tmax", "lluvia", "rh", "radiacion"):
+        for columna in columnas:
             valor = dia[columna]
             if valor == valor:  # se salta el NaN (dia todavia sin dato)
                 filas.append(_fila(id_parcela, f"{prefijo}_{columna}", fecha.date(), fecha.date(), valor,
@@ -293,7 +300,30 @@ async def _power(session: AsyncSession, id_parcela: int, lat: float, lon: float)
                                      desde.isoformat(), hoy.isoformat(), 60)
     filas = _filas_diarias(id_parcela, clima, "power", "0.5deg_~55km", "POWER_daily_ag")
     await guardar_consultas_grilla(session, filas)
+    if filas:
+        await _power_radiacion_mensual(session, id_parcela, lat, lon)
     return None if filas else "sin_cobertura"
+
+
+async def _power_radiacion_mensual(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> None:
+    """La radiacion mensual de la climatologia de 25 anos de POWER (kWh/m2/dia), que usa el ranking de especies.
+    Es un dato fijo: se pide una sola vez por predio. Si falla, no detiene la ingesta diaria: el ranking cae al
+    Explorador Solar (repositorio_clima.leer_sitio)."""
+    ya = (await session.execute(text(
+        "SELECT count(*) FROM cache_consulta_grilla WHERE id_parcela = :id AND capa = ANY(:capas) AND valor IS NOT NULL"),
+        {"id": id_parcela, "capas": list(CAPAS_GHI_POWER)})).scalar_one()
+    if ya >= len(CAPAS_GHI_POWER):
+        return
+    try:
+        climatologia = await asyncio.to_thread(cliente_power.consultar_climatologia, *_celda(lat, lon), 60)
+        mensual = cliente_power.ghi_mensual_kwh(climatologia)
+    except Exception:
+        log.warning("parcela %s: no se pudo pedir la climatologia de radiacion de POWER", id_parcela, exc_info=True)
+        return
+    inicio, fin = (date.fromisoformat(d) for d in cliente_power.PERIODO_CLIMATOLOGIA)
+    await guardar_consultas_grilla(session, [
+        _fila(id_parcela, capa, inicio, fin, valor, "1deg_~100km", "POWER_climatologia_25a_CERES_SYN1deg")
+        for capa, valor in zip(CAPAS_GHI_POWER, mensual)])
 
 
 async def _open_meteo(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:

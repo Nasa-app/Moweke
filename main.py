@@ -43,7 +43,7 @@ from services.auth import (EXPIRACION_ANONIMO_MINUTOS, crear_token, decodificar_
 from services.db import obtener_sesion
 from services.limite_intentos import LimiteIntentos
 from services.repositorio_clima import (CAPAS_MAPA, guardar_consulta_grilla, lado_celda_para, leer_clima_diario,
-                                        leer_disponibilidad_optica, leer_factores_et0, leer_historia, leer_incendios,
+                                        leer_disponibilidad_optica, leer_factores_et0, leer_historia, leer_humedad_suelo_nasa, leer_incendios,
                                         leer_mapa, leer_ndvi, leer_sitio)
 from services.repositorio_postgres import RepositorioPostgres
 from motor_estres import PROFUNDIDAD_SUELO_M
@@ -633,6 +633,7 @@ async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
             "lluvia_mensual_mm": redondear(normales["lluvia"]),
             "lluvia_anual_mm": None if normales["lluvia"] is None else round(sum(normales["lluvia"]), 1),
             "ghi_mensual_kwh_m2_dia": redondear(sitio["ghi_mensual"]),
+            "fuente_radiacion": sitio["fuente_radiacion"],
             "ph": sitio["ph"], "agua_disponible_suelo_mm": sitio["awc_mm"],
             "altitud_m": None if altitud is None else round(altitud),
             "altitud_celda_m": None if sitio["altitud_celda_m"] is None else round(sitio["altitud_celda_m"]),
@@ -755,6 +756,11 @@ async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
                              "Esta especie todavía no tiene seguimiento por etapa: solo se evalúa si el sitio le sirve")
     except ValueError:
         raise HTTPException(status.HTTP_409_CONFLICT, sin_clima)
+    # Humedad del suelo de NASA (POWER), como contexto junto a la recomendacion de riego: es de una celda de ~50 km y
+    # no entra al balance de agua del predio, asi que viaja aparte de los calculos.
+    humedad_nasa = await leer_humedad_suelo_nasa(session, id_parcela)
+    if humedad_nasa and "agua_pct" in resultado["riego"]:
+        resultado["riego"]["humedad_suelo_nasa"] = humedad_nasa
     # Eventos que no salen del clima: focos de calor cerca del predio desde la siembra,
     # cada uno con la fase en que estaba el cultivo. Son alerta, no perdida calculada:
     # no hay una regla de dano por incendio con respaldo.

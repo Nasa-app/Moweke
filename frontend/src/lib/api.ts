@@ -282,6 +282,7 @@ export interface DatosSitio {
   lluvia_mensual_mm: number[] | null
   lluvia_anual_mm: number | null
   ghi_mensual_kwh_m2_dia: number[] | null
+  fuente_radiacion: string | null
   ph: number | null
   agua_disponible_suelo_mm: number | null
   altitud_m: number | null
@@ -341,6 +342,17 @@ export interface FaseCultivo {
 // especies con parámetros de agua traen `disponible: true`.
 export type EstadoRiego = 'sin_sembrar' | 'fuera_de_ciclo' | 'regar_ya' | 'proximos_dias' | 'sin_necesidad'
 
+// Humedad del suelo de NASA POWER: la proporción (0 a 1) del máximo que el suelo puede almacenar, en una celda de
+// unos 50 km. Es una referencia de la región, no una medición del predio ni el agua aprovechable del balance.
+export interface HumedadSueloNasa {
+  zona_raices: number
+  superficie: number | null
+  fecha: string
+  ultimos_dias: { fecha: string; zona_raices: number }[]
+  fuente: string
+  resolucion_km: number
+}
+
 export type Riego =
   | { disponible: false; motivo: string }
   | { disponible: true; estado: 'sin_sembrar' | 'fuera_de_ciclo' }
@@ -357,6 +369,7 @@ export type Riego =
       dias_revisados: number
       ultimo_riego: string | null
       suelo_medido: boolean
+      humedad_suelo_nasa?: HumedadSueloNasa
     }
 
 export interface Fenologia {
