@@ -1,0 +1,131 @@
+"""Suelo que declara el agricultor (drenaje, sal, profundidad, fertilidad) y correccion de la
+temperatura por altitud."""
+import pandas as pd
+import pytest
+
+import catalogo_especies as ce
+from catalogo_prueba import clima_prueba, correr, repo_prueba, req, sitio_de
+
+BASE = dict(tb=4, topt=(12, 20), tc=30, letal=-4, lluvia=(300, 500, 1400, 2200), ph=(5.0, 5.2, 7.5, 8.0), ciclo=(100, 140))
+
+
+def evaluar(sitio, **terreno):
+    fila = (req("sp", **BASE, **terreno), ["vegetables"])
+    rk = correr(ce.ranking_idoneidad(sitio, repo_prueba(con_luz=False, extra=[fila])))
+    return next(r for r in rk if r["especie"] == "sp")
+
+
+def con_suelo(**suelo):
+    return sitio_de("chiloe", suelo=suelo)
+
+
+# ---------------------------------------------------------------- drenaje
+def test_drenaje_optimo_tolerado_y_fuera():
+    sp = dict(drenaje_opt=["well"], drenaje_rango=["well", "excessive"])
+    assert evaluar(con_suelo(drenaje="well"), **sp)["factores"]["drenaje"] == 1.0
+    tolerado = evaluar(con_suelo(drenaje="excessive"), **sp)
+    assert tolerado["factores"]["drenaje"] == 0.75 and tolerado["apta"] is True
+    fuera = evaluar(con_suelo(drenaje="poorly"), **sp)
+    assert fuera["factores"]["drenaje"] == 0.0 and fuera["apta"] is False and fuera["factor_limitante"] == "drenaje"
+
+
+def test_drenaje_sin_respuesta_no_filtra():
+    r = evaluar(sitio_de("chiloe"), drenaje_opt=["well"], drenaje_rango=["well"])
+    assert "drenaje" not in r["factores"] and r["apta"] is True
+
+
+# ---------------------------------------------------------------- sal
+@pytest.mark.parametrize("suelo, esperado", [("low", 1.0), ("medium", 0.5), ("high", 0.0)])
+def test_salinidad_escala(suelo, esperado):
+    r = evaluar(con_suelo(salinidad=suelo), salinidad_opt="low", salinidad_max="medium")
+    assert r["factores"]["salinidad"] == esperado
+
+
+def test_salinidad_sobre_el_maximo_descarta():
+    r = evaluar(con_suelo(salinidad="high"), salinidad_opt="low", salinidad_max="medium")
+    assert r["apta"] is False and r["factor_limitante"] == "salinidad"
+
+
+def test_salinidad_sin_optimo_usa_el_maximo():
+    assert evaluar(con_suelo(salinidad="medium"), salinidad_max="medium")["factores"]["salinidad"] == 1.0
+
+
+def test_salinidad_sin_dato_de_la_especie_no_filtra():
+    assert "salinidad" not in evaluar(con_suelo(salinidad="high"))["factores"]
+
+
+# ---------------------------------------------------------------- profundidad
+@pytest.mark.parametrize("suelo, esperado", [("deep", 1.0), ("medium", 1.0), ("shallow", 0.75), ("very_shallow", 0.0)])
+def test_profundidad_es_un_minimo(suelo, esperado):
+    r = evaluar(con_suelo(profundidad=suelo), profundidad_opt="medium", profundidad_min="shallow")
+    assert r["factores"]["profundidad"] == esperado
+
+
+def test_un_suelo_mas_profundo_nunca_puntua_peor():
+    puntajes = [evaluar(con_suelo(profundidad=p), profundidad_opt="deep", profundidad_min="shallow")["puntaje"]
+                for p in ("very_shallow", "shallow", "medium", "deep")]
+    assert puntajes == sorted(puntajes)
+
+
+# ---------------------------------------------------------------- fertilidad
+def test_fertilidad_baja_se_corrige_con_abono_y_nunca_descarta():
+    sp = dict(fertilidad_opt="high", fertilidad_min="moderate")
+    optimo = evaluar(con_suelo(fertilidad="high"), **sp)
+    assert optimo["factores"]["fertilidad"] == 1.0 and optimo["correcciones"] == []
+    medio = evaluar(con_suelo(fertilidad="moderate"), **sp)
+    assert medio["factores"]["fertilidad"] == 0.75
+    assert medio["correcciones"] == [{"tipo": "fertilizacion", "fertilidad_sitio": "moderate", "fertilidad_requerida": "high"}]
+    pobre = evaluar(con_suelo(fertilidad="low"), **sp)
+    assert pobre["factores"]["fertilidad"] == 0.5 and pobre["apta"] is True and pobre["correcciones"]
+
+
+def test_fertilidad_mas_alta_nunca_puntua_peor():
+    puntajes = [evaluar(con_suelo(fertilidad=f), fertilidad_opt="high", fertilidad_min="low")["puntaje"]
+                for f in ("low", "moderate", "high")]
+    assert puntajes == sorted(puntajes)
+
+
+def test_las_correcciones_de_ph_y_fertilidad_se_acumulan():
+    sitio = sitio_de("chiloe", ph=5.1, suelo={"fertilidad": "low"})
+    r = evaluar(sitio, fertilidad_opt="high", fertilidad_min="moderate")
+    assert {c["tipo"] for c in r["correcciones"]} == {"encalado", "fertilizacion"}
+
+
+# ---------------------------------------------------------------- preguntas sin responder
+def test_suelo_sin_declarar():
+    assert ce.suelo_sin_declarar(sitio_de("chiloe")) == ["drenaje", "salinidad", "profundidad", "fertilidad"]
+    assert ce.suelo_sin_declarar(con_suelo(drenaje="well", fertilidad="low")) == ["salinidad", "profundidad"]
+    todo = con_suelo(drenaje="well", salinidad="low", profundidad="deep", fertilidad="high")
+    assert ce.suelo_sin_declarar(todo) == []
+
+
+# ---------------------------------------------------------------- temperatura por altitud
+def test_la_parcela_mas_alta_que_su_celda_es_mas_fria():
+    assert ce.delta_temperatura_por_altitud(1000, 500) == pytest.approx(-3.25)
+    assert ce.delta_temperatura_por_altitud(200, 400) == pytest.approx(1.3)
+    assert ce.delta_temperatura_por_altitud(300, 300) == 0.0
+
+
+def test_la_correccion_tiene_tope_y_sin_dato_vale_cero():
+    assert ce.delta_temperatura_por_altitud(5000, 0) == -ce.CORRECCION_TEMPERATURA_MAX_C
+    assert ce.delta_temperatura_por_altitud(0, 5000) == ce.CORRECCION_TEMPERATURA_MAX_C
+    assert ce.delta_temperatura_por_altitud(None, 300) == 0.0 and ce.delta_temperatura_por_altitud(300, None) == 0.0
+
+
+def test_corregir_temperatura_mueve_tmin_y_tmax_y_no_toca_la_lluvia_ni_el_original():
+    clima = clima_prueba()
+    original = clima.copy()
+    corregido = ce.corregir_temperatura(clima, -2.0)
+    assert (corregido["tmin"] - clima["tmin"]).eq(-2.0).all() and (corregido["tmax"] - clima["tmax"]).eq(-2.0).all()
+    assert corregido["lluvia"].equals(clima["lluvia"])
+    pd.testing.assert_frame_equal(clima, original)
+    assert ce.corregir_temperatura(clima, 0.0) is clima and ce.corregir_temperatura(None, -2.0) is None
+
+
+def test_un_clima_mas_frio_cambia_la_lista():
+    clima = clima_prueba()
+    normales = lambda c: ce.normales_mensuales(c)
+    sitio = lambda c: {"normales": normales(c), "ph": 6.5, "ghi_mensual": None, "awc_mm": 100}
+    aptas = lambda c: {r["especie"] for r in correr(ce.ranking_idoneidad(sitio(c), repo_prueba(con_luz=False))) if r["apta"]}
+    tibio, frio = aptas(ce.corregir_temperatura(clima, +4.0)), aptas(ce.corregir_temperatura(clima, -8.0))
+    assert tibio != frio

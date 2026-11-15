@@ -35,6 +35,14 @@ Alcance deliberadamente acotado a lo que EcoCrop puede respaldar sin inventar na
   - regla_dano_especie: SOLO si KTMP (temperatura letal real, definicion propia de
     EcoCrop) esta presente y es negativa -> una regla 'helada' con efecto 'total'. Es
     mapeo directo de la propia definicion del campo, no una regla inventada.
+  - requisitos de terreno, con `--terreno` (genera database/seed_ecocrop_terreno.sql, aparte del
+    seed principal): altitud_max_m=ALTMX, textura_opt/textura_rango=TEXT/TEXTR,
+    drenaje_opt/drenaje_rango=DRA/DRAR, salinidad_opt/salinidad_max=SAL/SALR,
+    profundidad_opt/profundidad_min=DEP/DEPR, fertilidad_opt/fertilidad_min=FER/FERR. Solo
+    actualiza esas once columnas de las filas de EcoCrop que ya existen; no inserta ni toca otra
+    cosa. Las columnas se crean con database/migracion_requisitos_terreno.sql y
+    database/migracion_suelo_declarado.sql. Los textos de EcoCrop se normalizan a clases cortas
+    (ver textura(), drenaje(), salinidad(), profundidad() y fertilidad()).
   - humedad_suelo_min/max, horas_luz_criticas, foto_*, vern_req: quedan SIN poblar.
     EcoCrop no da la fraccion de agua aprovechable ni el umbral numerico de horas de luz
     que el motor fenologico espera -- convertir eso seria inventar un numero.
@@ -136,6 +144,129 @@ def arreglo(valor) -> str:
     return "ARRAY[" + ", ".join(escapar(p) for p in partes) + "]"
 
 
+CLASES_TEXTURA = ("light", "medium", "heavy", "organic")
+CLASES_DRENAJE = ("poorly", "well", "excessive")
+CLASES_SALINIDAD = ("none", "low", "medium", "high")
+CLASES_PROFUNDIDAD = ("very_shallow", "shallow", "medium", "deep")    # de menos a mas profundo
+CLASES_FERTILIDAD = ("low", "moderate", "high")
+COLUMNAS_TERRENO = ("altitud_max_m", "textura_opt", "textura_rango", "drenaje_opt", "drenaje_rango",
+                    "salinidad_opt", "salinidad_max", "profundidad_opt", "profundidad_min",
+                    "fertilidad_opt", "fertilidad_min")
+
+
+def altitud(valor) -> int | None:
+    """ALTMX: altitud maxima en metros, tal como la publica EcoCrop (cifras redondas de
+    opinion experta). Vacio o no positivo = sin dato."""
+    if valor is None or pd.isna(valor) or valor <= 0:
+        return None
+    return int(round(float(valor)))
+
+
+def _unicas(clases: list[str], validas: tuple[str, ...]) -> list[str] | None:
+    vistas = []
+    for c in clases:
+        if c in validas and c not in vistas:
+            vistas.append(c)
+    return vistas or None
+
+
+def textura(valor) -> list[str] | None:
+    """TEXT/TEXTR: clases separadas por coma ('heavy, medium, light'). 'wide' = tolera cualquier
+    textura mineral y se expande a light, medium y heavy."""
+    s = texto(valor)
+    if s is None:
+        return None
+    clases = []
+    for p in (x.strip().lower() for x in s.split(",")):
+        clases.extend(("light", "medium", "heavy") if p == "wide" else (p,))
+    return _unicas(clases, CLASES_TEXTURA)
+
+
+def drenaje(valor) -> list[str] | None:
+    """DRA/DRAR: 'well (dry spells), excessive (dry/moderately dry)' -> ['well', 'excessive']."""
+    s = texto(valor)
+    if s is None:
+        return None
+    return _unicas([p.strip().split(" ")[0].lower() for p in s.split(",") if p.strip()], CLASES_DRENAJE)
+
+
+def salinidad(valor) -> str | None:
+    """SAL/SALR: 'medium (4-10 dS/m)' -> 'medium'. Una sola clase por fila."""
+    s = texto(valor)
+    clase = s.split(" ")[0].lower() if s else None
+    return clase if clase in CLASES_SALINIDAD else None
+
+
+def profundidad(valor) -> str | None:
+    """DEP/DEPR: 'very shallow (<20 cm)', 'shallow (20-50 cm)', 'medium (50-150 cm)' o
+    'deep (>>150 cm)'. Una sola clase por fila. DEPR (el 'rango') es igual o menos profunda que
+    DEP en el 99,9 % de las filas: se guarda como el minimo tolerado (profundidad_min)."""
+    s = texto(valor)
+    if s is None:
+        return None
+    clase = s.split("(")[0].strip().lower().replace(" ", "_")
+    return clase if clase in CLASES_PROFUNDIDAD else None
+
+
+def fertilidad(valor) -> str | None:
+    """FER/FERR: low | moderate | high, una sola clase. Igual que la profundidad, FERR es el
+    minimo tolerado (fertilidad_min)."""
+    s = texto(valor)
+    clase = s.split(" ")[0].lower() if s else None
+    return clase if clase in CLASES_FERTILIDAD else None
+
+
+def arreglo_de(clases: list[str] | None) -> str:
+    return "NULL" if not clases else "ARRAY[" + ", ".join(escapar(c) for c in clases) + "]"
+
+
+def main_terreno(ruta_csv: str, destino_sql: str) -> None:
+    """SQL que llena solo las columnas de terreno de las filas de EcoCrop que ya existen."""
+    df = pd.read_csv(ruta_csv, encoding="latin-1")
+    # Misma seleccion y deduplicacion que main(): son las filas que hay en requisitos_especie.
+    completos = df.dropna(subset=["TMIN", "TOPMN", "TOPMX", "TMAX"]).copy()
+    completos["especie"] = completos["ScientificName"].map(slug)
+    completos = completos.drop_duplicates(subset=["especie"])
+
+    filas = []
+    for _, r in completos.iterrows():
+        valores = (escapar(r["especie"]), escapar(altitud(r["ALTMX"])),
+                   arreglo_de(textura(r["TEXT"])), arreglo_de(textura(r["TEXTR"])),
+                   arreglo_de(drenaje(r["DRA"])), arreglo_de(drenaje(r["DRAR"])),
+                   escapar(salinidad(r["SAL"])), escapar(salinidad(r["SALR"])),
+                   escapar(profundidad(r["DEP"])), escapar(profundidad(r["DEPR"])),
+                   escapar(fertilidad(r["FER"])), escapar(fertilidad(r["FERR"])))
+        filas.append("(" + ", ".join(valores) + ")")
+
+    tipos = {"altitud_max_m": "INT", "textura_opt": "TEXT[]", "textura_rango": "TEXT[]", "drenaje_opt": "TEXT[]",
+             "drenaje_rango": "TEXT[]", "salinidad_opt": "VARCHAR", "salinidad_max": "VARCHAR",
+             "profundidad_opt": "VARCHAR", "profundidad_min": "VARCHAR",
+             "fertilidad_opt": "VARCHAR", "fertilidad_min": "VARCHAR"}
+    asignaciones = ", ".join(f"{c} = e.{c}" for c in COLUMNAS_TERRENO)
+    with open(destino_sql, "w") as f:
+        f.write(
+            "-- Generado por database/importar_ecocrop.py --terreno -- NO editar a mano.\n"
+            "-- Requiere database/migracion_requisitos_terreno.sql y database/migracion_suelo_declarado.sql.\n"
+            "-- Solo actualiza las once columnas de terreno de las filas de EcoCrop existentes; es idempotente.\n\n"
+            "BEGIN;\n\n"
+            "CREATE TEMP TABLE _ecocrop_terreno (\n  especie VARCHAR PRIMARY KEY,\n  "
+            + ",\n  ".join(f"{c} {tipos[c]}" for c in COLUMNAS_TERRENO) + "\n) ON COMMIT DROP;\n\n"
+            "INSERT INTO _ecocrop_terreno VALUES\n" + ",\n".join(filas) + ";\n\n"
+            f"UPDATE requisitos_especie r SET {asignaciones}\n"
+            "FROM _ecocrop_terreno e\n"
+            f"WHERE r.especie = e.especie AND r.variedad_local IS NULL AND r.fuente = '{FUENTE}';\n\n"
+            "COMMIT;\n"
+        )
+    log.info("escrito %s: %d especies | altitud %d, textura %d, drenaje %d, salinidad %d, profundidad %d, fertilidad %d",
+             destino_sql, len(filas),
+             sum(altitud(v) is not None for v in completos["ALTMX"]),
+             sum(textura(v) is not None for v in completos["TEXT"]),
+             sum(drenaje(v) is not None for v in completos["DRA"]),
+             sum(salinidad(v) is not None for v in completos["SAL"]),
+             sum(profundidad(v) is not None for v in completos["DEP"]),
+             sum(fertilidad(v) is not None for v in completos["FER"]))
+
+
 def main(ruta_csv: str, destino_sql: str) -> None:
     df = pd.read_csv(ruta_csv, encoding="latin-1")
     completos = df.dropna(subset=["TMIN", "TOPMN", "TOPMX", "TMAX"]).copy()
@@ -205,6 +336,10 @@ def main(ruta_csv: str, destino_sql: str) -> None:
 
 
 if __name__ == "__main__":
-    ruta_csv = sys.argv[1] if len(sys.argv) > 1 else "/tmp/ecocrop_openclim.csv"
-    destino = sys.argv[2] if len(sys.argv) > 2 else "database/seed_ecocrop.sql"
-    main(ruta_csv, destino)
+    if len(sys.argv) > 1 and sys.argv[1] == "--terreno":
+        main_terreno(sys.argv[2] if len(sys.argv) > 2 else "/tmp/ecocrop_openclim.csv",
+                     sys.argv[3] if len(sys.argv) > 3 else "database/seed_ecocrop_terreno.sql")
+    else:
+        ruta_csv = sys.argv[1] if len(sys.argv) > 1 else "/tmp/ecocrop_openclim.csv"
+        destino = sys.argv[2] if len(sys.argv) > 2 else "database/seed_ecocrop.sql"
+        main(ruta_csv, destino)

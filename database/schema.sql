@@ -64,9 +64,27 @@ CREATE TABLE parcela (
   -- Grilla del predio: celdas cuadradas de lado_celda_m, alineadas al origen de la zona UTM.
   srid_utm INT,
   lado_celda_m FLOAT,
-  altitud_msnm INT
+  altitud_msnm INT,
+  -- Lo que el agricultor responde sobre su suelo (NULL = no ha respondido). Ver
+  -- database/migracion_suelo_declarado.sql.
+  suelo_drenaje VARCHAR CHECK (suelo_drenaje IN ('poorly', 'well', 'excessive')),
+  suelo_salinidad VARCHAR CHECK (suelo_salinidad IN ('low', 'medium', 'high')),
+  suelo_profundidad VARCHAR CHECK (suelo_profundidad IN ('very_shallow', 'shallow', 'medium', 'deep')),
+  suelo_fertilidad VARCHAR CHECK (suelo_fertilidad IN ('low', 'moderate', 'high'))
 );
 CREATE INDEX idx_parcela_geometria ON parcela USING GIST (geometria);
+
+-- Clima diario historico de la parcela (35 anos, un renglon por ano). Ver
+-- database/migracion_clima_historico_y_agua.sql.
+CREATE TABLE clima_historico_parcela (
+  id_parcela INT NOT NULL REFERENCES parcela(id) ON DELETE CASCADE,
+  anio INT NOT NULL,
+  tmin REAL[] NOT NULL, tmax REAL[] NOT NULL, lluvia REAL[] NOT NULL,
+  fuente VARCHAR NOT NULL,
+  version_producto VARCHAR NOT NULL,
+  fecha_consulta TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (id_parcela, anio)
+);
 
 -- Un ciclo de cultivo dentro de una parcela. Varias filas por parcela a través
 -- del tiempo son la "secuencia de rotación" que compara rotation_engine.
@@ -179,8 +197,33 @@ CREATE TABLE requisitos_especie (
   fotoperiodo VARCHAR,
   ciclo_min_dias INT,
   ciclo_max_dias INT,
+  -- Terreno (EcoCrop ALTMX, TEXT/TEXTR, DRA/DRAR, SAL/SALR). Ver database/migracion_requisitos_terreno.sql.
+  altitud_max_m INT,
+  textura_opt TEXT[],
+  textura_rango TEXT[],
+  drenaje_opt TEXT[],
+  drenaje_rango TEXT[],
+  salinidad_opt VARCHAR,
+  salinidad_max VARCHAR,
+  -- Profundidad y fertilidad (DEP/DEPR, FER/FERR). Ver database/migracion_suelo_declarado.sql.
+  profundidad_opt VARCHAR,
+  profundidad_min VARCHAR,
+  fertilidad_opt VARCHAR,
+  fertilidad_min VARCHAR,
   fuente VARCHAR NOT NULL DEFAULT 'placeholder_sin_validar',
   UNIQUE (especie, variedad_local)
+);
+
+-- Parametros del balance de agua de cada cultivo con seguimiento por etapa (FAO-56 y FAO-33).
+-- Ver database/migracion_clima_historico_y_agua.sql.
+CREATE TABLE parametros_agua_cultivo (
+  especie VARCHAR PRIMARY KEY,
+  zr_m FLOAT NOT NULL CHECK (zr_m > 0),
+  p_agotamiento FLOAT NOT NULL CHECK (p_agotamiento > 0 AND p_agotamiento < 1),
+  kc_ini FLOAT NOT NULL, kc_med FLOAT NOT NULL, kc_fin FLOAT NOT NULL,
+  ky FLOAT NOT NULL CHECK (ky > 0),
+  fuente VARCHAR NOT NULL,
+  nota TEXT
 );
 
 -- Identidad de la especie, separada de sus requisitos: nombre cientifico, nombres

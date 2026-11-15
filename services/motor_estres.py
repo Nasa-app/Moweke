@@ -40,15 +40,24 @@ def radiacion_extraterrestre(lat, doy):
     return 0.408 * ra
 
 
-def balance_agua(clima, lat, capacidad_mm):
-    """Balde diario. capacidad_mm = agua aprovechable del perfil (dato de suelo del usuario,
-    o SoilGrids/CHLSOC/GAEZ mientras no haya dato local — ver seccion 10 del modelo conceptual).
-    ET0 por Hargreaves; la extraccion cae linealmente bajo el 50% de la capacidad.
-    Devuelve fraccion de agua disponible y exceso diario (mm que no caben)."""
+def et0_hargreaves(clima, lat):
+    """ET0 diaria (mm) de Hargreaves-Samani con tmin y tmax. Sobrestima en climas costeros humedos
+    (depende de la raiz del rango diurno): se calibra por parcela contra Penman-Monteith, ver
+    factores_et0() y la tabla de calibracion de repositorio_clima."""
     ra = radiacion_extraterrestre(lat, clima.index.dayofyear.values)
     tmed = (clima.tmin.values + clima.tmax.values) / 2
     et0 = 0.0023 * ra * (tmed + 17.8) * np.sqrt(np.clip(clima.tmax.values - clima.tmin.values, 0, None))
-    et0 = np.clip(et0, 0, None)
+    return np.clip(et0, 0, None)
+
+
+def balance_agua(clima, lat, capacidad_mm, et0=None):
+    """Balde diario. capacidad_mm = agua aprovechable del perfil (dato de suelo del usuario,
+    o SoilGrids/CHLSOC/GAEZ mientras no haya dato local — ver seccion 10 del modelo conceptual).
+    ET0 por Hargreaves (o la serie `et0` si se pasa); la extraccion cae linealmente bajo el 50% de
+    la capacidad. Devuelve fraccion de agua disponible y exceso diario (mm que no caben).
+    Es el balance de TODO el perfil, sin coeficiente de cultivo: sirve para el anegamiento
+    ('exceso'). La sequia de un cultivo se calcula con balance_agua_fao56()."""
+    et0 = et0_hargreaves(clima, lat) if et0 is None else np.asarray(et0, float)
     w, frac, exceso = capacidad_mm, np.empty(len(clima)), np.empty(len(clima))
     for i, lluvia in enumerate(clima.lluvia.values):
         w += lluvia
@@ -57,6 +66,108 @@ def balance_agua(clima, lat, capacidad_mm):
         w = max(0.0, w - et0[i] * min(1.0, w / (0.5 * capacidad_mm)))
         frac[i] = w / capacidad_mm
     return pd.DataFrame({"agua": frac, "exceso": exceso, "et0": et0}, index=clima.index)
+
+
+# ---------------------------------------------------------------- 1b. Balance de agua FAO-56 (por cultivo)
+@dataclass(frozen=True)
+class ParametrosAgua:
+    """Lo que el balance de un cultivo necesita (FAO-56 tablas 12 y 22; Ky de FAO-33 tabla 24):
+    profundidad efectiva de raices, fraccion de agotamiento sin estres, coeficientes de cultivo
+    inicial, medio y final, y respuesta estacional del rendimiento al deficit de agua."""
+    zr_m: float
+    p: float
+    kc_ini: float
+    kc_med: float
+    kc_fin: float
+    ky: float
+
+
+PROFUNDIDAD_SUELO_M = {"very_shallow": 0.15, "shallow": 0.35, "medium": 1.0, "deep": 2.0}   # centro de cada clase
+PROFUNDIDAD_PERFIL_AWC_M = 2.0     # el agua aprovechable de CLSoilMaps es la de 0 a 200 cm
+FRACCION_KC_MEDIA = 0.6            # de la ultima fase, tanto va con Kc medio antes de bajar al final (FAO-56, tabla 11)
+LIMITES_FACTOR_ET0 = (0.4, 1.6)    # un factor de calibracion fuera de esto es un dato malo, no un clima
+
+
+def factores_et0(factores_mensuales, indice):
+    """Serie diaria de factores a partir de 12 valores (enero = indice 0). None -> sin calibrar (1)."""
+    if factores_mensuales is None:
+        return np.ones(len(indice))
+    tabla = np.asarray(factores_mensuales, float)
+    return tabla[np.asarray(indice.month) - 1]
+
+
+def calibrar_et0_mensual(clima, et0_referencia, lat, min_dias_mes=10):
+    """12 factores (enero primero) que llevan la ET0 de Hargreaves de `clima` (tmin, tmax) al nivel de una ET0 de
+    referencia (Penman-Monteith): suma de la referencia sobre suma de Hargreaves en los dias en comun de cada mes.
+    Un mes con menos de `min_dias_mes` dias en comun usa el factor de todo el traslape; se suaviza con los
+    meses vecinos (1-2-1, circular) y se acota a LIMITES_FACTOR_ET0. Es la calibracion local de Hargreaves que
+    recomienda FAO-56, hecha una vez por parcela."""
+    comun = clima[["tmin", "tmax"]].join(pd.Series(et0_referencia, name="ref"), how="inner").dropna()
+    hs = pd.Series(et0_hargreaves(comun, lat), index=comun.index)
+    if comun.empty or hs.sum() <= 0:
+        return [1.0] * 12
+    total = float(comun["ref"].sum() / hs.sum())
+    crudo = {}
+    for mes in range(1, 13):
+        m = comun.index.month == mes
+        crudo[mes] = float(comun.loc[m, "ref"].sum() / hs[m].sum()) if m.sum() >= min_dias_mes and hs[m].sum() > 0 else total
+    lo, hi = LIMITES_FACTOR_ET0
+    return [min(hi, max(lo, (crudo[(mes - 2) % 12 + 1] + 2 * crudo[mes] + crudo[mes % 12 + 1]) / 4)) for mes in range(1, 13)]
+
+
+def kc_diario(indice, siembra, fechas, c, params):
+    """Coeficiente de cultivo de cada dia. Antes de sembrar y mientras no emerge: Kc inicial; de la
+    emergencia a la segunda etapa sube en linea recta al medio; luego se mantiene (FRACCION_KC_MEDIA
+    de lo que queda hasta la madurez) y baja en linea recta al final; despues de la madurez, el final.
+    Una etapa que la serie no alcanza deja la curva abierta hasta el ultimo dia."""
+    dias = pd.DatetimeIndex(indice).normalize()
+    siembra = pd.Timestamp(siembra).normalize()
+    ultimo = dias[-1]
+    nombres = [n for n, _ in c.etapas]
+    t1 = fechas.get(nombres[0], ultimo)
+    t2 = fechas.get(nombres[1], ultimo) if len(nombres) > 1 else fechas.get(nombres[-1], ultimo)
+    tm = fechas.get(nombres[-1], ultimo)
+    t1, t2, tm = pd.Timestamp(t1).normalize(), pd.Timestamp(t2).normalize(), pd.Timestamp(tm).normalize()
+    t3 = t2 + (tm - t2) * FRACCION_KC_MEDIA
+    kc = np.full(len(dias), params.kc_ini, float)
+    en = lambda a, b: (dias >= a) & (dias < b)
+    f_dev = np.clip((dias - t1) / max((t2 - t1), pd.Timedelta(days=1)), 0, 1)
+    f_fin = np.clip((dias - t3) / max((tm - t3), pd.Timedelta(days=1)), 0, 1)
+    kc = np.where(en(t1, t2), params.kc_ini + (params.kc_med - params.kc_ini) * f_dev, kc)
+    kc = np.where(en(t2, t3), params.kc_med, kc)
+    kc = np.where(en(t3, tm), params.kc_med + (params.kc_fin - params.kc_med) * f_fin, kc)
+    kc = np.where(dias >= tm, params.kc_fin, kc)
+    return pd.Series(kc, index=indice)
+
+
+def balance_agua_fao56(clima, et0, kc, awc_total_mm, params, prof_suelo_m=None, riego=False, lat=None):
+    """Balance diario de la zona de raices (FAO-56, cap. 8). TAW = agua aprovechable de la zona de
+    raices = AWC de 0-200 cm repartida en proporcion a la profundidad que alcanzan las raices
+    (supone el agua aprovechable uniforme en el perfil). RAW = p * TAW. Con agotamiento Dr
+    mayor que RAW el cultivo transpira solo la fraccion Ks = (TAW - Dr) / (TAW - RAW) de su demanda
+    ETc = Kc * ET0. Sin escorrentia ni intercepcion; el drenaje profundo es lo que sobra sobre cero
+    agotamiento. `riego`: el agricultor repone el agua (Ks = 1); el exceso de lluvia se conserva.
+
+    Devuelve por dia: agua (fraccion de TAW disponible), ks, etc, eta, et0, ky y `exceso` (mm de
+    drenaje que no cupieron en TODO el perfil: lo que usan las reglas de anegamiento)."""
+    zr = min(params.zr_m, prof_suelo_m) if prof_suelo_m else params.zr_m
+    taw = max(awc_total_mm * min(1.0, zr / PROFUNDIDAD_PERFIL_AWC_M), 1e-6)
+    raw = params.p * taw
+    et0 = np.asarray(et0, float)
+    etc = np.asarray(kc, float) * et0
+    lluvia = clima.lluvia.values
+    n = len(clima)
+    ks, eta, agua = np.ones(n), np.empty(n), np.empty(n)
+    dr = 0.0
+    for i in range(n):
+        ks[i] = 1.0 if riego or dr <= raw else max(0.0, (taw - dr) / (taw - raw))
+        eta[i] = ks[i] * etc[i]
+        dr = min(taw, max(0.0, dr - lluvia[i] + eta[i]))
+        agua[i] = 1.0 - dr / taw
+    out = pd.DataFrame({"agua": agua, "ks": ks, "etc": etc, "eta": eta, "et0": et0, "ky": params.ky}, index=clima.index)
+    perfil = balance_agua(clima, lat if lat is not None else 0.0, max(awc_total_mm, 1e-6), et0=et0)
+    out["exceso"] = perfil["exceso"].values
+    return out
 
 
 # ---------------------------------------------------------------- 2. Reglas de dano
@@ -169,6 +280,26 @@ def _reduccion_mitigacion(r, cuando, manejo):
     return 0.0
 
 
+def _danos_hidricos(agua, siembra, fechas, c, ky):
+    """Perdida por deficit de agua, repartida por fase. FAO-33: 1 - Ya/Ym = Ky * (1 - ETa/ETc) en toda la
+    temporada; la parte de cada fase es Ky * (ETc - ETa de la fase) / ETc de la temporada, asi que las
+    partes suman el total. [(fase, perdida, primer_dia, ultimo_dia, dias_con_estres)] solo donde pasa de 0,5 %."""
+    tramos = [(n, ini, fin) for n, ini, fin in fases(siembra, fechas, c) if n != "cosecha"]
+    if not tramos:
+        return []
+    total = sum(float(agua.loc[ini:fin, "etc"].sum()) for _, ini, fin in tramos)
+    if total <= 0:
+        return []
+    out = []
+    for nombre, ini, fin in tramos:
+        a = agua.loc[ini:fin]
+        valor = ky * float((a["etc"] - a["eta"]).sum()) / total
+        con_estres = a.index[a["ks"] < 0.999]
+        if valor >= 0.005 and len(con_estres):
+            out.append((nombre, round(min(valor, 1.0), 4), pd.Timestamp(con_estres[0]), pd.Timestamp(con_estres[-1]), len(con_estres)))
+    return out
+
+
 def evaluar(clima, agua, siembra, fechas, c, reglas, externos=(), manejo=()):
     """Aplica las reglas al clima tal como viene (eventos naturales o inyectados).
     externos: [(fecha, peligro)] para eventos que no estan en el clima (ceniza, granizo).
@@ -180,10 +311,16 @@ def evaluar(clima, agua, siembra, fechas, c, reglas, externos=(), manejo=()):
     Fase 6) es quien debe leer manejo_predio y pasarlo aqui."""
     danos, eventos, fecha_perdida, atraso = [], [], None, 0
     ciclo_completo = c.etapas[-1][0] in fechas
+    # Con el balance FAO-56 (columna `ky`), la sequia es una perdida continua (FAO-33) y las reglas de
+    # sequia del catalogo, que eran un umbral de dias con poca agua, no se aplican.
+    ky = float(agua["ky"].iloc[0]) if "ky" in agua.columns and len(agua) else float("nan")
+    hidrico = ky == ky
     for nombre, ini, fin in fases(siembra, fechas, c):
         p, a = clima.loc[ini:fin], agua.loc[ini:fin]
         for r in reglas:
             if r.fase not in (nombre, "*"):
+                continue
+            if hidrico and r.peligro == "sequia":
                 continue
             if r.peligro == "helada":
                 m = p.tmin <= r.umbral
@@ -230,6 +367,11 @@ def evaluar(clima, agua, siembra, fechas, c, reglas, externos=(), manejo=()):
                     fecha_perdida = f0 if fecha_perdida is None else min(fecha_perdida, f0)
                 if r.efecto == "atraso":
                     atraso += int(valor_ef)
+    if hidrico:
+        for fase, valor, primero, ultimo, dias_con_estres in _danos_hidricos(agua, siembra, fechas, c, ky):
+            danos.append((fase, "sequia", "parcial", valor))
+            eventos.append({"fase": fase, "peligro": "sequia", "efecto": "parcial", "valor": valor,
+                            "primer_dia": primero, "ultimo_dia": ultimo, "dias": dias_con_estres})
     if fecha_perdida is not None or not ciclo_completo:
         estado, perdida = "perdido", 1.0
     else:

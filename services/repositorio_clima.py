@@ -75,21 +75,64 @@ def ventana_clima(hoy: date) -> tuple[date, date]:
 
 
 CAPAS_GHI_MENSUAL = tuple(f"explorador_solar_ghi_mes_{m:02d}" for m in range(1, 13))
+# Factor por mes que lleva la ET0 de Hargreaves (con el clima de CR2MET) al nivel de Penman-Monteith (ERA5): ver
+# ingesta_predio._clima_historico. Enero = mes 1.
+CAPAS_ET0_FACTOR_MENSUAL = tuple(f"et0_factor_hargreaves_mes_{m:02d}" for m in range(1, 13))
 _CAPAS_CLIMA = {"cr2met_tmin": "tmin", "cr2met_tmax": "tmax", "cr2met_lluvia": "lluvia"}
+
+
+async def leer_historia(session: AsyncSession, id_parcela: int) -> dict[int, pd.DataFrame]:
+    """El clima diario historico de la parcela, corregido: {ano: DataFrame(tmin, tmax, lluvia)} con un dia por
+    fila desde el 1 de enero. Vacio si todavia no se ingirio."""
+    filas = (await session.execute(text(
+        "SELECT anio, tmin, tmax, lluvia FROM clima_historico_parcela WHERE id_parcela = :id ORDER BY anio"
+    ), {"id": id_parcela})).mappings().all()
+    return {f["anio"]: pd.DataFrame({"tmin": f["tmin"], "tmax": f["tmax"], "lluvia": f["lluvia"]},
+                                      index=pd.date_range(f"{f['anio']}-01-01", periods=len(f["tmin"]), freq="D"))
+            for f in filas}
+
+
+async def guardar_historia(session: AsyncSession, id_parcela: int, anios: dict[int, pd.DataFrame],
+                           fuente: str, version: str) -> None:
+    """Upsert del clima historico, un renglon por ano, en un solo viaje y un solo commit."""
+    filas = [{"id": id_parcela, "anio": a, "tmin": [round(float(v), 2) for v in d["tmin"]],
+              "tmax": [round(float(v), 2) for v in d["tmax"]], "lluvia": [round(float(v), 1) for v in d["lluvia"]],
+              "fuente": fuente, "version": version} for a, d in anios.items()]
+    if filas:
+        await session.execute(text("""
+            INSERT INTO clima_historico_parcela (id_parcela, anio, tmin, tmax, lluvia, fuente, version_producto)
+            VALUES (:id, :anio, :tmin, :tmax, :lluvia, :fuente, :version)
+            ON CONFLICT (id_parcela, anio) DO UPDATE SET tmin = EXCLUDED.tmin, tmax = EXCLUDED.tmax,
+                lluvia = EXCLUDED.lluvia, fuente = EXCLUDED.fuente, version_producto = EXCLUDED.version_producto,
+                fecha_consulta = now()
+        """), filas)
+    await session.commit()
+
+
+async def leer_factores_et0(session: AsyncSession, id_parcela: int) -> list[float] | None:
+    """Los 12 factores de calibracion de la ET0 de la parcela (enero primero), o None si no estan todos."""
+    filas = (await session.execute(text(
+        "SELECT capa, valor FROM cache_consulta_grilla WHERE id_parcela = :id AND capa = ANY(:capas)"
+    ), {"id": id_parcela, "capas": list(CAPAS_ET0_FACTOR_MENSUAL)})).mappings().all()
+    valores = {f["capa"]: f["valor"] for f in filas}
+    factores = [valores.get(c) for c in CAPAS_ET0_FACTOR_MENSUAL]
+    return factores if all(v is not None for v in factores) else None
 
 
 async def leer_sitio(session: AsyncSession, id_parcela: int, hoy: date | None = None) -> dict:
     """Lo que catalogo_especies.ranking_idoneidad() necesita de un predio, leido de
-    cache_consulta_grilla: pH (SoilGrids), agua disponible (CLSoilMaps), GHI mensual
+    cache_consulta_grilla: pH, arcilla y arena (SoilGrids), agua disponible (CLSoilMaps), GHI mensual
     (Explorador Solar) y el clima diario de la ventana de doce meses (CR2MET). Cada dato
     que falte queda en None -- quien llama decide que hacer, aca no se inventa nada."""
     inicio, fin = ventana_clima(hoy or date.today())
-    estaticas = ["soilgrids_ph", "clsoilmaps_awc_total_mm", *CAPAS_GHI_MENSUAL]
+    estaticas = ["soilgrids_ph", "soilgrids_arcilla_pct", "soilgrids_arena_pct", "clsoilmaps_awc_total_mm",
+                 "cr2met_elevacion_celda_m", *CAPAS_ET0_FACTOR_MENSUAL, *CAPAS_GHI_MENSUAL]
     filas = (await session.execute(text(
         "SELECT capa, valor FROM cache_consulta_grilla WHERE id_parcela = :id AND capa = ANY(:capas)"
     ), {"id": id_parcela, "capas": estaticas})).mappings().all()
     valores = {f["capa"]: f["valor"] for f in filas}
     ghi = [valores.get(c) for c in CAPAS_GHI_MENSUAL]
+    et0_factor = [valores.get(c) for c in CAPAS_ET0_FACTOR_MENSUAL]
 
     filas_clima = (await session.execute(text("""
         SELECT periodo_inicio AS fecha, capa, valor FROM cache_consulta_grilla
@@ -103,8 +146,17 @@ async def leer_sitio(session: AsyncSession, id_parcela: int, hoy: date | None = 
         clima.index = pd.to_datetime(clima.index)
         clima = clima.rename(columns=_CAPAS_CLIMA).reindex(columns=["tmin", "tmax", "lluvia"])
 
+    # Altura media de la parcela segun el mismo DEM con que se calculo la de la celda de CR2MET:
+    # la diferencia entre ambas es la correccion de temperatura por altitud.
+    altitud_dem = (await session.execute(text(
+        "SELECT avg(valor) FROM cache_celda WHERE id_parcela = :id AND capa = 'altitud_m' AND valor IS NOT NULL"
+    ), {"id": id_parcela})).scalar()
     return {"ph": valores.get("soilgrids_ph"), "awc_mm": valores.get("clsoilmaps_awc_total_mm"),
+            "arcilla_pct": valores.get("soilgrids_arcilla_pct"), "arena_pct": valores.get("soilgrids_arena_pct"),
+            "altitud_celda_m": valores.get("cr2met_elevacion_celda_m"),
+            "altitud_dem_m": None if altitud_dem is None else float(altitud_dem),
             "ghi_mensual": ghi if all(v is not None for v in ghi) else None,
+            "et0_factor_mensual": et0_factor if all(v is not None for v in et0_factor) else None,
             "clima": clima, "periodo_clima": (inicio, fin)}
 
 
@@ -165,6 +217,13 @@ def _sesgo_modelo(cr2met: pd.DataFrame, modelo: pd.DataFrame) -> dict | None:
         return None
     return {"dias_traslape": len(comun), "tmin": float((comun.tmin_m - comun.tmin).mean()),
             "tmax": float((comun.tmax_m - comun.tmax).mean())}
+
+
+def corregir_contra_cr2met(cr2met: pd.DataFrame, otra: pd.DataFrame) -> tuple[pd.DataFrame, dict | None]:
+    """La serie `otra` (tmin, tmax, lluvia) corregida con su sesgo contra el CR2MET de la misma parcela, y el
+    sesgo aplicado (None si no hay dias en comun suficientes: entonces no se corrige)."""
+    sesgo = _sesgo_power(cr2met, otra)
+    return _corregir(otra, sesgo), sesgo
 
 
 def _corregir(bloque: pd.DataFrame, sesgo: dict | None) -> pd.DataFrame:

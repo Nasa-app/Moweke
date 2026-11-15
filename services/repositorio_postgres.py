@@ -41,6 +41,12 @@ requisitos_especie = Table(
     Column("luz_min", String), Column("luz_opt_min", String),
     Column("luz_opt_max", String), Column("luz_max", String),
     Column("fotoperiodo", String), Column("ciclo_min_dias", Integer), Column("ciclo_max_dias", Integer),
+    Column("altitud_max_m", Integer),
+    Column("textura_opt", ARRAY(Text)), Column("textura_rango", ARRAY(Text)),
+    Column("drenaje_opt", ARRAY(Text)), Column("drenaje_rango", ARRAY(Text)),
+    Column("salinidad_opt", String), Column("salinidad_max", String),
+    Column("profundidad_opt", String), Column("profundidad_min", String),
+    Column("fertilidad_opt", String), Column("fertilidad_min", String),
     Column("fuente", String),
 )
 
@@ -50,6 +56,14 @@ especie = Table(
     Column("nombre_cientifico", String), Column("nombres_comunes", Text),
     Column("familia_botanica", String), Column("forma_vida", String),
     Column("categorias", ARRAY(Text)), Column("fuente", String),
+)
+
+parametros_agua_cultivo = Table(
+    "parametros_agua_cultivo", metadata,
+    Column("especie", String, primary_key=True),
+    Column("zr_m", Float), Column("p_agotamiento", Float),
+    Column("kc_ini", Float), Column("kc_med", Float), Column("kc_fin", Float),
+    Column("ky", Float), Column("fuente", String), Column("nota", Text),
 )
 
 equivalencia_luz_ghi = Table(
@@ -137,6 +151,11 @@ class RepositorioPostgres:
     async def identidades(self) -> dict[str, dict]:
         filas = (await self._s.execute(select(especie))).mappings().all()
         return {f["especie"]: dict(f) for f in filas}
+
+    async def parametros_agua(self, especie: str) -> dict | None:
+        q = select(parametros_agua_cultivo).where(parametros_agua_cultivo.c.especie == especie)
+        fila = (await self._s.execute(q)).mappings().first()
+        return dict(fila) if fila else None
 
     async def equivalencias_luz(self) -> list[dict]:
         q = select(equivalencia_luz_ghi).order_by(equivalencia_luz_ghi.c.orden)

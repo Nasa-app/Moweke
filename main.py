@@ -11,6 +11,7 @@ import math
 import os
 import sys
 from datetime import date, timedelta
+from typing import Literal
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,12 +36,15 @@ import services.cliente_firms as cliente_firms
 import services.cliente_soilgrids as cliente_soilgrids
 import services.cliente_solar as cliente_solar
 import services.ingesta_predio as ingesta_predio
+import services.multianual as multianual
 from services.auth import crear_token, decodificar_token, hash_password, verificar_password
 from services.db import obtener_sesion
 from services.limite_intentos import LimiteIntentos
 from services.repositorio_clima import (CAPAS_MAPA, guardar_consulta_grilla, lado_celda_para, leer_clima_diario,
-                                        leer_disponibilidad_optica, leer_incendios, leer_mapa, leer_ndvi, leer_sitio)
+                                        leer_disponibilidad_optica, leer_factores_et0, leer_historia, leer_incendios,
+                                        leer_mapa, leer_ndvi, leer_sitio)
 from services.repositorio_postgres import RepositorioPostgres
+from motor_estres import PROFUNDIDAD_SUELO_M
 
 _CACHE_CR2MET = ingesta_predio.CACHE_CR2MET
 _CACHE_APPEEARS = os.environ.get("APPEEARS_CACHE_DIR", "/tmp/appeears_cache")
@@ -93,6 +97,8 @@ _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 _REGISTROS_POR_IP = LimiteIntentos(10, 60 * 60)
 _LOGINS_POR_IP = LimiteIntentos(30, 5 * 60)
 _LOGINS_POR_CUENTA = LimiteIntentos(10, 15 * 60)
+ESCENARIOS_CALENTAMIENTO = {"observado": None, "moderado": 0.3, "fuerte": 0.6}   # °C por decada hasta 2040
+_ALMACEN_CATALOGO: dict = {}   # catalogo de especies en memoria del proceso (ver multianual.RepositorioCacheado)
 # Detras de un proxy la conexion llega desde el proxy, no desde el cliente. Si
 # CABECERA_IP_CLIENTE nombra la cabecera donde el proxy pone la IP real (en Railway,
 # x-real-ip), se usa esa. Solo hay que definirla cuando el unico camino hasta la API es
@@ -161,6 +167,14 @@ class ParcelaNueva(BaseModel):
         elif any(v is None for v in punto):
             raise ValueError("Faltan `lat`, `lon` y `hectareas`, o bien `perimetro`")
         return self
+
+
+class SueloDeclarado(BaseModel):
+    """Lo que el agricultor responde sobre su suelo. Cada campo es opcional; null borra la respuesta."""
+    drenaje: Literal["poorly", "well", "excessive"] | None = None
+    salinidad: Literal["low", "medium", "high"] | None = None
+    profundidad: Literal["very_shallow", "shallow", "medium", "deep"] | None = None
+    fertilidad: Literal["low", "moderate", "high"] | None = None
 
 
 class CultivoNuevo(BaseModel):
@@ -260,6 +274,7 @@ async def _parcela_autorizada(id_parcela: int, usuario: dict, session: AsyncSess
     responde 404 igual que una inexistente: no se confirma que el id existe."""
     fila = (await session.execute(text("""
         SELECT p.id, p.id_usuario, p.altitud_msnm,
+               p.suelo_drenaje, p.suelo_salinidad, p.suelo_profundidad, p.suelo_fertilidad,
                ST_Y(ST_Centroid(p.geometria)) AS lat, ST_X(ST_Centroid(p.geometria)) AS lon,
                ST_Area(p.geometria::geography) / 10000 AS hectareas,
                ST_AsGeoJSON(p.geometria, 6) AS perimetro, p.origen_perimetro, p.lado_celda_m,
@@ -271,6 +286,7 @@ async def _parcela_autorizada(id_parcela: int, usuario: dict, session: AsyncSess
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
     parcela = dict(fila)
     del parcela["id_usuario"]
+    parcela["suelo"] = {campo: parcela.pop(f"suelo_{campo}") for campo in catalogo_especies.CAMPOS_SUELO}
     parcela["hectareas"] = round(parcela["hectareas"], 2)
     parcela["perimetro"] = json.loads(parcela["perimetro"])
     # Fuente: Biomes and Ecoregions 2017 (RESOLVE), CC-BY 4.0 -- citar donde se muestre.
@@ -406,6 +422,23 @@ async def ver_parcela(id_parcela: int, session: AsyncSession = Depends(obtener_s
             "estado_ingesta": await ingesta_predio.estado_ingesta(session, id_parcela)}
 
 
+@app.put("/api/parcelas/{id_parcela}/suelo")
+async def guardar_suelo(id_parcela: int, datos: SueloDeclarado, session: AsyncSession = Depends(obtener_sesion),
+                         usuario: dict = Depends(usuario_actual)):
+    """Guarda lo que el agricultor responde sobre su suelo: drenaje, sal, profundidad y
+    fertilidad. Cambia solo los campos que vienen en el cuerpo; null borra la respuesta. Estos
+    datos no se pueden medir desde el satelite: entran a la lista de especies tal como el
+    agricultor los declara."""
+    await _parcela_autorizada(id_parcela, usuario, session)
+    cambios = {campo: getattr(datos, campo) for campo in datos.model_fields_set if campo in catalogo_especies.CAMPOS_SUELO}
+    if cambios:
+        # Los nombres de columna salen de CAMPOS_SUELO, nunca del cuerpo de la peticion.
+        asignaciones = ", ".join(f"suelo_{campo} = :{campo}" for campo in cambios)
+        await session.execute(text(f"UPDATE parcela SET {asignaciones} WHERE id = :id"), {**cambios, "id": id_parcela})
+        await session.commit()
+    return {"suelo": (await _parcela_autorizada(id_parcela, usuario, session))["suelo"]}
+
+
 @app.get("/api/parcelas/{id_parcela}/mapa")
 async def mapa_parcela(id_parcela: int, tareas: BackgroundTasks,
                         capa: str = Query("ndvi", pattern="^(" + "|".join(CAPAS_MAPA) + ")$"),
@@ -449,6 +482,9 @@ async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
                               categorias: str | None = Query(None, max_length=300),
                               incluir_no_aptas: bool = False,
                               especie: str | None = Query(None, max_length=300),
+                              riego: bool = False,
+                              clima_futuro: Literal["tradicional", "emergente", "en_riesgo"] | None = None,
+                              escenario: Literal["observado", "moderado", "fuerte"] = "observado",
                               session: AsyncSession = Depends(obtener_sesion),
                               usuario: dict = Depends(usuario_actual)):
     """Flujo 1b: especies candidatas para el predio, de mas a menos idoneas, segun
@@ -458,7 +494,17 @@ async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
     forestales, ornamentales y malezas. `limite` se aplica despues de filtrar por
     categorias, y `especies_aptas` / `especies_evaluadas` cuentan solo esas categorias.
     `especie`: lista separada por coma de claves; devuelve solo esas, aptas o no, sin
-    aplicar `limite` ni `incluir_no_aptas`. Responde 409 mientras no haya clima del predio."""
+    aplicar `limite` ni `incluir_no_aptas`. `riego`: el calculo parte de que el agricultor
+    repone la falta de lluvia (por defecto, solo lluvia). `datos_faltantes` lista lo que no
+    se pudo medir del sitio. Responde 409 mientras no haya clima del predio.
+
+    Con la serie historica de la parcela (35 anos, ver multianual.py) cada especie se evalua en cada ano:
+    `apta` es que su ano dificil reciente (el peor decil de los ultimos 15) llegue al minimo, `puntaje` es la
+    compatibilidad tipica (la mediana) y `puntaje_ano_dificil` la del peor decil. `clima` trae los tres periodos
+    (historico, reciente, proyectado a 2040 con la tendencia de la propia serie) y la categoria: tradicional,
+    emergente o en_riesgo; `clima_futuro` filtra por ella e incluye las que aun no son aptas. `escenario`: como
+    sube la temperatura hasta 2040: la tendencia observada en la parcela (por defecto) o un supuesto de +0,3 o +0,6 °C
+    por decada. Sin historia todavia se usa el ano de clima de antes."""
     parcela = await _parcela_autorizada(id_parcela, usuario, session)
     # Solo las fuentes de sitio: CR2MET vence cada mes y, si la tarea programada no
     # corrio, esta consulta lo deja refrescandose.
@@ -467,22 +513,34 @@ async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
         tareas.add_task(ingesta_predio.ingerir_predio, id_parcela, jobs)
     estado = await ingesta_predio.estado_ingesta(session, id_parcela)
     sitio = await leer_sitio(session, id_parcela)
-    normales = catalogo_especies.normales_mensuales(sitio["clima"])
+    # El clima de CR2MET es el de una celda de 5 km: se lleva a la altura de la parcela.
+    altitud = sitio["altitud_dem_m"] if sitio["altitud_dem_m"] is not None else parcela["altitud_msnm"]
+    correccion = catalogo_especies.delta_temperatura_por_altitud(altitud, sitio["altitud_celda_m"])
+    clima = catalogo_especies.corregir_temperatura(sitio["clima"], correccion)
+    normales = catalogo_especies.normales_mensuales(clima)
     if normales["tmedia"] is None:
         raise HTTPException(status.HTTP_409_CONFLICT, {
             "mensaje": "Todavía no hay un año de clima para este predio", "estado_ingesta": estado})
 
     filtro = {c.strip() for c in categorias.split(",") if c.strip()} if categorias else None
-    ranking = await catalogo_especies.ranking_idoneidad(
-        {"normales": normales, "ph": sitio["ph"], "ghi_mensual": sitio["ghi_mensual"], "awc_mm": sitio["awc_mm"]},
-        RepositorioPostgres(session), clima=sitio["clima"], lat=parcela["lat"], categorias=filtro)
+    textura = catalogo_especies.clase_textura(sitio["arcilla_pct"], sitio["arena_pct"])
+    datos_sitio = {"normales": normales, "ph": sitio["ph"], "ghi_mensual": sitio["ghi_mensual"], "awc_mm": sitio["awc_mm"],
+                   "altitud_m": altitud, "textura": textura, "suelo": parcela["suelo"],
+                   "textura_posibles": catalogo_especies.clases_textura_posibles(sitio["arcilla_pct"], sitio["arena_pct"])}
+    datos_sitio["et0_factor_mensual"] = sitio.get("et0_factor_mensual")
+    ranking, serie = await multianual.ranking_multianual(
+        datos_sitio, multianual.RepositorioCacheado(RepositorioPostgres(session), _ALMACEN_CATALOGO),
+        await leer_historia(session, id_parcela), clima, parcela["lat"], categorias=filtro, riego=riego,
+        delta_temp=correccion, calentamiento_c_por_decada=ESCENARIOS_CALENTAMIENTO[escenario])
+    evaluadas = len(ranking)
     aptas = sum(1 for r in ranking if r["apta"])
-    if especie:
-        pedidas = {e.strip() for e in especie.split(",") if e.strip()}
-        lista = [r for r in ranking if r["especie"] in pedidas]
-        limite = max(limite, len(lista))
-    else:
-        lista = ranking if incluir_no_aptas else ranking[:aptas]
+    por_categoria = {c: sum(1 for r in ranking if (r.get("clima") or {}).get("categoria") == c)
+                     for c in ("tradicional", "emergente", "en_riesgo")}
+    if clima_futuro:
+        # una especie 'emergente' puede no ser apta todavia: la categoria ya dice que importa, aptas o no
+        ranking = [r for r in ranking if (r.get("clima") or {}).get("categoria") == clima_futuro]
+        incluir_no_aptas = True
+    lista = catalogo_especies.seleccionar_candidatas(ranking, limite, incluir_no_aptas, especie)
 
     inicio, fin = sitio["periodo_clima"]
     redondear = lambda serie: None if serie is None else [round(v, 2) for v in serie]
@@ -496,9 +554,17 @@ async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
             "lluvia_anual_mm": None if normales["lluvia"] is None else round(sum(normales["lluvia"]), 1),
             "ghi_mensual_kwh_m2_dia": redondear(sitio["ghi_mensual"]),
             "ph": sitio["ph"], "agua_disponible_suelo_mm": sitio["awc_mm"],
+            "altitud_m": None if altitud is None else round(altitud),
+            "altitud_celda_m": None if sitio["altitud_celda_m"] is None else round(sitio["altitud_celda_m"]),
+            "correccion_temperatura_c": round(correccion, 2),
+            "textura": textura, "suelo": parcela["suelo"],
         },
-        "especies_evaluadas": len(ranking), "especies_aptas": aptas,
-        "candidatas": lista[:limite],
+        "especies_evaluadas": evaluadas, "especies_aptas": aptas,
+        "criterio": "multianual" if serie else "un_ano", "serie_climatica": serie, "escenario": escenario,
+        "especies_por_categoria_clima": por_categoria if serie else None,
+        "riego": riego, "datos_faltantes": catalogo_especies.datos_faltantes(datos_sitio),
+        "suelo_sin_declarar": catalogo_especies.suelo_sin_declarar(datos_sitio),
+        "candidatas": lista,
     }
 
 
@@ -601,7 +667,9 @@ async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
     try:
         resultado = await catalogo_especies.seguimiento_cultivo(
             cultivo["especie"], cultivo["variedad_local"], RepositorioPostgres(session), clima,
-            cultivo["fecha_siembra"], parcela["lat"], awc, date.today(), manejo=tuple(dict(m) for m in manejo))
+            cultivo["fecha_siembra"], parcela["lat"], awc, date.today(), manejo=tuple(dict(m) for m in manejo),
+            et0_factores=await leer_factores_et0(session, id_parcela),
+            prof_suelo_m=PROFUNDIDAD_SUELO_M.get(parcela["suelo"]["profundidad"]))
     except (catalogo_especies.EspecieSinPerfil, catalogo_especies.EspecieSinPerfilFenologico):
         raise HTTPException(status.HTTP_409_CONFLICT,
                              "Esta especie todavía no tiene seguimiento por etapa: solo se evalúa si el sitio le sirve")

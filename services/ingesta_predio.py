@@ -64,9 +64,11 @@ from rasterio.warp import transform as reproyectar
 
 from services import (cliente_clsoilmaps, cliente_copernicus, cliente_cr2met, cliente_dem, cliente_firms,
                       cliente_openmeteo, cliente_power, cliente_soilgrids, cliente_solar, db)
-from services.repositorio_clima import (CAPAS_GHI_MENSUAL, CAPAS_DISPONIBILIDAD_OPTICA, FRACCION_MIN_CELDA,
-                                        NUBOSIDAD_ESCENA_MAX_PCT, RADIO_INCENDIO_KM, VENTANA_OPTICA_DIAS,
-                                        guardar_celdas, guardar_consultas_grilla, leer_disponibilidad_optica,
+from services.motor_estres import calibrar_et0_mensual
+from services.repositorio_clima import (CAPAS_ET0_FACTOR_MENSUAL, CAPAS_GHI_MENSUAL, CAPAS_DISPONIBILIDAD_OPTICA,
+                                        FRACCION_MIN_CELDA, NUBOSIDAD_ESCENA_MAX_PCT, RADIO_INCENDIO_KM,
+                                        VENTANA_OPTICA_DIAS, corregir_contra_cr2met, guardar_celdas,
+                                        guardar_consultas_grilla, guardar_historia, leer_disponibilidad_optica,
                                         leer_grilla, ventana_clima)
 
 log = logging.getLogger("ingesta_predio")
@@ -81,6 +83,7 @@ PRODUCTOS = {
     "explorador_solar": "vista_rapida_2004_2016",
     "soilgrids": "v2.0_0-5cm",
     "cr2met": "v2.5_nrt_diario",
+    "clima_historico": "openmeteo_era5_v1",
     "power": "diario_ag",
     "open_meteo": "pronostico_16d",
     "firms": "VIIRS_NOAA20_NOAA21_NRT_5d",
@@ -183,7 +186,69 @@ async def _cr2met(session: AsyncSession, id_parcela: int, lat: float, lon: float
                 filas.append(_fila(id_parcela, capa, fecha.date(), fecha.date(), valor,
                                     "0.05deg_~5km", "cr2met_v2.5_nrt"))
     await guardar_consultas_grilla(session, filas)
+    if filas:
+        await _elevacion_celda(session, id_parcela, lat, lon, fin)
     return None if filas else "sin_cobertura"
+
+
+async def _elevacion_celda(session: AsyncSession, id_parcela: int, lat: float, lon: float, mes: date) -> None:
+    """Altura media de la celda de 5 km de CR2MET que da el clima del predio. El NetCDF no la trae
+    (CR2 usa la topografia solo por dentro), asi que se calcula con el DEM de Copernicus sobre la
+    huella de la celda. Con ella, la temperatura se corrige a la altura de la parcela. No debe
+    tumbar la ingesta del clima: si falla, se avisa en el log y la parcela queda sin correccion."""
+    try:
+        async with _candado_cr2met:
+            archivo = await asyncio.to_thread(cliente_cr2met.descargar_mes, "txn", mes.year, mes.month, CACHE_CR2MET)
+        lat_c, lon_c = cliente_cr2met.centro_de_celda(archivo, lat, lon)
+        medio = cliente_cr2met.LADO_CELDA_GRADOS / 2
+        altura = await asyncio.to_thread(cliente_dem.elevacion_media, lon_c - medio, lat_c - medio, lon_c + medio, lat_c + medio)
+    except Exception:
+        log.warning("parcela %s: no se pudo calcular la altura de la celda de CR2MET", id_parcela, exc_info=True)
+        return
+    await guardar_consultas_grilla(session, [
+        _fila(id_parcela, "cr2met_elevacion_celda_m", _PERIODO_DEM[0], _PERIODO_DEM[1], altura,
+              "0.05deg_~5km", "copernicus_dem_glo30_media_de_la_celda")])
+
+
+ANIO_INICIO_HISTORIA = 1991   # la normal estandar de la OMM empieza ahi; con el reciente son 35 anos
+ATRASO_ERA5_DIAS = 8          # el archivo de reanalisis llega con unos dias de atraso
+
+
+async def _clima_historico(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
+    """El clima diario de 1991 al ultimo ano completo: ERA5 (Open-Meteo), corregido contra el CR2MET de la parcela
+    como ya se corrige POWER (desplazamiento mensual de temperatura y un cociente de lluvia), y la calibracion
+    mensual de la ET0 de Hargreaves contra la Penman-Monteith de ERA5. Guarda un renglon por ano completo. Corre
+    despues de CR2MET, que aporta el traslape para corregir; sin el, guarda la serie sin corregir y lo dice."""
+    hoy = date.today()
+    era5 = await asyncio.to_thread(cliente_openmeteo.consultar_historia, lat, lon, f"{ANIO_INICIO_HISTORIA}-01-01",
+                                   (hoy - timedelta(days=ATRASO_ERA5_DIAS)).isoformat())
+    if era5[["tmin", "tmax", "lluvia"]].isna().any().any():
+        raise ValueError("la serie de reanalisis trae huecos")
+    inicio, fin = ventana_clima(hoy)
+    filas = (await session.execute(text(
+        "SELECT periodo_inicio AS fecha, capa, valor FROM cache_consulta_grilla WHERE id_parcela = :id AND "
+        "capa = ANY(:capas) AND valor IS NOT NULL AND periodo_inicio BETWEEN :inicio AND :fin"),
+        {"id": id_parcela, "capas": ["cr2met_tmin", "cr2met_tmax", "cr2met_lluvia"], "inicio": inicio, "fin": fin})).mappings().all()
+    cr2met = None
+    if filas:
+        cr2met = pd.DataFrame(filas).pivot(index="fecha", columns="capa", values="valor")
+        cr2met.index = pd.to_datetime(cr2met.index)
+        cr2met = cr2met.rename(columns={"cr2met_tmin": "tmin", "cr2met_tmax": "tmax", "cr2met_lluvia": "lluvia"})
+    corregido, sesgo = (era5[["tmin", "tmax", "lluvia"]], None) if cr2met is None else \
+        corregir_contra_cr2met(cr2met, era5[["tmin", "tmax", "lluvia"]])
+    if cr2met is not None:
+        factores = calibrar_et0_mensual(cr2met, era5["et0_pm"], lat)
+        await guardar_consultas_grilla(session, [
+            _fila(id_parcela, capa, inicio, fin, v, "0.05deg_~5km", "hargreaves_calibrado_vs_penman_monteith_era5")
+            for capa, v in zip(CAPAS_ET0_FACTOR_MENSUAL, factores)])
+    anios = {}
+    for anio in range(ANIO_INICIO_HISTORIA, hoy.year):
+        d = corregido.loc[str(anio)]
+        if len(d) == (366 if pd.Timestamp(anio, 12, 31).dayofyear == 366 else 365):
+            anios[anio] = d
+    await guardar_historia(session, id_parcela, anios, "era5_open_meteo" + ("_corregido_cr2met" if sesgo else "_sin_corregir"),
+                           PRODUCTOS["clima_historico"])
+    return None if anios else "sin_cobertura"
 
 
 async def _clsoilmaps(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
@@ -509,7 +574,7 @@ async def _relieve(session: AsyncSession, id_parcela: int, lat: float, lon: floa
 
 
 _INGESTAS = {"explorador_solar": _solar, "soilgrids": _soilgrids, "cr2met": _cr2met,
-             "power": _power, "open_meteo": _open_meteo, "firms": _firms,
+             "clima_historico": _clima_historico, "power": _power, "open_meteo": _open_meteo, "firms": _firms,
              "sentinel2_nubes": _sentinel2_nubes, "relieve": _relieve, "sentinel2_ndvi": _sentinel2_ndvi,
              "sentinel2_celdas": _sentinel2_celdas, "clsoilmaps": _clsoilmaps}
 
@@ -540,7 +605,9 @@ async def estado_ingesta(session: AsyncSession, id_parcela: int) -> dict:
                -- (el mes anterior ya quedo completo pese a los ~9 dias de atraso del producto).
                fecha_completado < date_trunc('month', now())
                  OR (extract(day FROM now()) >= 10
-                     AND fecha_completado < date_trunc('month', now()) + interval '9 days') AS mes_vencido
+                     AND fecha_completado < date_trunc('month', now()) + interval '9 days') AS mes_vencido,
+               -- Clima historico: vence al empezar un ano (el ano que termino pasa a ser un ano completo).
+               fecha_completado < date_trunc('year', now()) AS anio_vencido
         FROM job_extraccion WHERE id_parcela = :id ORDER BY proveedor, id DESC
     """), {"id": id_parcela, "vigente": MINUTOS_JOB_VIGENTE, "espera": MINUTOS_ENTRE_REINTENTOS})).mappings().all()
     ultimo = {f["proveedor"]: f for f in filas}
@@ -564,7 +631,8 @@ async def estado_ingesta(session: AsyncSession, id_parcela: int) -> dict:
         elif estado == "completo" and (
                 (fuente in FUENTES_DIARIAS and f["horas_desde"] is not None
                  and f["horas_desde"] > HORAS_VIGENCIA.get(fuente, HORAS_VIGENCIA_DIARIA))
-                or (fuente == "cr2met" and f["mes_vencido"])):
+                or (fuente == "cr2met" and f["mes_vencido"])
+                or (fuente == "clima_historico" and f["anio_vencido"])):
             estado = "vencida"
         out[fuente] = {"estado": estado,
                        "detalle": "sin_cobertura" if f["detalle"] == "sin_cobertura" else None,

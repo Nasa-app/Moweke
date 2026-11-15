@@ -74,3 +74,13 @@ def leer_relieve(lon_min: float, lat_min: float, lon_max: float, lat_max: float)
                     salida.append({"altitud": altitud, "pendiente": 100 * np.hypot(hacia_x, hacia_y),
                                    "transform": transform, "crs": ds.crs})
     return salida
+
+
+def elevacion_media(lon_min: float, lat_min: float, lon_max: float, lat_max: float) -> float | None:
+    """Altitud media (m s.n.m.) de la tierra firme de la caja pedida. Cuenta como tierra lo que
+    esta sobre 0 m: el modelo marca el agua con 0. None si la caja no tiene baldosa o no tiene
+    tierra. Sirve para la altura media de una celda de 5 km, que ningun producto de clima
+    entrega junto con el dato."""
+    altitudes = [b["altitud"][b["altitud"] > 0] for b in leer_relieve(lon_min, lat_min, lon_max, lat_max)]
+    tierra = np.concatenate(altitudes) if altitudes else np.array([])
+    return float(tierra.mean()) if tierra.size else None

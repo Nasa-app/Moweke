@@ -109,3 +109,14 @@ def consultar_cr2met(lat: float, lon: float, inicio: str, fin: str, directorio_c
     clima = pd.concat(partes).sort_index()
     clima = clima.loc[inicio_ts:fin_ts]
     return clima.rename(columns={"pr": "lluvia"})[["tmin", "tmax", "lluvia"]]
+
+
+LADO_CELDA_GRADOS = 0.05
+
+
+def centro_de_celda(archivo_nc: str, lat: float, lon: float) -> tuple[float, float]:
+    """Latitud y longitud del centro de la celda de 0,05 grados que consultar_cr2met() usa para
+    (lat, lon): el pixel mas cercano de la grilla del archivo."""
+    with xr.open_dataset(archivo_nc) as ds:
+        punto = ds.sel(lat=lat, lon=lon, method="nearest")
+        return float(punto["lat"]), float(punto["lon"])

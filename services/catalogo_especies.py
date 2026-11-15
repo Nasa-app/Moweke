@@ -39,7 +39,8 @@ from typing import Protocol
 import pandas as pd
 
 from pheno_engine import ClimaIncompleto, Cultivo, simular
-from motor_estres import Regla, balance_agua, evaluar, fases
+from motor_estres import (PROFUNDIDAD_SUELO_M, ParametrosAgua, Regla, balance_agua, balance_agua_fao56, evaluar,
+                          et0_hargreaves, factores_et0, fases, kc_diario)
 
 
 class EspecieSinPerfil(Exception):
@@ -61,6 +62,35 @@ class RepositorioEspecies(Protocol):
     async def especies_con_fenologia(self) -> set[str]: ...
     async def identidades(self) -> dict[str, dict]: ...
     async def equivalencias_luz(self) -> list[dict]: ...
+    async def parametros_agua(self, especie: str) -> dict | None: ...
+
+
+# Agua aprovechable de 0 a 200 cm cuando la parcela no tiene el dato de CLSoilMaps (un franco medio da unos
+# 150 mm por metro). Antes eran 100 mm para todo el perfil; ahora la capacidad se reparte por la profundidad
+# de raices, y 100 mm dejaban una zona de raices de 25 mm: una sequia segura.
+AWC_POR_DEFECTO_MM = 200.0
+
+
+async def construir_parametros_agua(especie: str, repo: RepositorioEspecies) -> ParametrosAgua | None:
+    """Los parametros de agua FAO-56 del cultivo, o None si no estan cargados: el balance cae al balde viejo."""
+    fila = await repo.parametros_agua(especie)
+    if not fila:
+        return None
+    return ParametrosAgua(fila["zr_m"], fila["p_agotamiento"], fila["kc_ini"], fila["kc_med"], fila["kc_fin"], fila["ky"])
+
+
+def balance_del_cultivo(clima: pd.DataFrame, lat: float, siembra, fechas: dict, c: Cultivo, params: ParametrosAgua | None,
+                        cap_mm: float | None, riego: bool = False, et0_factores: list | None = None,
+                        prof_suelo_m: float | None = None) -> pd.DataFrame:
+    """El balance de agua que usa un cultivo: FAO-56 por zona de raices si hay parametros; si no, el balde del
+    perfil completo de antes (con riego, sin sequia). La ET0 es Hargreaves calibrada por mes contra Penman-Monteith."""
+    if params is None:
+        agua = balance_agua(clima, lat, cap_mm if cap_mm else 100.0)
+        return agua.assign(agua=1.0) if riego else agua
+    et0 = et0_hargreaves(clima, lat) * factores_et0(et0_factores, clima.index)
+    kc = kc_diario(clima.index, siembra, fechas, c, params)
+    return balance_agua_fao56(clima, et0, kc, cap_mm if cap_mm else AWC_POR_DEFECTO_MM, params,
+                              prof_suelo_m=prof_suelo_m, riego=riego, lat=lat)
 
 
 async def nivel_madurez(especie: str, variedad_local: str | None, repo: RepositorioEspecies) -> str:
@@ -74,7 +104,9 @@ async def nivel_madurez(especie: str, variedad_local: str | None, repo: Reposito
 
 
 async def _idoneidad_simulada(especie: str, variedad_local: str | None, repo: RepositorioEspecies,
-                               clima: pd.DataFrame, lat: float, cap_mm: float | None) -> dict | None:
+                               clima: pd.DataFrame, lat: float, cap_mm: float | None,
+                               riego: bool = False, et0_factores: list | None = None,
+                               prof_suelo_m: float | None = None) -> dict | None:
     """Corre el mismo camino real que motor_rotacion.evaluar_cultivos() usa (simular +
     evaluar), para que la supervivencia ante un evento dependa de EN QUE FASE ocurre
     (regla_dano_especie.fase), no de si el promedio anual de temperatura cruza tb/tc en
@@ -85,6 +117,15 @@ async def _idoneidad_simulada(especie: str, variedad_local: str | None, repo: Re
     None si no se puede simular (sin perfil fenologico, perenne, sin fecha de siembra en
     rasgos_rotacion_especie, o el clima disponible no alcanza para esa fecha) -- quien
     llama cae al chequeo generico en ese caso, nunca inventa un resultado."""
+    preparada = await preparar_simulacion(especie, variedad_local, repo)
+    if preparada is None:
+        return None
+    return simular_idoneidad(preparada, clima, lat, cap_mm, riego, et0_factores, prof_suelo_m)
+
+
+async def preparar_simulacion(especie: str, variedad_local: str | None, repo: RepositorioEspecies) -> dict | None:
+    """Lo que la simulacion por fase necesita de una especie, leido una sola vez de la base: asi se puede correr
+    sobre muchos anos de clima sin volver a consultar. None si no hay perfil fenologico o la especie es perenne."""
     try:
         c = await construir_cultivo(especie, variedad_local, repo)
     except (EspecieSinPerfil, EspecieSinPerfilFenologico):
@@ -92,8 +133,16 @@ async def _idoneidad_simulada(especie: str, variedad_local: str | None, repo: Re
     rasgos = await repo.rasgos_rotacion(especie)
     if not rasgos or rasgos.get("perenne") or rasgos.get("siembra_mes") is None:
         return None  # pradera/perenne no se siembra una vez al ano -- no aplica este chequeo
+    return {"cultivo": c, "mes": rasgos["siembra_mes"], "dia": rasgos.get("siembra_dia") or 1,
+            "reglas": await construir_reglas(especie, variedad_local, repo),
+            "params": await construir_parametros_agua(especie, repo)}
 
-    mes, dia = rasgos["siembra_mes"], rasgos.get("siembra_dia") or 1
+
+def simular_idoneidad(preparada: dict, clima: pd.DataFrame, lat: float, cap_mm: float | None, riego: bool = False,
+                      et0_factores: list | None = None, prof_suelo_m: float | None = None) -> dict | None:
+    """La simulacion por fase de una especie preparada sobre `clima`. None si no hay clima desde la fecha de siembra."""
+    c, params, reglas = preparada["cultivo"], preparada["params"], preparada["reglas"]
+    mes, dia = preparada["mes"], preparada["dia"]
     anio = clima.index[0].year
     siembra = pd.Timestamp(anio, mes, dia)
     if siembra < clima.index[0]:
@@ -101,7 +150,6 @@ async def _idoneidad_simulada(especie: str, variedad_local: str | None, repo: Re
     if siembra > clima.index[-1]:
         return None  # no hay suficiente clima real desde la proxima fecha de siembra
 
-    reglas = await construir_reglas(especie, variedad_local, repo)
     fechas = simular(clima, siembra, lat, c)
     if c.etapas[-1][0] not in fechas:
         return {"apta": False, "metodo": "simulacion_real", "siembra_simulada": str(siembra.date()),
@@ -109,18 +157,19 @@ async def _idoneidad_simulada(especie: str, variedad_local: str | None, repo: Re
                             "con el clima disponible (puede ser que el rango de clima ingerido sea corto, "
                             "no necesariamente que el sitio sea inviable)"]}
 
-    agua = balance_agua(clima, lat, cap_mm if cap_mm else 100.0)
+    agua = balance_del_cultivo(clima, lat, siembra, fechas, c, params, cap_mm, riego, et0_factores, prof_suelo_m)
     resultado = evaluar(clima, agua, siembra, fechas, c, reglas)
     razones = []
     if resultado["estado"] == "perdido":
         razones.append(f"la simulacion real pierde el cultivo sembrando el {siembra.date()} -- "
-                        "ver por que en regla_dano_especie (fase y peligro que gatillo efecto 'total')")
+                       "ver por que en regla_dano_especie (fase y peligro que gatillo efecto 'total')")
     elif resultado["perdida"] > 0.5:
         razones.append(f"perdida simulada alta ({resultado['perdida'] * 100:.0f}%) sembrando el {siembra.date()}")
     return {"apta": len(razones) == 0, "razones": razones, "metodo": "simulacion_real",
             "siembra_simulada": str(siembra.date()), "perdida_simulada": resultado["perdida"],
             "estado_simulado": resultado["estado"],
-            "cap_mm_usado": cap_mm if cap_mm else "100.0 (placeholder, sin dato real de sitio)"}
+            "modelo_agua": "fao56" if params else "balde_perfil",
+            "cap_mm_usado": cap_mm if cap_mm else f"{AWC_POR_DEFECTO_MM if params else 100.0} (supuesto, sin dato real de sitio)"}
 
 
 async def calcular_idoneidad(sitio: dict, especies: list[tuple[str, str | None]], repo: RepositorioEspecies,
@@ -214,9 +263,41 @@ PESO_LUZ = 0.3
 
 # Debajo de este puntaje una especie es posible pero no se recomienda: un puntaje de 0,02 solo
 # dice que el factor limitante no llega a cero. Queda con apta=False y marginal=True, y sale
-# en la lista solo si se piden las no aptas. Las simuladas por etapa nunca caen aca: para
-# ser aptas necesitan menos de 50 % de perdida, o sea puntaje >= 0,5.
+# en la lista solo si se piden las no aptas.
 PUNTAJE_MINIMO_APTA = 0.2
+
+# Un suelo mas acido que el minimo de la especie se puede corregir con cal. El factor de pH no
+# baja de PH_PISO_ENCALADO mientras el suelo este a menos de MARGEN_ENCALADO unidades de pH
+# del minimo, y la salida trae la correccion. Un suelo alcalino no tiene correccion practica.
+PH_PISO_ENCALADO = 0.5
+MARGEN_ENCALADO = 1.0
+
+# Fraccion sobre la altitud maxima de la especie en que el factor de altitud baja de 1 a 0.
+MARGEN_ALTITUD = 0.10
+
+# Textura: puntos de arcilla o arena de error que se le suponen al dato del suelo, y respuesta
+# de una clase que la especie tolera pero no es la optima. El dato es un modelo de 250 m a
+# 0-5 cm, el mas flojo de los factores del suelo: por eso la penalizacion es leve.
+MARGEN_TEXTURA_PCT = 5.0
+TEXTURA_TOLERADA = 0.75
+
+# Suelo que declara el agricultor (la parcela no tiene esos datos medidos). Respuesta de lo que la
+# especie solo tolera, de menos a mas costosa de corregir: la fertilidad se mejora con abono (piso
+# 0,5, nunca descarta); la profundidad y el drenaje no; la sal baja el rendimiento a la mitad.
+DRENAJE_TOLERADO = 0.75
+SALINIDAD_TOLERADA = 0.5
+PROFUNDIDAD_TOLERADA = 0.75
+FERTILIDAD_TOLERADA = 0.75
+PISO_FERTILIDAD = 0.5
+ORDEN_SALINIDAD = {"none": 0, "low": 1, "medium": 2, "high": 3}
+ORDEN_PROFUNDIDAD = {"very_shallow": 0, "shallow": 1, "medium": 2, "deep": 3}
+ORDEN_FERTILIDAD = {"low": 0, "moderate": 1, "high": 2}
+CAMPOS_SUELO = ("drenaje", "salinidad", "profundidad", "fertilidad")
+
+# Temperatura: -6,5 C por km de subida (gradiente estandar de la atmosfera) para pasar de la altura
+# media de la celda de CR2MET a la de la parcela. Tope de seguridad si un dato viene malo.
+GRADIENTE_TEMPERATURA_C_POR_M = 0.0065
+CORRECCION_TEMPERATURA_MAX_C = 5.0
 
 # Categorias de EcoCrop que no son cultivo. Una especie se deja fuera del ranking por
 # defecto solo si TODAS sus categorias estan aca; sin categoria (ej. maiz) se conserva.
@@ -294,20 +375,179 @@ def _respuesta_luz(req: dict, orden_sitio: int, luz: list[dict]) -> float | None
     return 0.0
 
 
-def puntuar_especie(req: dict, sitio: dict, luz: list[dict]) -> dict:
+def clase_textura(arcilla_pct: float | None, arena_pct: float | None) -> str | None:
+    """Clase de textura al estilo FAO/EcoCrop a partir de arcilla y arena (% en peso):
+    heavy = arcilloso (arcilla, arcillo-arenoso, arcillo-limoso), light = arenoso (arena,
+    arena franca, franco arenoso), medium = el resto. Aproxima el triangulo USDA con cortes
+    simples, no lo reproduce. None si falta alguno de los dos datos."""
+    if arcilla_pct is None or arena_pct is None:
+        return None
+    if arcilla_pct >= 40 or (arcilla_pct >= 35 and arena_pct >= 45):
+        return "heavy"
+    if arena_pct >= 52 and arcilla_pct < 20:
+        return "light"
+    return "medium"
+
+
+def clases_textura_posibles(arcilla_pct: float | None, arena_pct: float | None,
+                            margen: float = MARGEN_TEXTURA_PCT) -> list[str]:
+    """La clase de textura del sitio y las vecinas que caben dentro del error del dato (+-margen
+    puntos de arcilla y de arena). Primero la clase central. Vacia si falta un dato. SoilGrids
+    no distingue 5 puntos: sin esto, un sitio en el borde entre dos clases cambia de veredicto
+    por una decima."""
+    central = clase_textura(arcilla_pct, arena_pct)
+    if central is None:
+        return []
+    clases = [central]
+    for da in (-margen, margen):
+        for ds in (-margen, margen):
+            vecina = clase_textura(max(arcilla_pct + da, 0.0), min(max(arena_pct + ds, 0.0), 100.0))
+            if vecina not in clases:
+                clases.append(vecina)
+    return clases
+
+
+def _respuesta_textura(req: dict, clases: list[str]) -> float | None:
+    """Por cada clase posible del sitio: 1 si es optima para la especie, TEXTURA_TOLERADA si solo la
+    tolera, 0 si no; vale la mejor. Sin dato del sitio o de la especie, None: no filtra."""
+    rango = req.get("textura_rango")
+    optima = req.get("textura_opt") or rango
+    if not clases or not (optima or rango):
+        return None
+    return max(1.0 if optima and c in optima else (TEXTURA_TOLERADA if rango and c in rango else 0.0) for c in clases)
+
+
+def _respuesta_drenaje(req: dict, clase: str | None) -> float | None:
+    """Clase de drenaje que declara el agricultor: 'poorly' = se inunda (saturado mas de la mitad del
+    ano), 'well', 'excessive' = se seca muy rapido. Un encharcamiento pasajero NO es 'poorly': se
+    corrige con zanjas o camellones, y por eso la pregunta es por inundacion. 1 si la clase es
+    optima para la especie, DRENAJE_TOLERADO si solo la tolera, 0 si no."""
+    rango = req.get("drenaje_rango")
+    optima = req.get("drenaje_opt") or rango
+    if clase is None or not (optima or rango):
+        return None
+    if optima and clase in optima:
+        return 1.0
+    return DRENAJE_TOLERADO if rango and clase in rango else 0.0
+
+
+def _respuesta_salinidad(req: dict, clase: str | None) -> float | None:
+    """Sal del suelo que declara el agricultor. Una escala: bajo el optimo de la especie responde
+    1, hasta el maximo que tolera SALINIDAD_TOLERADA (la sal baja el rendimiento), mas alla 0."""
+    maximo = ORDEN_SALINIDAD.get(req.get("salinidad_max") or req.get("salinidad_opt"))
+    optimo = ORDEN_SALINIDAD.get(req.get("salinidad_opt"), maximo)
+    nivel = ORDEN_SALINIDAD.get(clase)
+    if nivel is None or maximo is None:
+        return None
+    maximo = max(maximo, optimo)
+    if nivel <= optimo:
+        return 1.0
+    return SALINIDAD_TOLERADA if nivel <= maximo else 0.0
+
+
+def _respuesta_profundidad(req: dict, clase: str | None) -> float | None:
+    """Profundidad del suelo que declara el agricultor. Es un minimo: un suelo mas profundo que lo
+    optimo no perjudica. Al menos lo optimo responde 1, al menos lo minimo que tolera
+    PROFUNDIDAD_TOLERADA, menos que eso 0."""
+    nivel = ORDEN_PROFUNDIDAD.get(clase)
+    optima = ORDEN_PROFUNDIDAD.get(req.get("profundidad_opt"))
+    minima = ORDEN_PROFUNDIDAD.get(req.get("profundidad_min"))
+    if nivel is None or (optima is None and minima is None):
+        return None
+    optima = minima if optima is None else optima
+    minima = optima if minima is None else min(minima, optima)
+    if nivel >= optima:
+        return 1.0
+    return PROFUNDIDAD_TOLERADA if nivel >= minima else 0.0
+
+
+def _respuesta_fertilidad(req: dict, clase: str | None) -> tuple[float | None, dict | None]:
+    """Fertilidad que declara el agricultor. Se puede mejorar con abono o compost: por eso nunca baja
+    de PISO_FERTILIDAD y, si el suelo no llega a lo optimo, la salida trae la correccion."""
+    nivel = ORDEN_FERTILIDAD.get(clase)
+    optima = ORDEN_FERTILIDAD.get(req.get("fertilidad_opt"))
+    minima = ORDEN_FERTILIDAD.get(req.get("fertilidad_min"))
+    if nivel is None or (optima is None and minima is None):
+        return None, None
+    optima = minima if optima is None else optima
+    minima = optima if minima is None else min(minima, optima)
+    if nivel >= optima:
+        return 1.0, None
+    correccion = {"tipo": "fertilizacion", "fertilidad_sitio": clase,
+                  "fertilidad_requerida": req.get("fertilidad_opt") or req.get("fertilidad_min")}
+    return (FERTILIDAD_TOLERADA if nivel >= minima else PISO_FERTILIDAD), correccion
+
+
+def suelo_sin_declarar(sitio: dict) -> list[str]:
+    """Las preguntas sobre el suelo que el agricultor todavia no respondio."""
+    suelo = sitio.get("suelo") or {}
+    return [campo for campo in CAMPOS_SUELO if suelo.get(campo) is None]
+
+
+def delta_temperatura_por_altitud(altitud_parcela_m: float | None, altitud_celda_m: float | None) -> float:
+    """Grados a sumar a la temperatura de la celda de 5 km de CR2MET para llevarla a la altura de la
+    parcela: la temperatura baja GRADIENTE_TEMPERATURA_C_POR_M por metro de subida. Con la
+    parcela mas alta que la altura media de su celda da negativo. 0 si falta algun dato, y
+    nunca mas de CORRECCION_TEMPERATURA_MAX_C en valor absoluto."""
+    if altitud_parcela_m is None or altitud_celda_m is None:
+        return 0.0
+    delta = -GRADIENTE_TEMPERATURA_C_POR_M * (altitud_parcela_m - altitud_celda_m)
+    return max(-CORRECCION_TEMPERATURA_MAX_C, min(CORRECCION_TEMPERATURA_MAX_C, delta))
+
+
+def corregir_temperatura(clima: pd.DataFrame | None, delta: float) -> pd.DataFrame | None:
+    """Copia del clima diario con tmin y tmax desplazadas `delta` grados."""
+    if clima is None or not delta:
+        return clima
+    corregido = clima.copy()
+    corregido["tmin"] = corregido["tmin"] + delta
+    corregido["tmax"] = corregido["tmax"] + delta
+    return corregido
+
+
+def _respuesta_altitud(req: dict, altitud_m: float | None) -> float | None:
+    """EcoCrop solo publica un maximo de altitud, y son cifras redondas de opinion experta: hasta el
+    maximo responde 1; por encima baja en recta hasta 0 a MARGEN_ALTITUD sobre el maximo."""
+    maximo = req.get("altitud_max_m")
+    if altitud_m is None or maximo is None:
+        return None
+    if altitud_m <= maximo:
+        return 1.0
+    return max(0.0, 1 - (altitud_m - maximo) / (maximo * MARGEN_ALTITUD))
+
+
+def _respuesta_ph(req: dict, ph: float | None) -> tuple[float | None, dict | None]:
+    """Respuesta 0-1 del pH del sitio. Bajo el minimo de la especie (suelo mas acido) no cae a
+    cero de golpe: el encalado lo sube, asi que el piso baja de PH_PISO_ENCALADO a 0 a lo
+    largo de MARGEN_ENCALADO unidades de pH. Si el piso es lo que decide, devuelve tambien la
+    correccion. Un suelo alcalino sigue yendo a cero: no hay correccion practica."""
+    minimo, opt_min = req.get("ph_suelo_min"), req.get("ph_opt_min")
+    respuesta = respuesta_meseta(ph, minimo, opt_min, req.get("ph_opt_max"), req.get("ph_suelo_max"))
+    referencia = opt_min if opt_min is not None else minimo
+    if respuesta is None or minimo is None or ph >= referencia:
+        return respuesta, None
+    piso = PH_PISO_ENCALADO * min(1.0, max(0.0, (ph - (minimo - MARGEN_ENCALADO)) / MARGEN_ENCALADO))
+    if piso <= respuesta:
+        return respuesta, None
+    return piso, {"tipo": "encalado", "ph_sitio": ph, "ph_minimo": minimo}
+
+
+def puntuar_especie(req: dict, sitio: dict, luz: list[dict], riego: bool = False) -> dict:
     """req: fila de requisitos_especie. sitio: {'normales': normales_mensuales(...),
     'ph': float|None, 'ghi_mensual': [12 valores kWh/m2/dia]|None}. luz: filas de
     equivalencia_luz_ghi. Devuelve el puntaje de la mejor temporada y el factor que la
-    limita; `apta` es None si no hay ni un factor evaluable."""
+    limita; `apta` es None si no hay ni un factor evaluable. `riego`: la falta de lluvia
+    no cuenta (el agricultor la repone), pero el exceso de lluvia si."""
     normales = sitio.get("normales") or {}
     duracion = duracion_temporada_meses(req.get("ciclo_min_dias"), req.get("ciclo_max_dias"))
     t_opt_min = req.get("t_opt_min") if req.get("t_opt_min") is not None else req.get("t_optima")
     t_opt_max = req.get("t_opt_max") if req.get("t_opt_max") is not None else req.get("t_optima")
     # EcoCrop publica lluvia ANUAL; Recocrop la lleva a umbral mensual dividiendo por la
-    # duracion de la temporada (en meses) mas uno.
-    lluvia_mes = [None if v is None else v / (duracion + 1) for v in (
+    # duracion de la temporada (en meses) mas uno. Con riego se sueltan los dos umbrales de
+    # abajo (minimo y optimo minimo): una cola abierta no limita.
+    lluvia_mes = [None if v is None or (riego and i < 2) else v / (duracion + 1) for i, v in enumerate((
         req.get("lluvia_anual_min"), req.get("lluvia_anual_opt_min"),
-        req.get("lluvia_anual_opt_max"), req.get("lluvia_anual_max"))]
+        req.get("lluvia_anual_opt_max"), req.get("lluvia_anual_max")))]
     letal = req.get("temperatura_letal")
 
     def mensual(variable, *umbrales):
@@ -321,8 +561,20 @@ def puntuar_especie(req: dict, sitio: dict, luz: list[dict]) -> dict:
     }
     por_mes = {k: v for k, v in por_mes.items() if v is not None and v[0] is not None}
     lluvia = normales.get("lluvia")
-    ph = respuesta_meseta(sitio.get("ph"), req.get("ph_suelo_min"), req.get("ph_opt_min"),
-                           req.get("ph_opt_max"), req.get("ph_suelo_max"))
+    ph, correccion_ph = _respuesta_ph(req, sitio.get("ph"))
+    suelo = sitio.get("suelo") or {}
+    fertilidad, correccion_fertilidad = _respuesta_fertilidad(req, suelo.get("fertilidad"))
+    correcciones = [c for c in (correccion_ph, correccion_fertilidad) if c]
+    # Factores del sitio que no cambian con la temporada, como el pH. Los cuatro ultimos los
+    # declara el agricultor: sin respuesta (None), no filtran.
+    fijos = {nombre: valor for nombre, valor in (
+        ("ph", ph), ("altitud", _respuesta_altitud(req, sitio.get("altitud_m"))),
+        ("textura", _respuesta_textura(
+            req, sitio.get("textura_posibles") or ([sitio["textura"]] if sitio.get("textura") else []))),
+        ("drenaje", _respuesta_drenaje(req, suelo.get("drenaje"))),
+        ("salinidad", _respuesta_salinidad(req, suelo.get("salinidad"))),
+        ("profundidad", _respuesta_profundidad(req, suelo.get("profundidad"))),
+        ("fertilidad", fertilidad)) if valor is not None}
 
     mejor = None
     for inicio in range(12):
@@ -332,8 +584,7 @@ def puntuar_especie(req: dict, sitio: dict, luz: list[dict]) -> dict:
             humedad = respuesta_meseta(sum(lluvia[m] for m in meses) / duracion, *lluvia_mes)
             if humedad is not None:
                 factores["humedad"] = humedad
-        if ph is not None:
-            factores["ph"] = ph
+        factores.update(fijos)
         if not factores:
             break
         limitante = min(factores, key=factores.get)
@@ -346,7 +597,7 @@ def puntuar_especie(req: dict, sitio: dict, luz: list[dict]) -> dict:
     base = {"duracion_temporada_meses": duracion, "ciclo_conocido": bool(req.get("ciclo_min_dias")),
             "metodo": "ecocrop_mensual"}
     if mejor is None:
-        return {**base, "apta": None, "puntaje": None, "factores": {},
+        return {**base, "apta": None, "puntaje": None, "factores": {}, "correcciones": [],
                 "razones": ["sin datos de sitio o de especie suficientes para evaluar"]}
 
     limite = mejor["factores"][mejor["limitante"]]
@@ -361,7 +612,44 @@ def puntuar_especie(req: dict, sitio: dict, luz: list[dict]) -> dict:
             puntaje = limite * (1 - PESO_LUZ * (1 - respuesta))
     return {**base, "apta": limite > 0, "puntaje": round(puntaje, 3), "factores": factores,
             "factor_limitante": mejor["limitante"], "mes_inicio_temporada": mejor["inicio"] + 1,
-            "categoria_luz_temporada": categoria["categoria"] if categoria else None}
+            "categoria_luz_temporada": categoria["categoria"] if categoria else None,
+            "correcciones": correcciones}
+
+
+def datos_faltantes(sitio: dict) -> list[str]:
+    """Factores del sitio que no se pudieron medir. Sin un dato, ese factor no filtra: la lista
+    puede incluir especies que el terreno no tolera. Quien la muestre debe decirlo."""
+    normales = sitio.get("normales") or {}
+    faltan = []
+    if normales.get("tmedia") is None:
+        faltan.append("temperatura")
+    if normales.get("tmin_extrema") is None:
+        faltan.append("helada")
+    if normales.get("lluvia") is None:
+        faltan.append("lluvia")
+    if sitio.get("ph") is None:
+        faltan.append("ph")
+    if not sitio.get("ghi_mensual"):
+        faltan.append("radiacion")
+    if sitio.get("awc_mm") is None:
+        faltan.append("agua_suelo")
+    if sitio.get("altitud_m") is None:
+        faltan.append("altitud")
+    if sitio.get("textura") is None:
+        faltan.append("textura")
+    return faltan
+
+
+def seleccionar_candidatas(ranking: list[dict], limite: int, incluir_no_aptas: bool = False,
+                           especie: str | None = None) -> list[dict]:
+    """Lo que el endpoint devuelve del ranking ya ordenado. `especie` (claves separadas por
+    coma) trae solo esas, aptas o no, sin limite. Si no, las aptas (y las demas si
+    `incluir_no_aptas`) recortadas a `limite`."""
+    if especie:
+        pedidas = {e.strip() for e in especie.split(",") if e.strip()}
+        return [r for r in ranking if r["especie"] in pedidas]
+    lista = ranking if incluir_no_aptas else [r for r in ranking if r["apta"]]
+    return lista[:limite]
 
 
 def _slug(nombre_cientifico: str) -> str:
@@ -388,7 +676,8 @@ def _clima_ciclico(clima: pd.DataFrame | None) -> pd.DataFrame | None:
 
 
 async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.DataFrame | None = None,
-                             lat: float | None = None, categorias: set[str] | None = None) -> list[dict]:
+                             lat: float | None = None, categorias: set[str] | None = None,
+                             riego: bool = False) -> list[dict]:
     """Todo el catalogo contra un predio, ordenado de mas a menos idoneo. Una consulta
     por tabla (no por especie). sitio: lo que espera puntuar_especie() mas 'awc_mm'.
 
@@ -397,8 +686,9 @@ async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.Da
 
     Una especie curada con perfil fenologico (papa) y su fila de EcoCrop (solanum_tuberosum)
     salen una sola vez, con el nombre curado. Si la simulacion por fase del perfil curado
-    corre, ella pone el puntaje (1 - perdida simulada) y los factores de EcoCrop quedan
-    como referencia. Si no corre, queda el puntaje de EcoCrop.
+    corre, el puntaje es el menor entre (1 - perdida simulada) y el de EcoCrop, y la salida
+    trae ambos (`puntaje_simulacion`, `puntaje_ecocrop`). Si no corre, queda el de EcoCrop.
+    `riego`: la falta de lluvia no cuenta, ni en EcoCrop ni en la simulacion por fase.
 
     Una excepcion: la simulacion no puede declarar apta a una especie que queda fuera de
     los rangos absolutos de EcoCrop. Las reglas de dano curadas se escribieron para una
@@ -433,24 +723,32 @@ async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.Da
         elif cats and cats <= CATEGORIAS_NO_CULTIVO:
             continue
 
-        resultado = puntuar_especie(req, sitio, luz)
+        resultado = puntuar_especie(req, sitio, luz, riego)
         nivel = "perfil_generico"
         if nombre in con_fenologia:
             nivel = await nivel_madurez(nombre, None, repo)
             simulacion = None
             if ciclico is not None:
                 try:
-                    simulacion = await _idoneidad_simulada(nombre, None, repo, ciclico, lat, sitio.get("awc_mm"))
+                    simulacion = await _idoneidad_simulada(
+                        nombre, None, repo, ciclico, lat, sitio.get("awc_mm"), riego, sitio.get("et0_factor_mensual"),
+                        PROFUNDIDAD_SUELO_M.get((sitio.get("suelo") or {}).get("profundidad")))
                 except ClimaIncompleto:
                     simulacion = None
             if simulacion is not None:
                 fuera_de_rango = resultado["apta"] is False
+                # Sin 'perdida_simulada' la simulacion no completo el ciclo: puntaje 0. El puntaje
+                # es el menor entre la simulacion y EcoCrop: asi la cifra de arriba nunca supera a
+                # la peor de las barras que se muestran debajo (la simulacion sola ignoraba, por
+                # ejemplo, un pH o una temperatura en el limite).
+                puntaje_sim = round(1 - simulacion.get("perdida_simulada", 1.0), 3)
+                puntaje_eco = resultado["puntaje"]
                 resultado.update(
                     simulacion=simulacion, metodo="simulacion_por_fase",
                     apta=simulacion["apta"] and not fuera_de_rango,
                     fuera_de_rangos_ecocrop=fuera_de_rango,
-                    # Sin 'perdida_simulada' la simulacion no completo el ciclo: puntaje 0.
-                    puntaje=0.0 if fuera_de_rango else round(1 - simulacion.get("perdida_simulada", 1.0), 3))
+                    puntaje_simulacion=puntaje_sim, puntaje_ecocrop=puntaje_eco,
+                    puntaje=0.0 if fuera_de_rango else (puntaje_sim if puntaje_eco is None else min(puntaje_sim, puntaje_eco)))
         if resultado["apta"] and resultado["puntaje"] < PUNTAJE_MINIMO_APTA:
             resultado.update(apta=False, marginal=True)
 
@@ -492,7 +790,8 @@ def _perdida_de(eventos: list[dict]) -> float:
 
 async def seguimiento_cultivo(especie: str, variedad_local: str | None, repo: RepositorioEspecies,
                                clima: pd.DataFrame, siembra, lat: float, cap_mm: float | None, hoy,
-                               manejo: tuple = ()) -> dict:
+                               manejo: tuple = (), et0_factores: list | None = None,
+                               prof_suelo_m: float | None = None) -> dict:
     """Un cultivo ya sembrado (o con siembra planeada) contra la serie diaria del predio:
     en que fecha llega a cada etapa, en que fase esta hoy, y que condiciones y eventos de
     dano toca cada fase -- separando lo que ya se observo, lo que viene en el pronostico y
@@ -516,7 +815,8 @@ async def seguimiento_cultivo(especie: str, variedad_local: str | None, repo: Re
     numerico = clima[["tmin", "tmax", "lluvia", "rh"]].astype(float)
     horizonte = clima["horizonte"]
     fechas = simular(numerico, siembra, lat, c)
-    agua = balance_agua(numerico, lat, cap_mm if cap_mm else 100.0)
+    params = await construir_parametros_agua(especie, repo)
+    agua = balance_del_cultivo(numerico, lat, siembra, fechas, c, params, cap_mm, False, et0_factores, prof_suelo_m)
     resultado = evaluar(numerico, agua, siembra, fechas, c, reglas, manejo=manejo)
 
     dia = lambda t: t.date().isoformat()
@@ -589,7 +889,8 @@ async def seguimiento_cultivo(especie: str, variedad_local: str | None, repo: Re
         "reglas_evaluadas": len(reglas),
         # Reglas cuya fase no existe entre las etapas de esta especie: nunca se cumplen.
         "reglas_con_fase_desconocida": sorted({r.fase for r in reglas} - fases_validas(c)),
-        "capacidad_agua_mm": cap_mm if cap_mm else 100.0,
+        "capacidad_agua_mm": cap_mm if cap_mm else (AWC_POR_DEFECTO_MM if params else 100.0),
+        "modelo_agua": "fao56" if params else "balde_perfil",
         "humedad_relativa_disponible": bool(numerico["rh"].notna().any()),
     }
 
@@ -795,6 +1096,7 @@ class RepositorioEnMemoria:
     reglas_rows: list[dict]
     especie_rows: list[dict] = field(default_factory=list)
     luz_rows: list[dict] = field(default_factory=list)
+    parametros_agua_rows: list[dict] = field(default_factory=list)
 
     async def requisitos_genericos(self):
         return [r for r in self.requisitos_rows if r["variedad_local"] is None]
@@ -807,6 +1109,9 @@ class RepositorioEnMemoria:
 
     async def equivalencias_luz(self):
         return sorted(self.luz_rows, key=lambda f: f["orden"])
+
+    async def parametros_agua(self, especie):
+        return next((r for r in self.parametros_agua_rows if r["especie"] == especie), None)
 
     async def requisitos(self, especie, variedad_local):
         for r in self.requisitos_rows:
