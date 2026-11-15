@@ -38,7 +38,7 @@ export default function OnbListo() {
       ? { a: '/terreno', titulo: mejores.length ? 'Lo que mejor se da' : 'Ninguna especie resultó apta', detalle: mejores.join(' · ') || 'Revisa el detalle de tu terreno' }
       : reuniendo
         ? { a: '/terreno/preparando', titulo: 'Reuniendo los datos de tu parcela', detalle: 'Toca para ver el avance' }
-        : { a: '/terreno', titulo: 'Analizando tu terreno…', detalle: 'Comparando con el catálogo de especies' }
+        : { a: '/terreno', titulo: 'Analizando tu terreno…', detalle: 'Buscando qué se da bien en tu parcela' }
 
   function alternar(clave: string) {
     const copia = new Set(activos)

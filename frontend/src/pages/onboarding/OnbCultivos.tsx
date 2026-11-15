@@ -22,7 +22,7 @@ export default function OnbCultivos() {
     let vigente = true
     especiesConSeguimiento()
       .then((r) => vigente && setEspecies(r.especies))
-      .catch((err) => vigente && setError(mensajeDeError(err, 'No se pudo cargar la lista de cultivos.')))
+      .catch((err) => vigente && setError(mensajeDeError(err, 'No pudimos cargar la lista de cultivos. Revisa tu conexión e inténtalo de nuevo.')))
     return () => {
       vigente = false
     }
@@ -60,7 +60,7 @@ export default function OnbCultivos() {
   return (
     <Screen>
       <BarraSuperior volverA="/onboarding/meta" derecha={<StepDots paso={4} total={4} />} />
-      <Titulo sub="Estos cultivos tienen seguimiento por etapa. Los demás se eligen desde el análisis de tu terreno.">{t('onb_cultivos_titulo')}</Titulo>
+      <Titulo sub="De estos cultivos te avisamos etapa por etapa. Para los demás, mira qué conviene sembrar en el análisis de tu terreno.">{t('onb_cultivos_titulo')}</Titulo>
 
       {!idParcela ? (
         <Link to="/terreno/perimetro?desde=onboarding" className="ps-card-plana" style={{ margin: '12px 16px 0 16px', textDecoration: 'none', color: 'var(--carbon)', display: 'flex', alignItems: 'center', gap: 12 }}>

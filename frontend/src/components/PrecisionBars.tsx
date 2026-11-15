@@ -21,7 +21,7 @@ export function PrecisionBars({ nivel, fecha }: { nivel: 1 | 2 | 3 | 4; fecha?: 
         ))}
       </svg>
       <span>
-        <b style={{ fontWeight: 800 }}>Precisión {ETIQUETAS[nivel - 1].toLowerCase()}</b>
+        <b style={{ fontWeight: 800 }}>Confianza {ETIQUETAS[nivel - 1].toLowerCase()}</b>
         {fecha ? <span className="ps-nota"> · datos al {fecha}</span> : null}
       </span>
     </span>

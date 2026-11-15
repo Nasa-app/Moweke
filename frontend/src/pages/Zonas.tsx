@@ -71,7 +71,7 @@ export default function Zonas() {
     if (!idParcela) return
     verParcela(idParcela)
       .then((p) => setPerimetro(p.perimetro))
-      .catch((err) => setError(mensajeDeError(err, 'No se pudo cargar la parcela.')))
+      .catch((err) => setError(mensajeDeError(err, 'No pudimos cargar tu parcela. Revisa tu conexión e inténtalo de nuevo.')))
   }, [idParcela])
 
   const enCurso = mapa?.capa === capa && ['pendiente', 'en_proceso'].includes(mapa.estado_ingesta.estado)
@@ -89,7 +89,7 @@ export default function Zonas() {
           }
         })
         .catch((err) => {
-          if (vigente) setError(mensajeDeError(err, 'No se pudo cargar el mapa.'))
+          if (vigente) setError(mensajeDeError(err, 'No pudimos cargar el mapa. Revisa tu conexión e inténtalo de nuevo.'))
         })
         .finally(() => {
           if (vigente && enCurso) reloj = setTimeout(consultar, SEGUNDOS_ENTRE_CONSULTAS * 1000)
@@ -127,14 +127,14 @@ export default function Zonas() {
     : !sinDatos
       ? null
       : enCurso
-        ? 'Reuniendo esta capa. Aparece sola cuando esté lista.'
+        ? 'Estamos reuniendo estos datos. El mapa se completa solo cuando estén listos.'
         : estadoCapa === 'sin_configurar'
-          ? 'Esta capa no está disponible en este servidor.'
+          ? 'Este mapa todavía no está disponible.'
           : estadoCapa === 'error'
-            ? 'No se pudo cargar esta capa. Se vuelve a intentar en unos minutos.'
+            ? 'No pudimos cargar este mapa. Volvemos a intentarlo en unos minutos.'
             : capa === 'ndvi'
-              ? 'Sin una imagen despejada de los últimos meses para esta parcela.'
-              : 'Sin datos de esta capa para la parcela.'
+              ? 'Hubo muchas nubes en los últimos meses y el satélite no pudo ver tu parcela. Vuelve a mirar en unos días.'
+              : 'No hay datos de este mapa para tu parcela.'
 
   return (
     <Screen>
@@ -201,9 +201,9 @@ export default function Zonas() {
               {capa === 'ndvi'
                 ? actual.fecha_comun
                   ? ` · imagen del ${fechaCorta(actual.fecha_comun)}`
-                  : ' · cada celda con su última imagen despejada'
+                  : ' · cada cuadro con su última foto sin nubes'
                 : ' · incluye árboles y construcciones'}
-              {` · ${actual.celdas_con_dato} de ${actual.celdas} celdas con dato`}
+              {` · ${actual.celdas_con_dato} de ${actual.celdas} cuadros con dato`}
             </Link>
           </div>
         </section>
@@ -220,12 +220,12 @@ export default function Zonas() {
                 </span>
                 <span className="ps-detalle">
                   {elegida.properties.fecha ? `Imagen del ${fechaCorta(elegida.properties.fecha)} · ` : ''}
-                  {numero(elegida.properties.fraccion_dentro * 100)}% de la celda dentro de la parcela
+                  {numero(elegida.properties.fraccion_dentro * 100)}% del cuadro dentro de tu parcela
                 </span>
               </span>
             </>
           ) : (
-            <span className="ps-cuerpo">Toca una celda del mapa para ver su valor.</span>
+            <span className="ps-cuerpo">Toca un cuadro del mapa para ver su valor.</span>
           )}
         </div>
       </section>

@@ -39,13 +39,13 @@ export const diccionario: Record<string, { es: string; en: string }> = {
   // explorar
   explorar_titulo: { es: 'Explorar tu zona', en: 'Explore your area' },
   lo_nuevo_zona: { es: 'Lo nuevo en tu zona', en: "What's new in your area" },
-  datos_predio: { es: 'Datos para tu predio', en: 'Data for your plot' },
+  datos_predio: { es: 'Datos para tu parcela', en: 'Data for your plot' },
   analisis_terreno: { es: 'Análisis del terreno y qué sembrar', en: 'Land analysis and what to plant' },
-  agregar_predio: { es: 'Agregar mi predio', en: 'Add my plot' },
+  agregar_predio: { es: 'Agregar mi parcela', en: 'Add my plot' },
   seguir_mirando: { es: 'Seguir mirando', en: 'Keep looking' },
 
   // onboarding
-  onb_predio_titulo: { es: 'Tu predio', en: 'Your plot' },
+  onb_predio_titulo: { es: 'Tu parcela', en: 'Your plot' },
   onb_comuna: { es: 'Comuna', en: 'Municipality' },
   onb_sector: { es: 'Sector', en: 'Sector' },
   onb_terreno: { es: 'Terreno', en: 'Land' },
@@ -64,7 +64,7 @@ export const diccionario: Record<string, { es: string; en: string }> = {
   onb_cambiar_despues: { es: 'Puedes cambiarlo después', en: 'You can change it later' },
   onb_cultivos_titulo: { es: '¿Qué sembraste ahora?', en: 'What are you planting now?' },
   onb_cuando: { es: '¿Cuándo?', en: 'When?' },
-  onb_listo_titulo: { es: 'Tu predio está listo', en: 'Your plot is ready' },
+  onb_listo_titulo: { es: 'Tu parcela está lista', en: 'Your plot is ready' },
   onb_avisos_titulo: { es: '¿Por dónde te avisamos?', en: 'How should we notify you?' },
   onb_ver_que_sembrar: { es: 'Ver qué sembrar', en: 'See what to plant' },
   onb_ir_a_hoy: { es: 'Ir a Hoy', en: 'Go to Today' },
@@ -133,11 +133,11 @@ export const diccionario: Record<string, { es: string; en: string }> = {
   terreno_zonas_sembrar: { es: 'Mapa de tu parcela', en: 'Map of your plot' },
   terreno_cambiar_perimetro: { es: 'Marcar otra parcela', en: 'Mark another plot' },
   terreno_cambio_20_anios: { es: 'Cómo viene cambiando · 20 años', en: 'How it has been changing · 20 years' },
-  terreno_medido: { es: 'Medido en tu predio', en: 'Measured on your plot' },
-  terreno_riesgos: { es: 'Riesgos del predio', en: 'Plot risks' },
+  terreno_medido: { es: 'Medido en tu parcela', en: 'Measured on your plot' },
+  terreno_riesgos: { es: 'Riesgos en tu parcela', en: 'Risks on your plot' },
   perimetro_titulo: { es: 'Marca tu parcela', en: 'Mark your plot' },
-  perimetro_paso_punto: { es: 'Punto', en: 'Point' },
-  perimetro_paso_perimetro: { es: 'Perímetro', en: 'Perimeter' },
+  perimetro_paso_punto: { es: 'Ubicación', en: 'Location' },
+  perimetro_paso_perimetro: { es: 'Esquinas', en: 'Corners' },
   perimetro_toca_esquinas: { es: 'Toca las esquinas de tu parcela', en: "Tap your plot's corners" },
   perimetro_usar_ubicacion: { es: 'Usar mi ubicación', en: 'Use my location' },
   perimetro_analizar: { es: 'Analizar mi parcela', en: 'Analyse my plot' },
@@ -150,7 +150,7 @@ export const diccionario: Record<string, { es: string; en: string }> = {
   especies_nada: { es: 'Nada', en: 'Nothing' },
   especies_algo: { es: 'Algo', en: 'Some' },
   especies_mucho: { es: 'Mucho', en: 'A lot' },
-  especies_precision: { es: 'Precisión', en: 'Precision' },
+  especies_precision: { es: 'Confianza', en: 'Confidence' },
   analisis_compatible: { es: 'Compatible con tu terreno', en: 'Compatible with your land' },
   analisis_variedad: { es: 'Variedad', en: 'Variety' },
   analisis_rendimiento: { es: 'Cuánto rinde si el clima…', en: 'Yield if the climate…' },
@@ -179,7 +179,7 @@ export const diccionario: Record<string, { es: string; en: string }> = {
   // fuentes
   fuentes_titulo: { es: '¿De dónde salen los datos?', en: 'Where does the data come from?' },
   fuentes_que_tan_seguro: { es: 'Qué tan seguro es', en: 'How reliable is this' },
-  fuentes_mas_precision: { es: 'Más precisión: marca tu parcela', en: 'More precision: mark your plot' },
+  fuentes_mas_precision: { es: 'Datos más exactos: marca tu parcela', en: 'More accurate data: mark your plot' },
 }
 
 export function traducir(idioma: Idioma, clave: string): string {

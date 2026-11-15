@@ -35,7 +35,7 @@ export function useSeguimiento() {
       .then((fenologia) => vigente && setSeguimiento({ idCultivo: idCultivoActivo, fenologia, aviso: null }))
       .catch((err) => {
         if (vigente) {
-          setSeguimiento({ idCultivo: idCultivoActivo, fenologia: null, aviso: mensajeDeError(err, 'No se pudo cargar el seguimiento.') })
+          setSeguimiento({ idCultivo: idCultivoActivo, fenologia: null, aviso: mensajeDeError(err, 'No pudimos cargar el seguimiento. Revisa tu conexión e inténtalo de nuevo.') })
         }
       })
     return () => {

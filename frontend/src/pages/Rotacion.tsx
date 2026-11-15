@@ -13,7 +13,7 @@ export default function Rotacion() {
   const { idParcela } = usePredio()
   const [especiesTerreno, setEspeciesTerreno] = useState<{ especie: string; nombre: string; compatibilidad: number; motivo: string }[]>([])
   const [elegido, setElegido] = useState<string | null>(null)
-  const [aviso, setAviso] = useState<string | null>(idParcela ? 'Comparando tu terreno con el catálogo…' : 'Marca tu parcela para ver qué conviene sembrar.')
+  const [aviso, setAviso] = useState<string | null>(idParcela ? 'Buscando qué se da bien en tu parcela…' : 'Marca tu parcela para ver qué conviene sembrar.')
 
   // Las cuatro especies de comida más compatibles con la parcela, del ranking real.
   useEffect(() => {
@@ -30,7 +30,7 @@ export default function Rotacion() {
             especie: c.especie,
             nombre: nombreEspecie(c.especie, c),
             compatibilidad: aPorcentaje(c.puntaje),
-            motivo: c.factor_limitante && aPorcentaje(c.puntaje) < 100 ? `Lo limita: ${nombreClave(c.factor_limitante).toLowerCase()}` : 'Sin limitantes',
+            motivo: c.factor_limitante && aPorcentaje(c.puntaje) < 100 ? `Lo limita: ${nombreClave(c.factor_limitante).toLowerCase()}` : 'Sin problemas',
           }))
         setEspeciesTerreno(mejores)
         setElegido(mejores[0]?.especie ?? null)

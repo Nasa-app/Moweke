@@ -12,10 +12,10 @@ const GRUPOS = [
   { titulo: 'Clima del último año', detalle: 'Temperatura y lluvia de cada día', fuentes: ['cr2met'] },
   { titulo: 'Clima de estos días', detalle: 'Últimos días y pronóstico', fuentes: ['power', 'open_meteo'] },
   { titulo: 'Suelo', detalle: 'Acidez y agua que guarda', fuentes: ['soilgrids', 'clsoilmaps'] },
-  { titulo: 'Sol', detalle: 'Radiación de cada mes', fuentes: ['explorador_solar'] },
+  { titulo: 'Sol', detalle: 'Sol de cada mes', fuentes: ['explorador_solar'] },
   { titulo: 'Relieve', detalle: 'Altura y pendiente', fuentes: ['relieve'] },
   { titulo: 'Satélite', detalle: 'Verdor del campo', fuentes: ['sentinel2_nubes', 'sentinel2_ndvi', 'sentinel2_celdas'] },
-  { titulo: 'Focos de calor', detalle: 'Incendios cerca del predio', fuentes: ['firms'] },
+  { titulo: 'Focos de calor', detalle: 'Incendios cerca de tu parcela', fuentes: ['firms'] },
 ] as const
 
 type Avance = 'cargando' | 'listo' | 'fallo' | 'sin_cobertura' | 'no_disponible'
@@ -23,7 +23,7 @@ type Avance = 'cargando' | 'listo' | 'fallo' | 'sin_cobertura' | 'no_disponible'
 const ETIQUETA: Record<Avance, { texto: string; tono: TonoChip }> = {
   cargando: { texto: 'Cargando', tono: 'clima' },
   listo: { texto: 'Listo', tono: 'favorable' },
-  fallo: { texto: 'No se pudo', tono: 'riesgo' },
+  fallo: { texto: 'No cargó', tono: 'riesgo' },
   sin_cobertura: { texto: 'Sin datos aquí', tono: 'precaucion' },
   no_disponible: { texto: 'No disponible', tono: 'neutro' },
 }
@@ -66,7 +66,7 @@ export default function Preparando() {
           }
         })
         .catch((err) => {
-          if (vigente) setError(mensajeDeError(err, 'No se pudo consultar el avance.'))
+          if (vigente) setError(mensajeDeError(err, 'No pudimos ver cómo va. Revisa tu conexión e inténtalo de nuevo.'))
         })
         .finally(() => {
           if (vigente) reloj = setTimeout(consultar, SEGUNDOS_ENTRE_CONSULTAS * 1000)
@@ -93,7 +93,7 @@ export default function Preparando() {
       const respuesta = await reintentarIngesta(idParcela)
       setParcela((previa) => (previa ? { ...previa, estado_ingesta: respuesta.estado_ingesta } : previa))
     } catch (err) {
-      setError(mensajeDeError(err, 'No se pudo reintentar.'))
+      setError(mensajeDeError(err, 'No pudimos reintentar. Prueba otra vez en unos minutos.'))
     } finally {
       setReintentando(false)
     }
@@ -132,13 +132,13 @@ export default function Preparando() {
 
       {climaSinCobertura ? (
         <p className="ps-pad ps-nota" role="alert" style={{ margin: '12px 0 0 0', color: 'var(--riesgo-texto)' }}>
-          No hay clima para este punto: la cobertura actual es Chile continental. Marca la parcela de nuevo.
+          Por ahora solo tenemos datos del Chile continental. Marca tu parcela otra vez, dentro de esa zona.
         </p>
       ) : null}
       {hayFallos ? (
         <div className="ps-pad-16" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
           <span className="ps-nota" style={{ flex: 1 }}>
-            {puedeReintentar ? 'Algunas fuentes fallaron.' : 'Algunas fuentes fallaron. Se puede reintentar en unos minutos.'}
+            {puedeReintentar ? 'Algunos datos no se pudieron reunir. Toca Reintentar.' : 'Algunos datos no se pudieron reunir. Prueba otra vez en unos minutos.'}
           </span>
           <button type="button" onClick={reintentar} disabled={!puedeReintentar || reintentando} className="ps-btn-secundario" style={{ padding: '0 16px', minHeight: 48 }}>
             {t('reintentar')}
@@ -158,7 +158,7 @@ export default function Preparando() {
           </Link>
         ) : (
           <button type="button" disabled className="ps-btn">
-            {climaSinCobertura ? 'Sin clima para este punto' : 'Reuniendo el clima…'}
+            {climaSinCobertura ? 'Sin datos en este lugar' : 'Reuniendo el clima…'}
           </button>
         )}
         <Link to="/terreno/zonas" className="ps-btn-texto">

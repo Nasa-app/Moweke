@@ -11,15 +11,15 @@ import { useI18n } from '../i18n'
 
 const ORDEN_FACTORES: Factor[] = ['temperatura', 'helada', 'humedad', 'ph', 'radiacion']
 const DETALLE_FACTOR: Record<Factor, string> = {
-  temperatura: 'Temperatura media de la temporada',
+  temperatura: 'Calor promedio de la temporada',
   helada: 'Que la noche más fría no la mate',
   humedad: 'Lluvia de la temporada, sin riego',
-  ph: 'pH del suelo frente al rango que tolera',
+  ph: 'Qué tan ácido o alcalino es el suelo (pH) para ella',
   radiacion: 'Sol que recibe en la temporada',
 }
 const SEGUIMIENTO: Record<string, { texto: string; detalle: string }> = {
-  perfil_calibrado: { texto: 'Con seguimiento por etapa', detalle: 'Etapas calibradas con datos locales.' },
-  perfil_fenologico_regional: { texto: 'Con seguimiento por etapa', detalle: 'Etapas de referencia, todavía sin validar en terreno.' },
+  perfil_calibrado: { texto: 'Te avisamos etapa por etapa', detalle: 'Las etapas están ajustadas con datos de la zona.' },
+  perfil_fenologico_regional: { texto: 'Te avisamos etapa por etapa', detalle: 'Las etapas son de referencia: aún no se han probado en terreno.' },
 }
 
 function colorDeFactor(valor: number): string {
@@ -45,7 +45,7 @@ export default function Analisis() {
     let vigente = true
     candidatasSiembra(idParcela)
       .then((r) => vigente && setCandidata(r.candidatas.find((c) => c.especie === clave) ?? null))
-      .catch((err) => vigente && setError(mensajeDeError(err, 'No se pudo cargar el análisis.')))
+      .catch((err) => vigente && setError(mensajeDeError(err, 'No pudimos cargar el análisis. Revisa tu conexión e inténtalo de nuevo.')))
     return () => {
       vigente = false
     }
@@ -102,7 +102,7 @@ export default function Analisis() {
                   {candidata.factor_limitante && compat < 100 ? `Lo que más la limita: ${nombreClave(candidata.factor_limitante).toLowerCase()}` : t('analisis_compatible')}
                 </span>
                 <SourceLink>
-                  {candidata.metodo === 'simulacion_por_fase' ? 'Simulación por etapa con el clima de tu parcela' : 'FAO EcoCrop con el clima de tu parcela'}
+                  {candidata.metodo === 'simulacion_por_fase' ? 'Calculado etapa por etapa con el clima de tu parcela' : 'Calculado con la guía de la FAO (EcoCrop) y el clima de tu parcela'}
                 </SourceLink>
               </span>
             </div>
@@ -134,12 +134,12 @@ export default function Analisis() {
           </ul>
           {candidata.metodo === 'simulacion_por_fase' ? (
             <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
-              El porcentaje de arriba sale de la simulación por etapa. Estas barras son la referencia de FAO EcoCrop para la especie.
+              El porcentaje de arriba sale de simular el cultivo etapa por etapa con el clima de tu parcela. Las barras muestran lo que esta especie aguanta, según la guía de la FAO.
             </p>
           ) : null}
           {candidata.fuera_de_rangos_ecocrop ? (
             <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
-              El clima de la parcela queda fuera de los rangos que tolera la especie, por eso no se recomienda aunque la simulación corra.
+              El clima de tu parcela está fuera de lo que esta especie aguanta, por eso no la recomendamos.
             </p>
           ) : null}
 
@@ -156,14 +156,14 @@ export default function Analisis() {
               ) : null}
               {candidata.simulacion ? (
                 <span className="ps-cuerpo">
-                  Simulada sembrando el {fechaCorta(candidata.simulacion.siembra_simulada)}
+                  Si la siembras el {fechaCorta(candidata.simulacion.siembra_simulada)}
                   {candidata.simulacion.perdida_simulada !== undefined
-                    ? `: pérdida estimada de ${aPorcentaje(candidata.simulacion.perdida_simulada)}% de la cosecha.`
-                    : ': no alcanza a completar el ciclo con el clima disponible.'}
+                    ? `, podrías perder cerca del ${aPorcentaje(candidata.simulacion.perdida_simulada)}% de la cosecha.`
+                    : ', no alcanza a completar su ciclo con el clima que tenemos.'}
                 </span>
               ) : null}
               <span className="ps-detalle">
-                {seguimiento ? `${seguimiento.texto}. ${seguimiento.detalle}` : 'Sin seguimiento por etapa: solo se evalúa si el sitio le sirve.'}
+                {seguimiento ? `${seguimiento.texto}. ${seguimiento.detalle}` : 'Todavía no seguimos sus etapas: solo vemos si tu terreno le sirve.'}
               </span>
             </div>
           </div>

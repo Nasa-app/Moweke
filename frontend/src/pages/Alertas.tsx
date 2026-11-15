@@ -67,10 +67,10 @@ export default function Alertas() {
                 <Chip tono="riesgo">{fechaCorta(dia.fecha)}</Chip>
               </div>
               <span style={{ fontSize: 16, fontWeight: 700 }}>
-                {dia.focos} {dia.focos === 1 ? 'detección' : 'detecciones'}
+                {dia.focos} {dia.focos === 1 ? 'foco' : 'focos'} ese día
                 {dia.distancia_min_km !== null ? ` · la más cercana a ${numero(dia.distancia_min_km, 1)} km` : ''}
               </span>
-              <span className="ps-nota">Visto por satélite (NASA FIRMS). No es una alerta oficial: si SENAPRED avisa, sigue esa indicación.</span>
+              <span className="ps-nota">Lo vio un satélite de NASA (FIRMS). No es una alerta oficial. Si ves humo o fuego, llama a Bomberos al 132 y sigue lo que indique SENAPRED.</span>
               <a href="tel:132" style={{ minHeight: 48, borderRadius: 14, border: '2px solid var(--riesgo-texto)', color: 'var(--riesgo-texto)', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800 }}>
                 Bomberos 132
               </a>
@@ -124,7 +124,7 @@ export default function Alertas() {
       </div>
 
       <p className="ps-pad ps-nota" style={{ margin: 'auto 0 0 0', padding: '20px 20px 32px 20px' }}>
-        Los umbrales de daño de cada etapa son de referencia y todavía no están validados en terreno. El cálculo supone cultivo sin riego.
+        Los límites de daño de cada etapa son de referencia: aún no se han probado en terreno. El cálculo supone que no riegas.
       </p>
     </Screen>
   )

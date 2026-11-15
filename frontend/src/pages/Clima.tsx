@@ -71,7 +71,7 @@ export default function Clima() {
       .catch((err) => {
         if (!vigente) return
         if (err instanceof ApiError && err.status === 409) setSinClima(true)
-        else setError(mensajeDeError(err, 'No se pudo cargar el clima.'))
+        else setError(mensajeDeError(err, 'No pudimos cargar el clima. Revisa tu conexión e inténtalo de nuevo.'))
       })
     return () => {
       vigente = false
@@ -131,7 +131,7 @@ export default function Clima() {
               <Grafico dias={dias} pestana={pestana} hoy={hoy} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700, color: 'var(--texto-tenue)' }}>
                 <span>{fechaCorta(dias[0]?.fecha)}</span>
-                <span>Línea: hoy · claro: modelo o pronóstico</span>
+                <span>La línea marca hoy · lo más claro es pronóstico</span>
                 <span>{fechaCorta(dias[dias.length - 1]?.fecha)}</span>
               </div>
             </div>
@@ -180,9 +180,13 @@ export default function Clima() {
             )}
           </section>
 
-          <Link to="/fuentes" className="ps-pad ps-nota" style={{ margin: 'auto 0 0 0', padding: '16px 20px 32px 20px', textDecoration: 'none' }}>
-            Observado: CR2MET y NASA POWER. Pronóstico: Open-Meteo, ajustado al clima medido en tu parcela. Las heladas del pronóstico suelen quedar cortas.
+          <Link to="/fuentes" className="ps-pad ps-nota" style={{ margin: 'auto 0 0 0', padding: '16px 20px 8px 20px', textDecoration: 'none' }}>
+            Días pasados: CR2MET y NASA POWER (datos de estaciones y satélites). Próximos días: pronóstico de Open-Meteo, corregido con el clima de tu parcela. El pronóstico suele quedarse corto con las heladas: si la noche se ve fría, protege tu cultivo.
           </Link>
+          <p className="ps-pad ps-nota" style={{ margin: 0, padding: '0 20px 32px 20px' }}>
+            Datos del pronóstico: <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo.com</a>, licencia{' '}
+            <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>. Modificados: corregidos con el clima medido en tu parcela.
+          </p>
         </>
       ) : null}
     </Screen>

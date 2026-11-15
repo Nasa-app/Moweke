@@ -141,5 +141,5 @@ export function MapaCeldas({
     L.geoJSON(perimetro as GeoJSON.Polygon, { style: { color: '#ffffff', weight: 3, fill: false }, interactive: false }).addTo(grupo)
   }, [celdas, colorDe, elegida, perimetro])
 
-  return <div ref={contenedor} className="ps-mapa" role="application" aria-label="Mapa de tu parcela dividida en celdas" />
+  return <div ref={contenedor} className="ps-mapa" role="application" aria-label="Mapa de tu parcela dividida en cuadros" />
 }

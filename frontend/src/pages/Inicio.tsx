@@ -43,7 +43,7 @@ export default function Inicio() {
           <span className="ps-contexto">
             {new Date().toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'short' })}
           </span>
-          <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 30, lineHeight: 1.05 }}>Tu predio</h1>
+          <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 30, lineHeight: 1.05 }}>Tu parcela</h1>
         </div>
         <Link to="/perfil" aria-label={t('hoy_mi_perfil')} style={{ width: 44, height: 44, borderRadius: 22, background: 'var(--hundido)', color: 'var(--carbon)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <IconoPerfil />
@@ -72,7 +72,7 @@ export default function Inicio() {
               Bomberos 132
             </a>
           </div>
-          <span style={{ fontSize: 14, fontWeight: 700, opacity: 0.95 }}>No es una alerta oficial. Si SENAPRED avisa, sigue esa indicación.</span>
+          <span style={{ fontSize: 14, fontWeight: 700, opacity: 0.95 }}>No es una alerta oficial. Si ves humo o fuego, llama a Bomberos al 132. Si SENAPRED avisa, sigue sus indicaciones.</span>
         </section>
       ) : null}
 

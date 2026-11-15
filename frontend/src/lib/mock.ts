@@ -52,10 +52,10 @@ export const semillasPedidas = [
 
 export const fuentesDatos = [
   { titulo: 'Satélite', detalle: 'Qué tan verde está tu sector', nota: 'NASA · cada 2 a 3 días' },
-  { titulo: 'Clima', detalle: 'Calor, lluvia y humedad', nota: 'NASA · todos los días' },
+  { titulo: 'Clima', detalle: 'Calor, lluvia y humedad', nota: 'NASA POWER y CR2MET · pronóstico de Open-Meteo.com (CC BY 4.0) · todos los días' },
   { titulo: 'Tú y tu comuna', detalle: 'Lo que ven en el campo', nota: 'Manda' },
   { titulo: 'Saber williche', detalle: 'Luna, vientos y señales para sembrar', nota: 'Comunidades williche de Chiloé · en validación' },
-  { titulo: 'Amenazas', detalle: 'Incendios y deslizamientos', nota: 'NASA FIRMS y LHASA · cada pocas horas · alertas oficiales: SENAPRED' },
+  { titulo: 'Incendios', detalle: 'Focos de calor cerca de tu parcela', nota: 'Satélites de NASA (FIRMS) · alertas oficiales: SENAPRED' },
 ]
 
 export const senalesFenologicas = [

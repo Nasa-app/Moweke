@@ -56,7 +56,7 @@ export default function Perimetro() {
       setCultivoActivo(null)
       navigate(`/terreno/preparando${enOnboarding ? '?desde=onboarding' : ''}`)
     } catch (err) {
-      setError(mensajeDeError(err, 'No se pudo guardar la parcela. Revisa el perímetro e intenta otra vez.'))
+      setError(mensajeDeError(err, 'No se pudo guardar la parcela. Revisa las esquinas que marcaste e intenta otra vez.'))
     } finally {
       setEnviando(false)
     }
@@ -102,7 +102,7 @@ export default function Perimetro() {
 
       {esquinas.length >= 3 && !medidaValida ? (
         <p className="ps-pad-16 ps-nota" role="status" style={{ margin: '8px 0 0 0' }}>
-          La parcela debe medir entre {numero(HECTAREAS_MIN, 2)} y {numero(HECTAREAS_MAX)} hectáreas.
+          Mueve las esquinas: la parcela debe medir entre {numero(HECTAREAS_MIN, 2)} y {numero(HECTAREAS_MAX)} hectáreas.
         </p>
       ) : null}
       {error ? (

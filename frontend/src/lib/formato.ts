@@ -7,8 +7,8 @@ const DIAS_CORTOS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 
 const PALABRAS: Record<string, string> = {
   emergencia: 'Brote',
-  tuberizacion: 'Tuberización',
-  bulbificacion: 'Bulbificación',
+  tuberizacion: 'Formación de papas',
+  bulbificacion: 'Formación del bulbo',
   floracion: 'Floración',
   madurez: 'Madurez',
   siembra: 'Siembra',

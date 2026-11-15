@@ -37,7 +37,7 @@ export default function Especies() {
       .catch((err) => {
         if (!vigente) return
         if (err instanceof ApiError && err.status === 409) setSinClima(true)
-        else setError(mensajeDeError(err, 'No se pudieron calcular las especies.'))
+        else setError(mensajeDeError(err, 'No pudimos calcular qué sembrar. Revisa tu conexión e inténtalo de nuevo.'))
       })
     return () => {
       vigente = false
@@ -84,7 +84,7 @@ export default function Especies() {
       ) : null}
       {!ranking && !sinClima && !error ? (
         <p className="ps-pad ps-cuerpo" role="status" style={{ margin: '12px 0 0 0' }}>
-          Comparando tu terreno con el catálogo de especies…
+          Buscando qué se da bien en tu parcela…
         </p>
       ) : null}
       {ranking && aptas.length === 0 ? (
@@ -139,7 +139,7 @@ export default function Especies() {
 
       <Link to="/fuentes" className="ps-btn-texto" style={{ marginTop: 'auto', padding: '16px 20px 28px 20px', gap: 6, fontSize: 15, color: 'var(--texto-tenue)', textAlign: 'center' }}>
         <IconoInfo tamano={18} />
-        FAO EcoCrop con el clima y el suelo de tu parcela
+        Calculado con la guía de la FAO (EcoCrop), el clima y el suelo de tu parcela
         {ranking ? ` · ${fechaCorta(ranking.datos_sitio.periodo_clima[0])} a ${fechaCorta(ranking.datos_sitio.periodo_clima[1])}` : ''}
       </Link>
     </Screen>

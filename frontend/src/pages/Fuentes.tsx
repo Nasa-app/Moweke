@@ -20,9 +20,9 @@ export default function Fuentes() {
           </article>
         ))}
         <article className="ps-card" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <h2 style={{ margin: 0, fontWeight: 800, fontSize: 20 }}>Auth, parcelas y cultivos</h2>
-          <span style={{ fontSize: 16, fontWeight: 700 }}>Lo único ya real en este frontend</span>
-          <span className="ps-nota">API propia · /api/parcelas, /api/parcelas/:id/candidatas_siembra, /api/cultivos/:id/fenologia</span>
+          <h2 style={{ margin: 0, fontWeight: 800, fontSize: 20 }}>Tus parcelas y cultivos</h2>
+          <span style={{ fontSize: 16, fontWeight: 700 }}>Lo que marcas y anotas tú</span>
+          <span className="ps-nota">Se guarda en tu cuenta de Mowege</span>
         </article>
       </div>
 

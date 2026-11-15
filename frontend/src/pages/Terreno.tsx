@@ -38,7 +38,7 @@ export default function Terreno() {
           } else throw err
         }),
     ])
-      .catch((err) => vigente && setError(mensajeDeError(err, 'No se pudo cargar tu terreno.')))
+      .catch((err) => vigente && setError(mensajeDeError(err, 'No pudimos cargar tu terreno. Revisa tu conexión e inténtalo de nuevo.')))
       .finally(() => vigente && setCargando(false))
     return () => {
       vigente = false
@@ -82,7 +82,7 @@ export default function Terreno() {
         </span>
         <span style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <span style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.1 }}>{t('terreno_zonas_sembrar')}</span>
-          <span className="ps-detalle">Verdor, altura y pendiente por celda</span>
+          <span className="ps-detalle">Qué tan verde, alta e inclinada está cada parte</span>
         </span>
         <IconoSiguiente stroke="var(--verde)" />
       </Link>
@@ -107,7 +107,7 @@ export default function Terreno() {
           <h2 id="riesgos" className="ps-h2">
             {t('terreno_riesgos')}
           </h2>
-          <SourceLink>NASA FIRMS</SourceLink>
+          <SourceLink>Satélites de NASA (FIRMS)</SourceLink>
         </div>
         <div style={{ marginTop: 8, padding: '12px 14px', borderRadius: 16, background: 'var(--blanco)', display: 'flex', alignItems: 'center', gap: 12 }}>
           <IconoIncendio stroke={diasConFocos.length ? 'var(--riesgo-texto)' : 'var(--favorable-texto)'} />
@@ -130,7 +130,7 @@ export default function Terreno() {
           ) : null}
         </div>
         <p className="ps-nota" style={{ margin: '8px 4px 0 4px' }}>
-          Deslizamiento e inundación todavía no tienen una fuente conectada.
+          Todavía no avisamos de deslizamientos ni inundaciones. Para eso, sigue los avisos de SENAPRED.
         </p>
       </section>
 
@@ -145,7 +145,7 @@ export default function Terreno() {
               {masFrio && masCalido ? `${numero(masFrio.valor, 1)}° a ${numero(masCalido.valor, 1)}°` : '—'}
             </span>
             <span style={{ fontSize: 15, fontWeight: 700 }}>
-              {masFrio && masCalido ? `Media de ${nombreMes(masFrio.mes)} y de ${nombreMes(masCalido.mes)}` : 'Sin dato todavía'}
+              {masFrio && masCalido ? `De ${nombreMes(masFrio.mes)} (el más frío) a ${nombreMes(masCalido.mes)} (el más cálido)` : 'Sin dato todavía'}
             </span>
             <SourceLink>CR2MET{periodo ? ` · ${periodo}` : ''}</SourceLink>
           </div>
@@ -159,17 +159,17 @@ export default function Terreno() {
           </div>
           <div className="ps-card" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span className="ps-contexto">Suelo</span>
-            <span style={{ fontSize: 22, fontWeight: 800 }}>{sitio?.ph != null ? `pH ${numero(sitio.ph, 1)}` : '—'}</span>
+            <span style={{ fontSize: 22, fontWeight: 800 }}>{sitio?.ph != null ? `pH ${numero(sitio.ph, 1)} · ${sitio.ph < 6.5 ? 'ácido' : sitio.ph <= 7.5 ? 'neutro' : 'alcalino'}` : '—'}</span>
             <span style={{ fontSize: 15, fontWeight: 700 }}>
-              {sitio?.agua_disponible_suelo_mm != null ? `Guarda ${numero(sitio.agua_disponible_suelo_mm)} mm de agua` : 'Agua del suelo sin dato'}
+              {sitio?.agua_disponible_suelo_mm != null ? `Guarda ${numero(sitio.agua_disponible_suelo_mm)} litros de agua por m²` : 'Agua del suelo sin dato'}
             </span>
             <SourceLink>SoilGrids · CLSoilMaps</SourceLink>
           </div>
           <div className="ps-card" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span className="ps-contexto">Sol y satélite</span>
-            <span style={{ fontSize: 22, fontWeight: 800 }}>{solMedio !== null ? `${numero(solMedio, 1)} kWh/m²` : '—'}</span>
+            <span className="ps-contexto">Sol que llega cada día</span>
+            <span style={{ fontSize: 22, fontWeight: 800 }}>{solMedio !== null ? `${numero(solMedio, 1)} h de sol pleno` : '—'}</span>
             <span style={{ fontSize: 15, fontWeight: 700 }}>
-              {pasadas != null ? `Cielo despejado para el satélite: ${numero(pasadas)}% de las veces` : 'Radiación media por día'}
+              {pasadas != null ? `El satélite ve tu parcela sin nubes el ${numero(pasadas)}% de las veces` : 'Promedio del año'}
             </span>
             <SourceLink>Explorador Solar · Sentinel-2</SourceLink>
           </div>
