@@ -5,8 +5,8 @@ import { CompatRing } from '../components/CompatRing'
 import { Chip } from '../components/Chip'
 import { SourceLink } from '../components/SourceLink'
 import { usePredio } from '../state/PredioContext'
-import { candidatasSiembra, declararCultivo, mensajeDeError, type Candidata, type Factor, type PeriodoClima, type SerieClimatica } from '../lib/api'
-import { TEXTO_CATEGORIA_CLIMA, aIso, aPorcentaje, fechaCorta, nombreClave, nombreEspecie, nombreMes, textoDatosFaltantes } from '../lib/formato'
+import { ESCENARIOS, candidatasSiembra, declararCultivo, mensajeDeError, type Candidata, type Factor, type PeriodoClima, type SerieClimatica } from '../lib/api'
+import { NOMBRE_ESCENARIO, TEXTO_CATEGORIA_CLIMA, aIso, aPorcentaje, fechaCorta, nombreClave, nombreEspecie, nombreMes, textoDatosFaltantes } from '../lib/formato'
 import { useI18n } from '../i18n'
 
 const ORDEN_FACTORES: Factor[] = [
@@ -42,6 +42,8 @@ export default function Analisis() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const clave = params.get('especie')
+  // El supuesto de clima con que se llegó desde "Qué sembrar" (no se guarda: viene en la dirección).
+  const escenario = ESCENARIOS.find((e) => e === params.get('escenario')) ?? 'observado'
   const { idParcela, setCultivoActivo } = usePredio()
   const [candidata, setCandidata] = useState<Candidata | null | undefined>(undefined)
   const [faltantes, setFaltantes] = useState<string[]>([])
@@ -54,7 +56,7 @@ export default function Analisis() {
   useEffect(() => {
     if (!idParcela || !clave) return
     let vigente = true
-    candidatasSiembra(idParcela, { especie: clave })
+    candidatasSiembra(idParcela, { especie: clave, escenario })
       .then((r) => {
         if (!vigente) return
         setCandidata(r.candidatas.find((c) => c.especie === clave) ?? null)
@@ -65,7 +67,7 @@ export default function Analisis() {
     return () => {
       vigente = false
     }
-  }, [idParcela, clave])
+  }, [idParcela, clave, escenario])
 
   if (!idParcela) return <Navigate to="/terreno/perimetro" replace />
   if (!clave) return <Navigate to="/especies" replace />
@@ -105,6 +107,11 @@ export default function Analisis() {
         <div className="ps-card" style={{ borderRadius: 24, display: 'flex', flexDirection: 'column', gap: 2 }}>
           <h1 id="especie" style={{ margin: 0, fontSize: 28, fontWeight: 800, lineHeight: 1.05 }}>{nombre}</h1>
           {candidata?.nombre_cientifico ? <span className="ps-contexto" style={{ fontStyle: 'italic' }}>{candidata.nombre_cientifico}</span> : null}
+          {escenario !== 'observado' ? (
+            <span className="ps-nota" role="status">
+              Con un supuesto de clima: {NOMBRE_ESCENARIO[escenario].toLowerCase()}. No es un pronóstico.
+            </span>
+          ) : null}
           {candidata === undefined && !error ? <span className="ps-nota">{t('cargando')}</span> : null}
           {candidata === null ? <span className="ps-cuerpo">Esta especie no está en el análisis de tu parcela.</span> : null}
           {candidata ? (

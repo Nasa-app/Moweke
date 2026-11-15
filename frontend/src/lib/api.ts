@@ -471,13 +471,11 @@ export function reintentarIngesta(idParcela: number) {
 export const leerRiego = () => leer<boolean>('riego', false)
 export const guardarRiego = (riega: boolean) => guardar('riego', riega)
 
-// Cómo sube la temperatura hasta 2040 al evaluar el futuro: lo observado en la parcela o un supuesto.
+// Cómo sube la temperatura hasta 2040 al evaluar el futuro: lo observado en la parcela o un supuesto. Un supuesto
+// NO se guarda en el dispositivo: cada pantalla arranca en 'observado' y, si se elige otro, lo pasa por la
+// dirección (?escenario=) a la pantalla que sigue. Guardado, cambiaba en silencio los resultados de Análisis,
+// Rotación y el registro inicial.
 export const ESCENARIOS: readonly Escenario[] = ['observado', 'moderado', 'fuerte']
-export const leerEscenario = (): Escenario => {
-  const guardado = leer<string>('escenario_clima', 'observado')
-  return ESCENARIOS.find((e) => e === guardado) ?? 'observado'
-}
-export const guardarEscenario = (escenario: Escenario) => guardar('escenario_clima', escenario)
 
 // Categorías de EcoCrop que el agricultor reconoce como comida.
 export const CATEGORIAS_COMIDA = ['vegetables', 'roots/tubers', 'pulses (grain legumes)', 'cereals & pseudocereals'] as const
@@ -498,7 +496,7 @@ export function candidatasSiembra(
     categorias: opciones.categorias?.length ? opciones.categorias.join(',') : undefined,
     especie: opciones.especie,
     riego: opciones.riego ?? leerRiego(),
-    escenario: opciones.escenario ?? leerEscenario(),
+    escenario: opciones.escenario ?? 'observado',
     clima_futuro: opciones.climaFuturo,
   }
   return conMemoria(`candidatas/${idParcela}/${JSON.stringify(query)}`, () =>

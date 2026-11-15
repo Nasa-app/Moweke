@@ -151,7 +151,7 @@ def test_empates_ordenan_comida_primero_y_el_resultado_no_depende_del_orden_de_e
     for orden in (clones, clones[::-1], clones[2:] + clones[:2]):
         repo = repo_prueba(con_luz=False, extra=orden)
         # las malezas no se recomiendan por defecto; con el permiso expreso mantienen su lugar en el desempate
-        lista = [r["especie"] for r in ranking(sitio, repo, incluir_malezas=True)
+        lista = [r["especie"] for r in ranking(sitio, repo, incluir_silvestres=True)
                  if r["especie"].endswith(("_maleza", "_forraje", "_comida"))]
         esperado = esperado or lista
         assert lista == esperado

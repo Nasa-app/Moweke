@@ -100,9 +100,9 @@ def repo_prueba(*, con_luz=True, curada=False, lluvia_curada=(300, 500, 1400, 22
     requisitos = [r for r, _ in ESPECIES]
     identidades = [identidad(r["especie"], cats) for r, cats in ESPECIES]
     umbrales, rasgos, reglas = [], [], []
-    for r, cats in extra:
+    for r, cats, *cientifico in extra:
         requisitos.append(r)
-        identidades.append(identidad(r["especie"], cats))
+        identidades.append(identidad(r["especie"], cats, *cientifico))
     if curada:
         base = dict(tb=4, topt=(12, 20), tc=28, letal=-4, lluvia=lluvia_curada, ph=(5.2, 6.0, 7.0, 7.5), ciclo=(100, 140))
         requisitos.append(req("solanum_prueba", **base))

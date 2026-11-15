@@ -32,7 +32,7 @@ def test_se_puede_pedir_expresamente_la_categoria_maleza():
 
 
 def test_consultar_una_especie_puntual_la_devuelve_aunque_sea_maleza():
-    assert {"quelite_t", "avena_silvestre_t"} <= nombres(incluir_malezas=True)
+    assert {"quelite_t", "avena_silvestre_t"} <= nombres(incluir_silvestres=True)
 
 
 def test_el_resto_del_catalogo_no_cambia():
@@ -46,5 +46,5 @@ def test_el_ranking_multianual_respeta_la_exclusion_y_el_permiso():
     repo = repo_prueba(con_luz=False, extra=extra)
     sitio = sitio_de("chiloe")
     sin, _ = correr(ma.ranking_multianual(sitio, repo, None, None, None, categorias={"vegetables"}))
-    con, _ = correr(ma.ranking_multianual(sitio, repo, None, None, None, categorias={"vegetables"}, incluir_malezas=True))
+    con, _ = correr(ma.ranking_multianual(sitio, repo, None, None, None, categorias={"vegetables"}, incluir_silvestres=True))
     assert "quelite_t" not in {r["especie"] for r in sin} and "quelite_t" in {r["especie"] for r in con}

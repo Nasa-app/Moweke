@@ -42,6 +42,7 @@ from pheno_engine import ClimaIncompleto, Cultivo, simular
 from motor_estres import (PROFUNDIDAD_SUELO_M, ParametrosAgua, Regla, balance_agua, balance_agua_fao56, evaluar,
                           et0_hargreaves, factores_et0, fases, kc_diario, zona_raices_mm)
 from riego import recomendar_riego
+from cultivos_reconocidos import es_cultivo_reconocido
 
 
 class EspecieSinPerfil(Exception):
@@ -304,6 +305,8 @@ CORRECCION_TEMPERATURA_MAX_C = 5.0
 # Categorias de EcoCrop que no son cultivo. Una especie se deja fuera del ranking por
 # defecto solo si TODAS sus categorias estan aca; sin categoria (ej. maiz) se conserva.
 CATEGORIAS_NO_CULTIVO = frozenset({"forest/wood", "ornamentals/turf", "environmental", "weed"})
+
+FUENTE_ECOCROP = "FAO_EcoCrop_opinion_experta"
 
 # Categorias de EcoCrop que un agricultor reconoce como comida. Solo desempatan el orden:
 # con el mismo puntaje salen antes que forrajes, medicinales y plantas silvestres.
@@ -679,7 +682,7 @@ def _clima_ciclico(clima: pd.DataFrame | None) -> pd.DataFrame | None:
 
 async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.DataFrame | None = None,
                              lat: float | None = None, categorias: set[str] | None = None,
-                             riego: bool = False, incluir_malezas: bool = False) -> list[dict]:
+                             riego: bool = False, incluir_silvestres: bool = False) -> list[dict]:
     """Todo el catalogo contra un predio, ordenado de mas a menos idoneo. Una consulta
     por tabla (no por especie). sitio: lo que espera puntuar_especie() mas 'awc_mm'.
 
@@ -688,8 +691,13 @@ async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.Da
 
     Las que EcoCrop marca como maleza ('weed') no se recomiendan aunque tengan otra categoria
     de uso (avena silvestre, quelite, chufa salian en "Comida" porque tambien son 'cereals' o
-    'vegetables'): solo entran con `incluir_malezas` (para consultar una especie puntual) o si
+    'vegetables'): solo entran con `incluir_silvestres` (para consultar una especie puntual) o si
     `categorias` pide 'weed' de forma expresa.
+
+    Las filas de EcoCrop que no estan en cultivos_reconocidos (algodoncillo, cenizo, cebada bulbosa:
+    EcoCrop las etiqueta como 'vegetables' o 'forage/pasture' igual que a un cultivo, y no marca
+    cuales se siembran) tambien quedan fuera, salvo con `incluir_silvestres`. No afecta a las
+    especies curadas ni a las de otra fuente.
 
     Una especie curada con perfil fenologico (papa) y su fila de EcoCrop (solanum_tuberosum)
     salen una sola vez, con el nombre curado. Si la simulacion por fase del perfil curado
@@ -724,8 +732,11 @@ async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.Da
         nombre = gemelo.get(clave, clave)
         identidad = identidades.get(nombre) or identidades.get(clave) or {}
         cats = set(identidad.get("categorias") or [])
-        if "weed" in cats and not incluir_malezas and "weed" not in (categorias or ()):
+        if "weed" in cats and not incluir_silvestres and "weed" not in (categorias or ()):
             continue
+        if (not incluir_silvestres and req.get("fuente") == FUENTE_ECOCROP and nombre not in con_fenologia
+                and not es_cultivo_reconocido(identidad.get("nombre_cientifico"))):
+            continue  # silvestre o de uso local que EcoCrop mezcla con los cultivos (ver cultivos_reconocidos)
         if categorias is not None:
             if not cats & categorias:
                 continue

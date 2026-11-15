@@ -4,9 +4,11 @@ import { Screen, BarraSuperior, Titulo } from '../components/Screen'
 import { CompatRing } from '../components/CompatRing'
 import { Chip } from '../components/Chip'
 import { IconoInfo, IconoSiguiente } from '../components/icons'
+import { Interruptor } from '../components/Interruptor'
 import { usePredio } from '../state/PredioContext'
+import { borrar } from '../state/storage'
 import {
-  ApiError, CATEGORIAS_COMIDA, ESCENARIOS, candidatasSiembra, guardarEscenario, guardarRiego, leerEscenario, leerRiego,
+  ApiError, CATEGORIAS_COMIDA, ESCENARIOS, candidatasSiembra, guardarRiego, leerRiego,
   mensajeDeError, type Candidata, type CandidatasSiembra, type CategoriaClima, type Escenario,
 } from '../lib/api'
 import {
@@ -53,24 +55,25 @@ export default function Especies() {
   const { idParcela } = usePredio()
   const [grupo, setGrupo] = useState<(typeof GRUPOS)[number]['clave']>('comida')
   const [riego, setRiego] = useState(leerRiego)
-  const [escenario, setEscenario] = useState<Escenario>(leerEscenario)
+  // Un supuesto (clima a futuro): siempre arranca en lo observado y no se guarda en el dispositivo.
+  const [escenario, setEscenario] = useState<Escenario>('observado')
   const [vista, setVista] = useState<Vista>('todas')
   const [resultado, setResultado] = useState<{ pedido: string; datos: CandidatasSiembra } | null>(null)
   const [sinClima, setSinClima] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const categorias = GRUPOS.find((g) => g.clave === grupo)?.categorias ?? undefined
   const pedido = `${grupo}|${riego}|${escenario}|${vista}`
-  const ranking = resultado?.pedido === pedido ? resultado.datos : null
+  // Mientras llega un cálculo nuevo se sigue mostrando el anterior, atenuado: así se ve que el cambio se está aplicando.
+  const ranking = resultado?.datos ?? null
+  const actualizando = resultado !== null && resultado.pedido !== pedido
 
   function elegirRiego(riega: boolean) {
     guardarRiego(riega)
     setRiego(riega)
   }
 
-  function elegirEscenario(nuevo: Escenario) {
-    guardarEscenario(nuevo)
-    setEscenario(nuevo)
-  }
+  // Limpia lo que versiones anteriores dejaron guardado en el dispositivo.
+  useEffect(() => borrar('escenario_clima'), [])
 
   // Se pide solo el grupo que se mira: el servidor filtra por categorías y recorta después.
   useEffect(() => {
@@ -96,7 +99,8 @@ export default function Especies() {
   const resto = aptas.slice(3, 3 + FILAS_MAX)
   const serie = ranking?.serie_climatica ?? null
   const porCategoria = ranking?.especies_por_categoria_clima ?? null
-  const enlace = (c: Candidata) => `/especies/analisis?especie=${encodeURIComponent(c.especie)}`
+  const enlace = (c: Candidata) =>
+    `/especies/analisis?especie=${encodeURIComponent(c.especie)}${escenario === 'observado' ? '' : `&escenario=${escenario}`}`
 
   return (
     <Screen>
@@ -115,58 +119,67 @@ export default function Especies() {
         </div>
       </div>
 
-      {/* Lo principal es el tipo de cultivo. El agua, el clima a futuro y el filtro cambian el cálculo, pero se
-          tocan menos: quedan recogidos en una línea que dice qué está activo. */}
-      <details className="ps-pad-16" style={{ marginTop: 10 }}>
-        <summary
-          style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 44, padding: '0 14px', borderRadius: 14, background: 'var(--hundido)', fontSize: 15, fontWeight: 700 }}
-        >
-          <span>
-            {riego ? 'Con riego' : 'Solo lluvia'}
-            {serie ? ` · Clima ${NOMBRE_ESCENARIO[escenario].toLowerCase()}` : ''}
-            {vista !== 'todas' ? ` · ${VISTAS.find((v) => v.clave === vista)?.nombre}` : ''}
-          </span>
-          <span style={{ color: 'var(--verde)', fontWeight: 800 }}>Cambiar</span>
-        </summary>
-      <div style={{ marginTop: 10 }}>
-        <div role="radiogroup" aria-label="Agua del cultivo" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4, padding: 4, borderRadius: 30, background: 'var(--hundido)' }}>
-          {([[false, 'Solo lluvia'], [true, 'Con riego']] as const).map(([valor, nombre]) => (
-            <button key={nombre} type="button" role="radio" aria-checked={riego === valor} onClick={() => elegirRiego(valor)} className={`ps-pill ${riego === valor ? 'activo' : ''}`} style={{ borderRadius: 26, minHeight: 48 }}>
-              {nombre}
-            </button>
-          ))}
-        </div>
-        <p className="ps-nota" style={{ margin: '6px 8px 0 8px' }}>
-          {riego ? 'Contamos con que repones el agua que falta. El exceso de lluvia sigue contando.' : 'Contamos solo con la lluvia. Si riegas, elige "Con riego".'}
-        </p>
+      {/* Tres niveles. 1) Qué quiere sembrar (arriba). 2) Su situación real: ¿puede regar? Es un sí o un no, y cambia
+          mucho el resultado, por eso siempre se ve. 3) Supuestos de análisis (clima a futuro y el filtro Nuevas / En
+          riesgo): recogidos, y si hay uno activo se ve como etiqueta con ✕ junto a los resultados. */}
+      <div className="ps-pad-16" style={{ marginTop: 12 }}>
+        <Interruptor
+          activo={riego}
+          onCambio={elegirRiego}
+          etiqueta="Puedo regar"
+          descripcion={riego ? 'Contamos con que repones el agua que falta. El exceso de lluvia sigue contando.' : 'Contamos solo con la lluvia.'}
+        />
       </div>
 
       {serie ? (
-        <div className="ps-pad-16" style={{ marginTop: 10 }}>
-          <div role="radiogroup" aria-label="Clima a futuro" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 4, padding: 4, borderRadius: 30, background: 'var(--hundido)' }}>
-            {ESCENARIOS.map((valor) => (
-              <button key={valor} type="button" role="radio" aria-checked={escenario === valor} onClick={() => elegirEscenario(valor)} className={`ps-pill ${escenario === valor ? 'activo' : ''}`} style={{ borderRadius: 26, minHeight: 48 }}>
-                {NOMBRE_ESCENARIO[valor]}
-              </button>
-            ))}
+        <details className="ps-pad-16" style={{ marginTop: 8 }}>
+          <summary style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', minHeight: 44, padding: '0 4px', fontSize: 16, fontWeight: 800, color: 'var(--verde)' }}>
+            Probar con otro clima ▾
+          </summary>
+          <div style={{ marginTop: 6 }}>
+            <span className="ps-contexto" style={{ padding: '0 4px' }}>Clima a futuro</span>
+            <div role="radiogroup" aria-label="Clima a futuro" style={{ marginTop: 4, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 4, padding: 4, borderRadius: 30, background: 'var(--hundido)' }}>
+              {ESCENARIOS.map((valor) => (
+                <button key={valor} type="button" role="radio" aria-checked={escenario === valor} onClick={() => setEscenario(valor)} className={`ps-pill ${escenario === valor ? 'activo' : ''}`} style={{ borderRadius: 26, minHeight: 48 }}>
+                  {NOMBRE_ESCENARIO[valor]}
+                </button>
+              ))}
+            </div>
+            <p className="ps-nota" style={{ margin: '6px 8px 0 8px' }}>{textoEscenario(escenario, serie)}</p>
+
+            <span className="ps-contexto" style={{ display: 'block', marginTop: 12, padding: '0 4px' }}>Qué especies mostrar</span>
+            <div role="radiogroup" aria-label="Qué especies ver" style={{ marginTop: 4, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 4, padding: 4, borderRadius: 30, background: 'var(--hundido)' }}>
+              {VISTAS.map((v) => (
+                <button key={v.clave} type="button" role="radio" aria-checked={vista === v.clave} onClick={() => setVista(v.clave)} className={`ps-pill ${vista === v.clave ? 'activo' : ''}`} style={{ borderRadius: 26, minHeight: 48 }}>
+                  {v.nombre}{v.clave !== 'todas' && porCategoria ? ` (${porCategoria[v.clave as CategoriaClima]})` : ''}
+                </button>
+              ))}
+            </div>
+            <details style={{ margin: '8px 8px 0 8px' }}>
+              <summary className="ps-nota" style={{ cursor: 'pointer', fontWeight: 800 }}>¿Cómo se calcula?</summary>
+              <p className="ps-nota" style={{ margin: '4px 0 0 0' }}>
+                Probamos cada especie con los {serie.anios} años de clima de tu parcela ({serie.primer_anio} a {serie.ultimo_anio}). “Compatible” es lo habitual; “año difícil” es lo que logra en 9 de cada 10 años. Es apta si aguanta el año difícil de los últimos 15.
+              </p>
+            </details>
           </div>
-          <p className="ps-nota" style={{ margin: '6px 8px 0 8px' }}>{textoEscenario(escenario, serie)}</p>
-          <div role="radiogroup" aria-label="Qué especies ver" style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 4, padding: 4, borderRadius: 30, background: 'var(--hundido)' }}>
-            {VISTAS.map((v) => (
-              <button key={v.clave} type="button" role="radio" aria-checked={vista === v.clave} onClick={() => setVista(v.clave)} className={`ps-pill ${vista === v.clave ? 'activo' : ''}`} style={{ borderRadius: 26, minHeight: 48 }}>
-                {v.nombre}{v.clave !== 'todas' && porCategoria ? ` (${porCategoria[v.clave as CategoriaClima]})` : ''}
-              </button>
-            ))}
-          </div>
-          <details style={{ margin: '6px 8px 0 8px' }}>
-            <summary className="ps-nota" style={{ cursor: 'pointer', fontWeight: 800 }}>¿Cómo se calcula?</summary>
-            <p className="ps-nota" style={{ margin: '4px 0 0 0' }}>
-              Probamos cada especie con los {serie.anios} años de clima de tu parcela ({serie.primer_anio} a {serie.ultimo_anio}). “Compatible” es lo habitual; “año difícil” es lo que logra en 9 de cada 10 años. Es apta si aguanta el año difícil de los últimos 15.
-            </p>
-          </details>
+        </details>
+      ) : null}
+
+      {escenario !== 'observado' || vista !== 'todas' ? (
+        <div className="ps-pad-16" style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+          {escenario !== 'observado' ? (
+            <button type="button" className="ps-chip ps-chip-precaucion" onClick={() => setEscenario('observado')} style={{ border: 'none', cursor: 'pointer', minHeight: 36 }} aria-label={`Quitar el clima: ${NOMBRE_ESCENARIO[escenario].toLowerCase()}`}>
+              Clima: {NOMBRE_ESCENARIO[escenario].toLowerCase()} ✕
+            </button>
+          ) : null}
+          {vista !== 'todas' ? (
+            <button type="button" className="ps-chip ps-chip-precaucion" onClick={() => setVista('todas')} style={{ border: 'none', cursor: 'pointer', minHeight: 36 }} aria-label="Mostrar todas las especies">
+              Solo {VISTAS.find((v) => v.clave === vista)?.nombre.toLowerCase()} ✕
+            </button>
+          ) : null}
+          <span className="ps-nota">Es un supuesto, no un pronóstico.</span>
         </div>
       ) : null}
-      </details>
 
       {ranking && textoDatosFaltantes(ranking.datos_faltantes) ? (
         <p className="ps-pad ps-nota" role="status" style={{ margin: '8px 0 0 0', color: 'var(--precaucion-texto)' }}>
@@ -196,13 +209,14 @@ export default function Especies() {
           Buscando qué se da bien en tu parcela…
         </p>
       ) : null}
+      <div aria-busy={actualizando} style={{ opacity: actualizando ? 0.45 : 1, transition: 'opacity 0.15s' }}>
       {ranking && aptas.length === 0 ? (
         <p className="ps-pad ps-cuerpo" style={{ margin: '12px 0 0 0' }}>
           {vista === 'emergente'
             ? 'Con este clima a futuro, ninguna especie de este grupo pasa a ser buena opción para tu parcela. Prueba con “Más calor”.'
             : vista === 'en_riesgo'
               ? 'Con este clima a futuro, ninguna especie de este grupo pierde terreno en tu parcela.'
-              : `Ninguna de las ${ranking.especies_evaluadas} especies evaluadas de este grupo resulta apta con el clima y el suelo de tu parcela${riego ? '' : ' contando solo la lluvia'}.${riego ? '' : ' Prueba con riego: toca “Cambiar” arriba.'}`}
+              : `Ninguna de las ${ranking.especies_evaluadas} especies evaluadas de este grupo resulta apta con el clima y el suelo de tu parcela${riego ? '' : ' contando solo la lluvia'}.${riego ? '' : ' Si puedes regar, activa “Puedo regar” arriba.'}`}
         </p>
       ) : null}
 
@@ -253,6 +267,7 @@ export default function Especies() {
           Se muestran las {aptas.length} mejores de {ranking.especies_aptas}.
         </p>
       ) : null}
+      </div>
 
       <Link to="/fuentes" className="ps-btn-texto" style={{ marginTop: 'auto', padding: '16px 20px 28px 20px', gap: 6, fontSize: 15, color: 'var(--texto-tenue)', textAlign: 'center' }}>
         <IconoInfo tamano={18} />
