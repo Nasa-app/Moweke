@@ -680,9 +680,56 @@ def _clima_ciclico(clima: pd.DataFrame | None) -> pd.DataFrame | None:
     return ciclico[~ciclico.index.duplicated()].sort_index()
 
 
+_INFRAESPECIE = re.compile(r"\s(var|ssp|subsp|f|cv)\.?\s+(.+)$", re.IGNORECASE)
+_RANGO = {"var": "variedad", "ssp": "subespecie", "subsp": "subespecie", "f": "forma", "cv": "cultivar"}
+
+
+def _binomio(nombre_cientifico: str) -> str:
+    """Genero y especie ('Beta vulgaris var. cicla' -> 'beta vulgaris'); el hibrido conserva su 'x'."""
+    palabras = re.sub(r"[^a-z\s\-]", "", nombre_cientifico.lower().replace("×", " x ")).split()
+    return " ".join(palabras[:3] if len(palabras) >= 3 and palabras[1] == "x" else palabras[:2])
+
+
+def _rango_y_nombre(nombre_cientifico: str) -> tuple[str | None, str | None]:
+    """('var. cicla' -> ('variedad', 'cicla')); (None, None) si es la especie sin variedad."""
+    m = _INFRAESPECIE.search(f" {nombre_cientifico}")
+    return (_RANGO[m.group(1).lower()], m.group(2).strip()) if m else (None, None)
+
+
+def _unir_variedades(resultados: list[dict], unir: bool = True) -> list[dict]:
+    """EcoCrop trae como filas aparte las variedades y subespecies de una misma especie (Beta vulgaris, var. cicla y
+    var. flavescens son tres 'Acelga'). Para quien elige que sembrar son la misma especie: con `unir` queda una fila por
+    especie, la de mejor puntaje (a igual puntaje, la especie sin variedad). Cada fila de una especie con variedades
+    trae `variedades` (todas, de la que mas conviene a la que menos, con su puntaje) y `variedad_recomendada`: la que
+    mas conviene, aunque no sea la conocida. Sin `unir` salen todas las filas (para pedir una variedad puntual)."""
+    grupos: dict[str, list[dict]] = {}
+    for r in resultados:
+        cientifico = r.get("nombre_cientifico")
+        grupos.setdefault(_binomio(cientifico) if cientifico else r["especie"], []).append(r)
+    salida = []
+    for filas in grupos.values():
+        if len(filas) == 1:
+            salida.append(filas[0])
+            continue
+        orden = sorted(filas, key=lambda r: (r["apta"] is True, r["puntaje"] if r["puntaje"] is not None else -1.0,
+                                             _rango_y_nombre(r["nombre_cientifico"])[0] is None), reverse=True)
+        mejor = orden[0]
+        variedades = []
+        for r in orden:
+            rango, nombre = _rango_y_nombre(r["nombre_cientifico"])
+            variedades.append({"nombre_cientifico": r["nombre_cientifico"], "rango": rango, "nombre": nombre,
+                               "puntaje": r["puntaje"], "apta": r["apta"], "mejor": r is mejor})
+        rango, nombre = _rango_y_nombre(mejor["nombre_cientifico"])
+        recomendada = {"rango": rango, "nombre": nombre} if rango else None
+        for r in ([mejor] if unir else filas):
+            salida.append({**r, "variedades": variedades, "variedad_recomendada": recomendada})
+    return salida
+
+
 async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.DataFrame | None = None,
                              lat: float | None = None, categorias: set[str] | None = None,
-                             riego: bool = False, incluir_silvestres: bool = False) -> list[dict]:
+                             riego: bool = False, incluir_silvestres: bool = False,
+                             unir_variedades: bool = True) -> list[dict]:
     """Todo el catalogo contra un predio, ordenado de mas a menos idoneo. Una consulta
     por tabla (no por especie). sitio: lo que espera puntuar_especie() mas 'awc_mm'.
 
@@ -785,6 +832,8 @@ async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.Da
     def prioridad(r: dict) -> tuple:
         cats = set(r["categorias"])
         return (r["nivel_madurez"] != "perfil_generico", bool(cats & CATEGORIAS_ALIMENTO) and "weed" not in cats)
+
+    out = _unir_variedades(out, unir_variedades)
 
     out.sort(key=lambda r: r["especie"])
     out.sort(key=lambda r: (r["apta"] is True, r["puntaje"] if r["puntaje"] is not None else -1.0, *prioridad(r)),

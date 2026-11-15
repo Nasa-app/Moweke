@@ -620,7 +620,8 @@ async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
         datos_sitio, multianual.RepositorioCacheado(RepositorioPostgres(session), _ALMACEN_CATALOGO),
         await leer_historia(session, id_parcela), clima, parcela["lat"], categorias=filtro, riego=riego,
         delta_temp=correccion, calentamiento_c_por_decada=ESCENARIOS_CALENTAMIENTO[escenario],
-        incluir_silvestres=bool(especie))   # pedir una especie puntual la devuelve aunque sea maleza
+        incluir_silvestres=bool(especie),   # pedir una especie puntual la devuelve aunque sea maleza
+        unir_variedades=not especie)        # y se puede pedir una variedad puntual, no solo la que gana
     evaluadas = len(ranking)
     aptas = sum(1 for r in ranking if r["apta"])
     por_categoria = {c: sum(1 for r in ranking if (r.get("clima") or {}).get("categoria") == c)
