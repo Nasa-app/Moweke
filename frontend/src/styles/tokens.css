@@ -38,6 +38,7 @@
   /* Tipografía */
   --font-display: 'Alegreya Sans', system-ui, sans-serif;
   --font-texto: 'Alegreya Sans', system-ui, sans-serif;
+  --font-marca: 'Google Sans Flex', 'Alegreya Sans', system-ui, sans-serif;
 
   /* Espaciado */
   --space-1: 4px;

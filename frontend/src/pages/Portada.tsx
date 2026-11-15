@@ -11,7 +11,7 @@ export default function Portada() {
 
       </div>
       <div style={{ margin: '24px 32px 0 32px', display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', textAlign: 'center' }}>
-        <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 52, lineHeight: 1 }}>Mowege</h1>
+        <h1 style={{ margin: 0, fontFamily: 'var(--font-marca)', fontWeight: 800, fontSize: 52, lineHeight: 1 }}>Mowege</h1>
         <p style={{ margin: 0, fontSize: 20, fontWeight: 700, lineHeight: 1.3 }}>{t('mowege_slogan')}</p>
       </div>
       <div style={{ marginTop: 'auto', padding: '24px 32px 40px 32px', display: 'flex', flexDirection: 'column', gap: 8 }}>
