@@ -1,17 +1,19 @@
-fastapi
-uvicorn[standard]
-sqlalchemy[asyncio]>=2.0
-asyncpg
-geoalchemy2
-pandas
-numpy
-requests
-python-dotenv
-jinja2
-python-multipart
-passlib
+# Versiones fijas: son las que se verificaron en local. Subir una es un cambio deliberado,
+# no algo que ocurra solo en el siguiente despliegue.
+fastapi==0.162.7
+uvicorn[standard]==0.54.0
+sqlalchemy[asyncio]==2.1.8
+asyncpg==0.32.0
+geoalchemy2==0.21.0
+pandas==3.1.1
+numpy==2.5.4
+requests==2.34.2
+python-dotenv==1.2.4
+jinja2==3.1.6
+python-multipart==0.0.33
+passlib==1.7.4
 bcrypt==4.0.1
-python-jose[cryptography]
-rasterio
-netCDF4
-xarray
+python-jose[cryptography]==3.5.0
+rasterio==1.5.2
+netCDF4==1.7.5.1.post1
+xarray==2026.9.0

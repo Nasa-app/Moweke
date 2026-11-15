@@ -12,7 +12,7 @@ import os
 import sys
 from datetime import date, timedelta
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, status
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field, model_validator
@@ -37,6 +37,7 @@ import services.cliente_solar as cliente_solar
 import services.ingesta_predio as ingesta_predio
 from services.auth import crear_token, decodificar_token, hash_password, verificar_password
 from services.db import obtener_sesion
+from services.limite_intentos import LimiteIntentos
 from services.repositorio_clima import (CAPAS_MAPA, guardar_consulta_grilla, lado_celda_para, leer_clima_diario,
                                         leer_disponibilidad_optica, leer_incendios, leer_mapa, leer_ndvi, leer_sitio)
 from services.repositorio_postgres import RepositorioPostgres
@@ -68,7 +69,11 @@ DIAS_CLIMA_ATRAS_MAX = 120
 # pasa esta validacion y queda con sus fuentes en 'sin_cobertura'.
 _CHILE = {"lat_min": -56.0, "lat_max": -17.4, "lon_min": -76.0, "lon_max": -66.0}
 
-app = FastAPI(title="Mogewe")
+# La documentacion interactiva lista todos los endpoints, incluidos los de admin: solo se
+# publica si API_DOCS=1 (desarrollo). En produccion queda apagada.
+_DOCS = os.environ.get("API_DOCS") == "1"
+app = FastAPI(title="Mogewe", docs_url="/docs" if _DOCS else None, redoc_url=None,
+              openapi_url="/openapi.json" if _DOCS else None)
 
 # El frontend (Vite, otro origen) llama a esta API desde el navegador con el token en la
 # cabecera Authorization: sin CORS el navegador bloquea cada llamada. Los origenes
@@ -80,6 +85,35 @@ app.add_middleware(CORSMiddleware, allow_origins=_ORIGENES, allow_credentials=Fa
                    allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
 
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+
+# Registro y login se pueden llamar sin token: se acotan por IP y, el login, tambien por
+# cuenta (para que repartir los intentos entre muchas IP no sirva contra una sola cuenta).
+# Los topes por IP son holgados a proposito: en zonas rurales varios agricultores salen
+# por la misma IP del operador movil.
+_REGISTROS_POR_IP = LimiteIntentos(10, 60 * 60)
+_LOGINS_POR_IP = LimiteIntentos(30, 5 * 60)
+_LOGINS_POR_CUENTA = LimiteIntentos(10, 15 * 60)
+# Detras de un proxy la conexion llega desde el proxy, no desde el cliente. Si
+# CABECERA_IP_CLIENTE nombra la cabecera donde el proxy pone la IP real (en Railway,
+# x-real-ip), se usa esa. Solo hay que definirla cuando el unico camino hasta la API es
+# ese proxy: de lo contrario cualquiera podria escribir la cabecera y saltarse el limite.
+_CABECERA_IP = os.environ.get("CABECERA_IP_CLIENTE", "").strip().lower()
+
+
+def _ip_cliente(request: Request) -> str:
+    if _CABECERA_IP:
+        valor = request.headers.get(_CABECERA_IP, "").strip()
+        if valor:
+            return valor[:64]
+    return request.client.host if request.client else "desconocida"
+
+
+def _frenar(limite: LimiteIntentos, clave: str) -> None:
+    espera = limite.registrar(clave)
+    if espera is not None:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                             "Demasiados intentos. Espera unos minutos e intenta otra vez.",
+                             headers={"Retry-After": str(math.ceil(espera))})
 
 
 # ---------------------------------------------------------------- esquemas
@@ -158,8 +192,20 @@ async def requerir_admin(usuario: dict = Depends(usuario_actual)) -> dict:
 
 
 # ---------------------------------------------------------------- endpoints
+@app.get("/api/salud")
+async def salud(session: AsyncSession = Depends(obtener_sesion)):
+    """Para el chequeo de salud de la plataforma: responde 200 solo si la base contesta."""
+    try:
+        await session.execute(text("SELECT 1"))
+    except Exception:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Base de datos no disponible")
+    return {"estado": "ok"}
+
+
 @app.post("/api/auth/registro", response_model=TokenOut)
-async def registro_agricultor(datos: RegistroAgricultor, session: AsyncSession = Depends(obtener_sesion)):
+async def registro_agricultor(datos: RegistroAgricultor, request: Request,
+                               session: AsyncSession = Depends(obtener_sesion)):
+    _frenar(_REGISTROS_POR_IP, _ip_cliente(request))
     existe = (await session.execute(
         text("SELECT id FROM usuarios WHERE telefono = :t"), {"t": datos.telefono}
     )).first()
@@ -177,7 +223,10 @@ async def registro_agricultor(datos: RegistroAgricultor, session: AsyncSession =
 
 
 @app.post("/api/auth/login", response_model=TokenOut)
-async def login_agricultor(datos: LoginAgricultor, session: AsyncSession = Depends(obtener_sesion)):
+async def login_agricultor(datos: LoginAgricultor, request: Request,
+                           session: AsyncSession = Depends(obtener_sesion)):
+    _frenar(_LOGINS_POR_IP, _ip_cliente(request))
+    _frenar(_LOGINS_POR_CUENTA, "agricultor:" + datos.telefono.strip())
     fila = (await session.execute(
         text("SELECT id, password_hash, rol FROM usuarios WHERE telefono = :t"), {"t": datos.telefono}
     )).mappings().first()
@@ -187,7 +236,9 @@ async def login_agricultor(datos: LoginAgricultor, session: AsyncSession = Depen
 
 
 @app.post("/api/auth/login-admin", response_model=TokenOut)
-async def login_admin(datos: LoginAdmin, session: AsyncSession = Depends(obtener_sesion)):
+async def login_admin(datos: LoginAdmin, request: Request, session: AsyncSession = Depends(obtener_sesion)):
+    _frenar(_LOGINS_POR_IP, _ip_cliente(request))
+    _frenar(_LOGINS_POR_CUENTA, "admin:" + datos.email.strip().lower())
     fila = (await session.execute(
         text("SELECT id, password_hash, rol FROM usuarios WHERE email = :e AND rol = 'admin'"), {"e": datos.email}
     )).mappings().first()
