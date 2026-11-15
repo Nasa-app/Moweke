@@ -6,8 +6,16 @@ import { encolarReporte } from '../lib/colaReportes'
 import { nombreEspecie } from '../lib/formato'
 import { useI18n } from '../i18n'
 
-// Etapas que sirven para cualquier cultivo: ninguna nombra una especie.
-const FASES = ['Brote', 'Hojas', 'Flor', 'Fruto o raíz', 'Amarilla', 'Cosecha']
+// Etapas que sirven para cualquier cultivo: ninguna nombra una especie. El valor es lo que se envía; la
+// etiqueta (clave del diccionario) es lo que se muestra.
+const FASES = [
+  { valor: 'Brote', etiqueta: 'reportar_fase_brote' },
+  { valor: 'Hojas', etiqueta: 'reportar_fase_hojas' },
+  { valor: 'Flor', etiqueta: 'reportar_fase_flor' },
+  { valor: 'Fruto o raíz', etiqueta: 'reportar_fase_fruto' },
+  { valor: 'Amarilla', etiqueta: 'reportar_fase_amarilla' },
+  { valor: 'Cosecha', etiqueta: 'reportar_fase_cosecha' },
+]
 
 export default function Reportar() {
   const { t } = useI18n()
@@ -25,10 +33,10 @@ export default function Reportar() {
     return (
       <Screen>
         <BarraSuperior volverA="/cultivo" />
-        <Titulo sub="Para contarnos cómo va, primero dinos qué sembraste.">Todavía no tienes un cultivo</Titulo>
+        <Titulo sub={t('reportar_sin_cultivo_sub')}>{t('reportar_sin_cultivo_titulo')}</Titulo>
         <div style={{ marginTop: 'auto', padding: '16px 16px 32px 16px' }}>
           <Link to="/onboarding/cultivos" className="ps-btn">
-            Agregar qué sembraste
+            {t('reportar_agregar_siembra')}
           </Link>
         </div>
       </Screen>
@@ -38,18 +46,18 @@ export default function Reportar() {
   return (
     <Screen>
       <BarraSuperior volverA="/cultivo" />
-      <Titulo>{`¿Cómo está tu ${nombreEspecie(especieActiva).toLowerCase()}?`}</Titulo>
+      <Titulo>{t('reportar_titulo_especie', { especie: nombreEspecie(especieActiva).toLowerCase() })}</Titulo>
 
       <fieldset className="ps-pad-16" style={{ marginTop: 16, border: 'none', paddingBlock: 0 }}>
-        <legend className="visually-hidden">Elige la foto que más se parece</legend>
+        <legend className="visually-hidden">{t('reportar_leyenda')}</legend>
         <div className="ps-grid-2">
-          {FASES.map((f) => (
+          {FASES.map(({ valor: f, etiqueta }) => (
             <label
               key={f}
               style={{ position: 'relative', borderRadius: 20, background: 'var(--blanco)', boxShadow: fase === f ? '0 0 0 3px var(--verde)' : 'var(--sombra-1)', cursor: 'pointer', display: 'flex', flexDirection: 'column', minHeight: 110, justifyContent: 'center', alignItems: 'center' }}
             >
               <input type="radio" name="fase" checked={fase === f} onChange={() => setFase(f)} className="visually-hidden" />
-              <span style={{ fontSize: 17, fontWeight: 800, color: fase === f ? 'var(--verde)' : undefined }}>{f}</span>
+              <span style={{ fontSize: 17, fontWeight: 800, color: fase === f ? 'var(--verde)' : undefined }}>{t(etiqueta)}</span>
             </label>
           ))}
         </div>

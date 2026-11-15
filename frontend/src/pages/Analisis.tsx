@@ -8,29 +8,14 @@ import { usePredio } from '../state/PredioContext'
 import { ESCENARIOS, candidatasSiembra, declararCultivo, mensajeDeError, type Candidata, type Factor, type PeriodoClima, type SerieClimatica } from '../lib/api'
 import { NOMBRE_ESCENARIO, TEXTO_CATEGORIA_CLIMA, aIso, aPorcentaje, fechaCorta, nombreClave, nombreEspecie, nombreMes, textoDatosFaltantes, textoVariedad } from '../lib/formato'
 import { useI18n } from '../i18n'
+import { tr } from '../i18n/dictionary'
 import { claveVariedad, variedadesConocidas } from '../lib/nombres'
 
 const ORDEN_FACTORES: Factor[] = [
   'temperatura', 'helada', 'humedad', 'ph', 'radiacion', 'altitud', 'textura',
   'drenaje', 'salinidad', 'profundidad', 'fertilidad',
 ]
-const DETALLE_FACTOR: Record<Factor, string> = {
-  temperatura: 'Calor promedio de la temporada',
-  helada: 'Que la noche más fría no la mate',
-  humedad: 'Lluvia de la temporada, sin riego',
-  ph: 'Qué tan ácido o alcalino es el suelo (pH) para ella',
-  radiacion: 'Sol que recibe en la temporada',
-  altitud: 'Altura de tu parcela sobre el mar frente al máximo que tolera',
-  textura: 'Qué tan arenoso o arcilloso es el suelo para ella',
-  drenaje: 'Si tu terreno se inunda o se seca muy rápido frente a lo que tolera',
-  salinidad: 'Cuánta sal tolera en el suelo',
-  profundidad: 'Qué tan profundo es tu suelo frente a lo que necesita',
-  fertilidad: 'Qué tan rica es tu tierra frente a lo que necesita',
-}
-const SEGUIMIENTO: Record<string, { texto: string; detalle: string }> = {
-  perfil_calibrado: { texto: 'Te avisamos etapa por etapa', detalle: 'Las etapas están ajustadas con datos de la zona.' },
-  perfil_fenologico_regional: { texto: 'Te avisamos etapa por etapa', detalle: 'Las etapas son de referencia: aún no se han probado en terreno.' },
-}
+const NIVELES_SEGUIMIENTO = ['perfil_calibrado', 'perfil_fenologico_regional']
 
 function colorDeFactor(valor: number): string {
   if (valor >= 0.7) return 'var(--semaforo-verde)'
@@ -64,7 +49,7 @@ export default function Analisis() {
         setFaltantes(r.datos_faltantes)
         setSerie(r.serie_climatica)
       })
-      .catch((err) => vigente && setError(mensajeDeError(err, 'No pudimos cargar el análisis. Revisa tu conexión e inténtalo de nuevo.')))
+      .catch((err) => vigente && setError(mensajeDeError(err, tr('analisis_error_cargar'))))
     return () => {
       vigente = false
     }
@@ -86,7 +71,7 @@ export default function Analisis() {
       setCultivoActivo(cultivo.id, cultivo.especie)
       navigate('/cultivo')
     } catch (err) {
-      setError(mensajeDeError(err, 'No se pudo guardar la siembra. Revisa la fecha e intenta otra vez.'))
+      setError(mensajeDeError(err, tr('analisis_error_guardar')))
     } finally {
       setEnviando(false)
     }
@@ -94,14 +79,14 @@ export default function Analisis() {
 
   const nombre = candidata ? nombreEspecie(candidata.especie, candidata) : nombreEspecie(clave)
   const compat = aPorcentaje(candidata?.puntaje)
-  const seguimiento = candidata ? SEGUIMIENTO[candidata.nivel_madurez] : undefined
+  const seguimiento = candidata && NIVELES_SEGUIMIENTO.includes(candidata.nivel_madurez) ? candidata.nivel_madurez : undefined
   const factores = candidata ? ORDEN_FACTORES.filter((f) => candidata.factores[f] !== undefined) : []
 
   return (
     <Screen>
       <BarraSuperior
         volverA="/especies"
-        derecha={candidata ? <Chip tono={candidata.apta ? 'favorable' : candidata.marginal ? 'precaucion' : 'riesgo'}>{candidata.apta ? 'Apta para tu parcela' : candidata.marginal ? 'Muy poco compatible con tu parcela' : 'No apta para tu parcela'}</Chip> : undefined}
+        derecha={candidata ? <Chip tono={candidata.apta ? 'favorable' : candidata.marginal ? 'precaucion' : 'riesgo'}>{candidata.apta ? t('analisis_chip_apta') : candidata.marginal ? t('analisis_chip_marginal') : t('analisis_chip_no_apta')}</Chip> : undefined}
       />
 
       <section aria-labelledby="especie" className="ps-pad-16" style={{ marginTop: 14 }}>
@@ -110,23 +95,23 @@ export default function Analisis() {
           {candidata?.nombre_cientifico ? <span className="ps-contexto" style={{ fontStyle: 'italic' }}>{candidata.nombre_cientifico}</span> : null}
           {escenario !== 'observado' ? (
             <span className="ps-nota" role="status">
-              Con un supuesto de clima: {NOMBRE_ESCENARIO[escenario].toLowerCase()}. No es un pronóstico.
+              {t('analisis_supuesto_clima', { escenario: NOMBRE_ESCENARIO[escenario].toLowerCase() })}
             </span>
           ) : null}
           {candidata === undefined && !error ? <span className="ps-nota">{t('cargando')}</span> : null}
-          {candidata === null ? <span className="ps-cuerpo">Esta especie no está en el análisis de tu parcela.</span> : null}
+          {candidata === null ? <span className="ps-cuerpo">{t('analisis_no_esta')}</span> : null}
           {candidata ? (
             <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 18, background: 'var(--hundido)', display: 'flex', alignItems: 'center', gap: 12 }}>
               <span style={{ flexShrink: 0 }}>
                 <CompatRing porcentaje={compat} tamano={72} />
               </span>
               <span style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.1 }}>{compat}% compatible</span>
+                <span style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.1 }}>{t('analisis_pct_compatible', { n: compat })}</span>
                 <span className="ps-detalle">
-                  {candidata.factor_limitante && compat < 100 ? `Lo que más la limita: ${nombreClave(candidata.factor_limitante).toLowerCase()}` : t('analisis_compatible')}
+                  {candidata.factor_limitante && compat < 100 ? t('analisis_limita', { factor: nombreClave(candidata.factor_limitante).toLowerCase() }) : t('analisis_compatible')}
                 </span>
                 <SourceLink>
-                  {candidata.metodo === 'simulacion_por_fase' ? 'Calculado etapa por etapa con el clima de tu parcela' : 'Calculado con la guía de la FAO (EcoCrop) y el clima de tu parcela'}
+                  {candidata.metodo === 'simulacion_por_fase' ? t('analisis_metodo_fases') : t('analisis_metodo_ecocrop')}
                 </SourceLink>
               </span>
             </div>
@@ -137,14 +122,14 @@ export default function Analisis() {
       {candidata?.variedades?.length ? (
         <section aria-labelledby="variedades">
           <h2 id="variedades" className="ps-h2" style={{ margin: '18px 20px 0 20px' }}>
-            Qué variedad te conviene
+            {t('analisis_variedad_titulo')}
           </h2>
           <p className="ps-pad ps-cuerpo" style={{ margin: '6px 0 0 0' }}>
             {candidata.variedad_recomendada
-              ? `La que mejor calza con tu parcela es la ${textoVariedad(candidata.variedad_recomendada)}, aunque quizás no la conozcas.`
-              : 'La que mejor calza con tu parcela es la especie sin variedad.'}
+              ? t('analisis_variedad_recomendada', { variedad: textoVariedad(candidata.variedad_recomendada) })
+              : t('analisis_variedad_sin')}
           </p>
-          <ul aria-label="Variedades" className="ps-pad-16" style={{ margin: '10px 0 0 0', listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <ul aria-label={t('analisis_variedades_aria')} className="ps-pad-16" style={{ margin: '10px 0 0 0', listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {candidata.variedades.map((v) => (
               <li key={v.nombre_cientifico}>
                 <Link
@@ -156,17 +141,17 @@ export default function Analisis() {
                   <CompatRing porcentaje={aPorcentaje(v.puntaje)} tamano={44} />
                   <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
                     <span style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.15 }}>
-                      {v.rango && v.nombre ? `${v.rango[0].toUpperCase()}${v.rango.slice(1)} ${v.nombre}` : 'Especie sin variedad'}
+                      {v.rango && v.nombre ? `${v.rango[0].toUpperCase()}${v.rango.slice(1)} ${v.nombre}` : t('analisis_especie_sin_variedad')}
                     </span>
                     <span className="ps-contexto" style={{ fontStyle: 'italic' }}>{v.nombre_cientifico}</span>
                   </span>
-                  {v.mejor ? <Chip tono="favorable">La que más conviene</Chip> : null}
+                  {v.mejor ? <Chip tono="favorable">{t('analisis_la_que_conviene')}</Chip> : null}
                 </Link>
               </li>
             ))}
           </ul>
           <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
-            Según la guía de la FAO (EcoCrop). Puede que no sea una variedad conocida ni fácil de conseguir en tu zona: pregunta en tu comuna o a un técnico.
+            {t('analisis_variedad_nota')}
           </p>
         </section>
       ) : null}
@@ -174,7 +159,7 @@ export default function Analisis() {
       {candidata ? (
         <>
           <h2 className="ps-h2" style={{ margin: '18px 20px 0 20px' }}>
-            Qué le sirve y qué no
+            {t('analisis_sirve_titulo')}
           </h2>
           <ul className="ps-pad-16" style={{ margin: '10px 0 0 0', listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {factores.map((factor) => {
@@ -185,33 +170,33 @@ export default function Analisis() {
                     <span style={{ fontSize: 17, fontWeight: 800 }}>{nombreClave(factor)}</span>
                     <span style={{ fontSize: 17, fontWeight: 800 }}>{aPorcentaje(valor)}%</span>
                   </span>
-                  <span className="ps-barra" role="img" aria-label={`${nombreClave(factor)}: ${aPorcentaje(valor)} de 100`}>
+                  <span className="ps-barra" role="img" aria-label={t('analisis_factor_aria', { factor: nombreClave(factor), n: aPorcentaje(valor) })}>
                     <span style={{ width: `${aPorcentaje(valor)}%`, background: colorDeFactor(valor) }} />
                   </span>
-                  <span className="ps-detalle">{DETALLE_FACTOR[factor]}</span>
+                  <span className="ps-detalle">{t(`analisis_factor_${factor}`)}</span>
                 </li>
               )
             })}
           </ul>
           {candidata.clima && serie ? (
             <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
-              Las barras y la mejor temporada son del último año de clima. El porcentaje de arriba resume los años de {serie.periodo_reciente[0]} a {serie.periodo_reciente[1]}.
+              {t('analisis_nota_barras', { desde: serie.periodo_reciente[0], hasta: serie.periodo_reciente[1] })}
             </p>
           ) : null}
           {candidata.clima && serie ? <ClimaEnElTiempo clima={candidata.clima} serie={serie} apta={!!candidata.apta} /> : null}
           {candidata.metodo === 'simulacion_por_fase' ? (
             <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
-              El porcentaje de arriba es el menor entre dos cálculos: simular el cultivo etapa por etapa con el clima de tu parcela, y las barras, que muestran lo que esta especie aguanta según la guía de la FAO.
+              {t('analisis_nota_menor')}
             </p>
           ) : null}
           {candidata.correcciones?.some((c) => c.tipo === 'encalado') ? (
             <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
-              Tu suelo es más ácido de lo que esta especie tolera. Se puede corregir con cal (encalado): pide a un técnico la dosis según el análisis de tu suelo.
+              {t('analisis_nota_encalado')}
             </p>
           ) : null}
           {candidata.correcciones?.some((c) => c.tipo === 'fertilizacion') ? (
             <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
-              Tu tierra tiene menos fertilidad de la que pide esta especie. Se puede mejorar con abono o compost.
+              {t('analisis_nota_fertilidad')}
             </p>
           ) : null}
           {textoDatosFaltantes(faltantes) ? (
@@ -221,41 +206,39 @@ export default function Analisis() {
           ) : null}
           {candidata.fuera_de_rangos_ecocrop ? (
             <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
-              El clima de tu parcela está fuera de lo que esta especie aguanta, por eso no la recomendamos.
+              {t('analisis_nota_fuera_rango')}
             </p>
           ) : null}
 
           <h2 className="ps-h2" style={{ margin: '18px 20px 0 20px' }}>
-            Cuándo
+            {t('analisis_cuando')}
           </h2>
           <div className="ps-pad-16" style={{ marginTop: 10 }}>
             <div className="ps-card" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {candidata.mes_inicio_temporada && candidata.duracion_temporada_meses ? (
                 <span style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.2 }}>
-                  Mejor temporada: desde {nombreMes(candidata.mes_inicio_temporada - 1)}, unos {candidata.duracion_temporada_meses}{' '}
-                  {candidata.duracion_temporada_meses === 1 ? 'mes' : 'meses'}
+                  {t(candidata.duracion_temporada_meses === 1 ? 'analisis_temporada_uno' : 'analisis_temporada_otros', { mes: nombreMes(candidata.mes_inicio_temporada - 1), n: candidata.duracion_temporada_meses })}
                 </span>
               ) : null}
               {candidata.simulacion ? (
                 <span className="ps-cuerpo">
-                  Si la siembras el {fechaCorta(candidata.simulacion.siembra_simulada)}
                   {candidata.simulacion.perdida_simulada !== undefined
-                    ? `, podrías perder cerca del ${aPorcentaje(candidata.simulacion.perdida_simulada)}% de la cosecha.`
-                    : ', no alcanza a completar su ciclo con el clima que tenemos.'}
+                    ? t('analisis_sim_perdida', { fecha: fechaCorta(candidata.simulacion.siembra_simulada), n: aPorcentaje(candidata.simulacion.perdida_simulada) })
+                    : t('analisis_sim_sin_ciclo', { fecha: fechaCorta(candidata.simulacion.siembra_simulada) })}
                 </span>
               ) : null}
               <span className="ps-detalle">
-                {seguimiento ? `${seguimiento.texto}. ${seguimiento.detalle}` : 'Todavía no seguimos sus etapas: solo vemos si tu terreno le sirve.'}
+                {seguimiento ? `${t('analisis_seguimiento_texto')}. ${t(`analisis_seguimiento_${seguimiento}`)}` : t('analisis_sin_seguimiento')}
               </span>
             </div>
           </div>
 
           <h2 className="ps-h2" style={{ margin: '18px 20px 0 20px' }}>
-            ¿La sembraste o la vas a sembrar?
+            {t('analisis_sembraste_titulo')}
           </h2>
           <div className="ps-pad-16" style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span style={{ fontSize: 15, fontWeight: 800 }}>Fecha de siembra</span>
+              <span style={{ fontSize: 15, fontWeight: 800 }}>{t('analisis_fecha_siembra')}</span>
               <input type="date" value={fechaSiembra} onChange={(e) => setFechaSiembra(e.target.value)} required style={campoEstilo} />
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -280,7 +263,7 @@ export default function Analisis() {
 
       <div style={{ marginTop: 'auto', padding: '16px 16px 32px 16px' }}>
         <button type="button" onClick={sembrar} disabled={!candidata || enviando || !fechaSiembra} className="ps-btn">
-          {enviando ? t('cargando') : seguimiento ? 'Seguir este cultivo' : 'Agregar a mis cultivos'}
+          {enviando ? t('cargando') : seguimiento ? t('analisis_seguir_cultivo') : t('analisis_agregar_cultivos')}
         </button>
       </div>
     </Screen>
@@ -288,13 +271,14 @@ export default function Analisis() {
 }
 
 function FilaPeriodo({ nombre, periodo }: { nombre: string; periodo: PeriodoClima }) {
+  const { t } = useI18n()
   const tipico = aPorcentaje(periodo.tipico)
   return (
     <li className="ps-card-plana" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '12px 14px' }}>
       <span style={{ fontSize: 17, fontWeight: 800 }}>{nombre}</span>
       <span style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
-        <span style={{ fontSize: 17, fontWeight: 800 }} aria-label={`${tipico} por ciento compatible en un año típico`}>{tipico}% compatible</span>
-        <span className="ps-detalle">{aPorcentaje(periodo.dificil)}% en un año difícil</span>
+        <span style={{ fontSize: 17, fontWeight: 800 }} aria-label={t('analisis_periodo_aria', { n: tipico })}>{t('analisis_pct_compatible', { n: tipico })}</span>
+        <span className="ps-detalle">{t('analisis_pct_dificil', { n: aPorcentaje(periodo.dificil) })}</span>
       </span>
     </li>
   )
@@ -302,25 +286,26 @@ function FilaPeriodo({ nombre, periodo }: { nombre: string; periodo: PeriodoClim
 
 // Cómo le fue y le iría a la especie en tu parcela: antes, ahora y hacia el futuro, con el mismo cálculo año por año.
 function ClimaEnElTiempo({ clima, serie, apta }: { clima: NonNullable<Candidata['clima']>; serie: SerieClimatica; apta: boolean }) {
+  const { t } = useI18n()
   const categoria = clima.categoria ? TEXTO_CATEGORIA_CLIMA[clima.categoria] : null
   return (
     <>
       <h2 className="ps-h2" style={{ margin: '18px 20px 0 20px' }}>
-        Cómo cambia con el clima
+        {t('analisis_clima_titulo')}
       </h2>
       {categoria ? (
         <p className="ps-pad ps-cuerpo" style={{ margin: '8px 0 0 0' }}>
           <b>{categoria.chip}.</b> {categoria.detalle}
-          {!apta && clima.categoria === 'emergente' ? ' Todavía no es apta: lo sería más adelante.' : ''}
+          {!apta && clima.categoria === 'emergente' ? ` ${t('analisis_clima_todavia_no')}` : ''}
         </p>
       ) : null}
       <ul className="ps-pad-16" style={{ margin: '10px 0 0 0', listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <FilaPeriodo nombre={`${serie.periodo_historico[0]} a ${serie.periodo_historico[1]}`} periodo={clima.historico} />
-        <FilaPeriodo nombre={`${serie.periodo_reciente[0]} a ${serie.periodo_reciente[1]}`} periodo={clima.reciente} />
-        <FilaPeriodo nombre={`Hacia ${serie.horizonte}`} periodo={clima.proyectado} />
+        <FilaPeriodo nombre={t('analisis_rango_anios', { desde: serie.periodo_historico[0], hasta: serie.periodo_historico[1] })} periodo={clima.historico} />
+        <FilaPeriodo nombre={t('analisis_rango_anios', { desde: serie.periodo_reciente[0], hasta: serie.periodo_reciente[1] })} periodo={clima.reciente} />
+        <FilaPeriodo nombre={t('analisis_hacia', { horizonte: serie.horizonte })} periodo={clima.proyectado} />
       </ul>
       <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
-        “Hacia {serie.horizonte}” sigue la tendencia del clima de tu parcela (o el escenario que elegiste): sirve para comparar, no es un pronóstico. La compatibilidad dice si el lugar le sirve, no cuánto vas a cosechar.
+        {t('analisis_clima_nota', { horizonte: serie.horizonte })}
       </p>
     </>
   )

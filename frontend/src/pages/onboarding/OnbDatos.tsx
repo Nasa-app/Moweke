@@ -20,9 +20,7 @@ export default function OnbDatos() {
   return (
     <Screen>
       <BarraSuperior volverA="/explorar" derecha={<StepDots paso={1} total={3} />} />
-      <Titulo sub="Elige tu comuna. Después marcarás tu parcela sobre el mapa, tocando cada esquina.">
-        ¿Dónde está tu parcela?
-      </Titulo>
+      <Titulo sub={t('onb_datos_sub')}>{t('onb_datos_titulo')}</Titulo>
 
       <div className="ps-pad-16" style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
         <label htmlFor="comuna" style={{ fontSize: 16, fontWeight: 800, padding: '0 4px' }}>
@@ -48,14 +46,14 @@ export default function OnbDatos() {
           <IconoUbicacion stroke="#fff" />
         </span>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.2 }}>Lo que sigue: marcar tu parcela</span>
+          <span style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.2 }}>{t('onb_datos_sigue_titulo')}</span>
           <span style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.35, color: 'var(--texto-tenue)' }}>
-            Verás el mapa de {comuna}. Acércalo hasta tu parcela y toca cada esquina para dibujar su contorno. Toma un par de minutos.
+            {t('onb_datos_sigue_texto', { comuna })}
           </span>
         </div>
       </section>
 
-      <section aria-label="Privacidad" className="ps-pad-16" style={{ margin: '18px 16px 0 16px', background: 'var(--cielo)', color: 'var(--carbon)', borderRadius: 20, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <section aria-label={t('onb_privacidad_titulo')} className="ps-pad-16" style={{ margin: '18px 16px 0 16px', background: 'var(--cielo)', color: 'var(--carbon)', borderRadius: 20, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <h2 className="ps-h2">{t('onb_priv_titulo')}</h2>
         <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8, fontSize: 16, fontWeight: 700, lineHeight: 1.3 }}>
           <li>{t('onb_priv_nombre')}</li>

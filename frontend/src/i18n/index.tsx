@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { traducir, type Idioma } from './dictionary'
+import { fijarIdioma, traducir, type Idioma, type Variables } from './dictionary'
 import { guardar, leer } from '../state/storage'
 import { nombresEspecies } from '../lib/api'
 import { fijarCatalogoNombres, fijarIdiomaNombres } from '../lib/nombres'
@@ -7,7 +7,7 @@ import { fijarCatalogoNombres, fijarIdiomaNombres } from '../lib/nombres'
 interface I18nContextValor {
   idioma: Idioma
   cambiarIdioma: (idioma: Idioma) => void
-  t: (clave: string) => string
+  t: (clave: string, variables?: Variables) => string
 }
 
 const I18nContext = createContext<I18nContextValor | null>(null)
@@ -35,8 +35,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     }
   }, [])
   fijarIdiomaNombres(idioma)
+  fijarIdioma(idioma)
+  if (typeof document !== 'undefined') document.documentElement.lang = idioma
 
-  const t = useCallback((clave: string) => traducir(idioma, clave), [idioma])
+  const t = useCallback((clave: string, variables?: Variables) => traducir(idioma, clave, variables), [idioma])
 
   // nombresListos fuerza un valor nuevo cuando llega el catálogo, para que se repinten los nombres.
   // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -8,30 +8,34 @@ import { CATEGORIAS_COMIDA, candidatasSiembra } from '../../lib/api'
 import { nombreEspecie } from '../../lib/formato'
 import { useI18n } from '../../i18n'
 
+type Candidata = Awaited<ReturnType<typeof candidatasSiembra>>['candidatas'][number]
+
 export default function OnbListo() {
   const { t } = useI18n()
   const { idParcela } = usePredio()
-  const [mejores, setMejores] = useState<string[] | null>(null)
+  const [aptas, setAptas] = useState<Candidata[] | null>(null)
   const [reuniendo, setReuniendo] = useState(false)
 
   useEffect(() => {
     if (!idParcela) return
     let vigente = true
     candidatasSiembra(idParcela, { categorias: CATEGORIAS_COMIDA, limite: 3 })
-      .then((r) => vigente && setMejores(r.candidatas.filter((c) => c.apta).slice(0, 3).map((c) => nombreEspecie(c.especie, c))))
+      .then((r) => vigente && setAptas(r.candidatas.filter((c) => c.apta).slice(0, 3)))
       .catch(() => vigente && setReuniendo(true))
     return () => {
       vigente = false
     }
   }, [idParcela])
 
+  // El nombre se arma al pintar, para que siga el idioma elegido.
+  const mejores = aptas ? aptas.map((c) => nombreEspecie(c.especie, c)) : null
   const resumen = !idParcela
-    ? { a: '/terreno/perimetro', titulo: 'Falta marcar tu parcela', detalle: 'Sin ella no hay clima ni suelo que analizar' }
+    ? { a: '/terreno/perimetro', titulo: t('onb_listo_falta_titulo'), detalle: t('onb_listo_falta_detalle') }
     : mejores
-      ? { a: '/terreno', titulo: mejores.length ? 'Lo que mejor se da' : 'Ninguna especie resultó apta', detalle: mejores.join(' · ') || 'Revisa el detalle de tu terreno' }
+      ? { a: '/terreno', titulo: mejores.length ? t('onb_listo_mejor_titulo') : t('onb_listo_ninguna_titulo'), detalle: mejores.join(' · ') || t('onb_listo_ninguna_detalle') }
       : reuniendo
-        ? { a: '/terreno/preparando', titulo: 'Reuniendo los datos de tu parcela', detalle: 'Toca para ver el avance' }
-        : { a: '/terreno', titulo: 'Analizando tu terreno…', detalle: 'Buscando qué se da bien en tu parcela' }
+        ? { a: '/terreno/preparando', titulo: t('onb_listo_reuniendo_titulo'), detalle: t('onb_listo_reuniendo_detalle') }
+        : { a: '/terreno', titulo: t('onb_listo_analizando_titulo'), detalle: t('onb_listo_analizando_detalle') }
 
   return (
     <Screen>

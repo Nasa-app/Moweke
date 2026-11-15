@@ -15,6 +15,14 @@ interface Temporada {
   detalle: string
 }
 
+interface Declarada {
+  clave: string
+  anio: number
+  especie: string
+  variedad: string | null
+  fecha: string
+}
+
 // Lo que el agricultor contó en "Qué sembraste antes" (solo en este dispositivo): el año se calcula desde hoy.
 const ANTES: { clave: string; atras: number }[] = [
   { clave: 'esta', atras: 0 },
@@ -29,7 +37,7 @@ const primeraPalabra = (texto: string) => texto.toLowerCase().split(' ')[0]
 export default function Historial() {
   const { t } = useI18n()
   const { idParcela } = usePredio()
-  const [declaradas, setDeclaradas] = useState<Temporada[] | null>(idParcela ? null : [])
+  const [declaradas, setDeclaradas] = useState<Declarada[] | null>(idParcela ? null : [])
 
   useEffect(() => {
     if (!idParcela) return
@@ -41,8 +49,9 @@ export default function Historial() {
           r.cultivos.map((c) => ({
             clave: `c${c.id}`,
             anio: Number(c.fecha_siembra.slice(0, 4)),
-            especie: nombreEspecie(c.especie),
-            detalle: c.variedad_local ?? `Sembrado el ${c.fecha_siembra.slice(8, 10)}/${c.fecha_siembra.slice(5, 7)}`,
+            especie: c.especie,
+            variedad: c.variedad_local,
+            fecha: c.fecha_siembra,
           })),
         ),
       )
@@ -53,12 +62,18 @@ export default function Historial() {
   }, [idParcela])
 
   const anioActual = new Date().getFullYear()
+  const declaradasTexto: Temporada[] = (declaradas ?? []).map((d) => ({
+    clave: d.clave,
+    anio: d.anio,
+    especie: nombreEspecie(d.especie),
+    detalle: d.variedad ?? t('historial_sembrado_el', { dia: d.fecha.slice(8, 10), mes: d.fecha.slice(5, 7) }),
+  }))
   const contadas: Temporada[] = ANTES.flatMap(({ clave, atras }) => {
     const especie = leer<Record<string, string>>('onboarding_antes', {})[clave]
-    return especie && !SIN_CULTIVO.has(especie) ? [{ clave: `a${clave}`, anio: anioActual - atras, especie, detalle: 'Lo contaste tú' }] : []
-  }).filter((c) => !(declaradas ?? []).some((d) => d.anio === c.anio && primeraPalabra(d.especie) === primeraPalabra(c.especie)))
+    return especie && !SIN_CULTIVO.has(especie) ? [{ clave: `a${clave}`, anio: anioActual - atras, especie, detalle: t('historial_lo_contaste') }] : []
+  }).filter((c) => !declaradasTexto.some((d) => d.anio === c.anio && primeraPalabra(d.especie) === primeraPalabra(c.especie)))
 
-  const temporadas = [...(declaradas ?? []), ...contadas].sort((a, b) => b.anio - a.anio)
+  const temporadas = [...declaradasTexto, ...contadas].sort((a, b) => b.anio - a.anio)
 
   // Una misma especie en dos de las últimas tres temporadas: aviso de rotación.
   const ultimas = temporadas.filter((s) => s.anio > anioActual - 3)
@@ -77,20 +92,20 @@ export default function Historial() {
         <section aria-labelledby="aviso-familia" className="ps-pad-16" style={{ marginTop: 16, padding: 14, borderRadius: 22, background: 'var(--precaucion-fondo, var(--hundido))' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <h2 id="aviso-familia" style={{ margin: 0, fontSize: 19, fontWeight: 800, color: 'var(--precaucion-texto)' }}>
-              {repetida.nombre} {repetida.anios} de 3 años
+              {t('historial_repetida', { nombre: repetida.nombre, n: repetida.anios })}
             </h2>
-            <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--precaucion-texto)' }}>Conviene alternar: repetir la misma especie favorece las plagas del suelo</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--precaucion-texto)' }}>{t('historial_alternar')}</span>
           </div>
         </section>
       ) : null}
 
       {declaradas === null ? <p className="ps-pad ps-nota" style={{ margin: '16px 0 0 0' }}>{t('cargando')}</p> : null}
       {declaradas !== null && temporadas.length === 0 ? (
-        <p className="ps-pad ps-cuerpo" style={{ margin: '16px 0 0 0' }}>Todavía no hay temporadas. Agrega lo que sembraste y lo verás aquí.</p>
+        <p className="ps-pad ps-cuerpo" style={{ margin: '16px 0 0 0' }}>{t('historial_vacio')}</p>
       ) : null}
 
       {temporadas.length ? (
-        <ol aria-label="Temporadas" style={{ margin: '16px 16px 0 16px', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <ol aria-label={t('historial_temporadas_aria')} style={{ margin: '16px 16px 0 16px', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {temporadas.map((h) => (
             <li key={h.clave} className="ps-card" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <span aria-hidden="true" style={{ width: 52, height: 52, borderRadius: 26, background: 'var(--hundido)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 800, color: 'var(--verde)' }}>

@@ -17,6 +17,7 @@ import { PREGUNTAS_SUELO } from '../lib/suelo'
 import { comunaDeParcela, leerBorrador } from '../lib/comunas'
 import { fechaCorta, nombreMes, numero } from '../lib/formato'
 import { useI18n } from '../i18n'
+import { tr } from '../i18n/dictionary'
 
 function extremo(serie: number[] | null, elegir: (...valores: number[]) => number): { valor: number; mes: number } | null {
   if (!serie || serie.length === 0) return null
@@ -59,7 +60,7 @@ export default function Terreno() {
           } else throw err
         }),
     ])
-      .catch((err) => vigente && setError(mensajeDeError(err, 'No pudimos cargar tu terreno. Revisa tu conexión e inténtalo de nuevo.')))
+      .catch((err) => vigente && setError(mensajeDeError(err, tr('terreno_error_cargar'))))
       .finally(() => vigente && setCargando(false))
     return () => {
       vigente = false
@@ -77,7 +78,7 @@ export default function Terreno() {
       .then((r) => setSuelo(r.suelo))
       .catch((err) => {
         setSuelo(anterior)
-        setErrorSuelo(mensajeDeError(err, 'No pudimos guardar tu respuesta. Revisa tu conexión e inténtalo de nuevo.'))
+        setErrorSuelo(mensajeDeError(err, tr('terreno_error_guardar')))
       })
   }
 
@@ -85,8 +86,8 @@ export default function Terreno() {
   const comuna = comunaDeParcela(idParcela)
   const subtitulo = parcela
     ? [predio.sector && comuna ? `${predio.sector}, ${comuna}` : comuna ?? (predio.sector || null),
-        `${numero(parcela.hectareas, 2)} ha`,
-        parcela.altitud_msnm !== null ? `${numero(parcela.altitud_msnm)} msnm` : null,
+        t('terreno_ha', { n: numero(parcela.hectareas, 2) }),
+        parcela.altitud_msnm !== null ? t('terreno_msnm', { n: numero(parcela.altitud_msnm) }) : null,
         parcela.ecorregion?.nombre].filter(Boolean).join(' · ')
     : undefined
 
@@ -95,7 +96,7 @@ export default function Terreno() {
   const helada = extremo(sitio?.temperatura_minima_mas_baja_mensual ?? null, Math.min)
   const sol = sitio?.ghi_mensual_kwh_m2_dia
   const solMedio = sol && sol.length ? sol.reduce((a, b) => a + b, 0) / sol.length : null
-  const periodo = sitio ? `${fechaCorta(sitio.periodo_clima[0])} a ${fechaCorta(sitio.periodo_clima[1])}` : null
+  const periodo = sitio ? t('terreno_periodo', { desde: fechaCorta(sitio.periodo_clima[0]), hasta: fechaCorta(sitio.periodo_clima[1]) }) : null
   const incendios = parcela?.incendios_cercanos
   const diasConFocos = incendios?.dias_con_focos ?? []
   const focoMasCercano = diasConFocos.reduce<number | null>(
@@ -117,7 +118,7 @@ export default function Terreno() {
         </span>
         <span style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <span style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.1 }}>{t('terreno_zonas_sembrar')}</span>
-          <span className="ps-detalle">{parcela ? `${numero(parcela.hectareas, 2)} ha marcadas · ` : ''}Qué tan verde, alta e inclinada está cada parte</span>
+          <span className="ps-detalle">{parcela ? t('terreno_ha_marcadas', { n: numero(parcela.hectareas, 2) }) : ''}{t('terreno_zonas_detalle')}</span>
         </span>
         <IconoSiguiente stroke="var(--verde)" />
       </Link>
@@ -126,13 +127,13 @@ export default function Terreno() {
       </Link>
 
       <div className="ps-pad-16" style={{ margin: '8px 16px 0 16px' }}>
-        <EscenaTerreno etiqueta="Ilustración de un predio con casa, árboles y un paño de tierra labrada" />
+        <EscenaTerreno etiqueta={t('terreno_escena_aria')} />
       </div>
 
       {sinClima ? (
         <Link to="/terreno/preparando" className="ps-card-plana" style={{ margin: '8px 16px 0 16px', textDecoration: 'none', color: 'var(--carbon)', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ flex: 1, fontSize: 16, fontWeight: 700 }}>Todavía se está reuniendo el clima de tu parcela.</span>
-          <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--verde)' }}>Ver avance</span>
+          <span style={{ flex: 1, fontSize: 16, fontWeight: 700 }}>{t('inicio_reuniendo_clima')}</span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--verde)' }}>{t('inicio_ver_avance')}</span>
         </Link>
       ) : null}
       {error ? (
@@ -146,49 +147,49 @@ export default function Terreno() {
           <h2 id="riesgos" className="ps-h2">
             {t('terreno_riesgos')}
           </h2>
-          <SourceLink>Satélites de NASA (FIRMS)</SourceLink>
+          <SourceLink>{t('terreno_fuente_firms')}</SourceLink>
         </div>
         <div style={{ marginTop: 8, padding: '12px 14px', borderRadius: 16, background: 'var(--blanco)', display: 'flex', alignItems: 'center', gap: 12 }}>
           <IconoIncendio stroke={diasConFocos.length ? 'var(--riesgo-texto)' : 'var(--favorable-texto)'} />
           <span style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.15 }}>Focos de calor a menos de {numero(incendios?.radio_km ?? 10)} km</span>
+            <span style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.15 }}>{t('terreno_focos_radio', { km: numero(incendios?.radio_km ?? 10) })}</span>
             <span className="ps-detalle">
               {!incendios
                 ? t('cargando')
                 : !incendios.revisado
-                  ? 'Todavía sin revisar'
+                  ? t('terreno_sin_revisar')
                   : diasConFocos.length
-                    ? `El más cercano a ${numero(focoMasCercano, 1)} km · último el ${fechaCorta(diasConFocos[diasConFocos.length - 1].fecha)}`
-                    : `Revisado del ${fechaCorta(incendios.revisado[0])} al ${fechaCorta(incendios.revisado[1])}`}
+                    ? t('terreno_foco_cercano', { km: numero(focoMasCercano, 1), fecha: fechaCorta(diasConFocos[diasConFocos.length - 1].fecha) })
+                    : t('terreno_revisado', { desde: fechaCorta(incendios.revisado[0]), hasta: fechaCorta(incendios.revisado[1]) })}
             </span>
           </span>
           {incendios?.revisado ? (
             <Chip tono={diasConFocos.length ? 'riesgo' : 'favorable'}>
-              {diasConFocos.length ? `${diasConFocos.length} ${diasConFocos.length === 1 ? 'día' : 'días'}` : 'Sin focos'}
+              {diasConFocos.length ? t(diasConFocos.length === 1 ? 'inicio_dia_uno' : 'inicio_dia_otros', { n: diasConFocos.length }) : t('terreno_sin_focos')}
             </Chip>
           ) : null}
         </div>
         <div style={{ marginTop: 8, padding: '12px 14px', borderRadius: 16, background: 'var(--blanco)', display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.15 }}>Cercanía a un cauce</span>
+            <span style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.15 }}>{t('terreno_cauce_titulo')}</span>
             <span className="ps-detalle">
               {!cauce
                 ? t('cargando')
                 : cauce.clase === null
-                  ? 'Todavía sin calcular'
+                  ? t('terreno_sin_calcular')
                   : cauce.clase === 'lejos'
-                    ? `Tu parcela queda a más de ${numero(cauce.umbrales_m[1])} m sobre el cauce más cercano`
-                    : `${numero(Math.round((cauce.clase === 'muy_cerca' ? cauce.parte_muy_cerca : cauce.parte_cerca)! * 100))} % de tu parcela queda a menos de ${numero(cauce.umbrales_m[cauce.clase === 'muy_cerca' ? 0 : 1])} m sobre el cauce`}
+                    ? t('terreno_cauce_lejos', { m: numero(cauce.umbrales_m[1]) })
+                    : t('terreno_cauce_parte', { pct: numero(Math.round((cauce.clase === 'muy_cerca' ? cauce.parte_muy_cerca : cauce.parte_cerca)! * 100)), m: numero(cauce.umbrales_m[cauce.clase === 'muy_cerca' ? 0 : 1]) })}
             </span>
           </span>
           {cauce?.clase ? (
             <Chip tono={cauce.clase === 'muy_cerca' ? 'riesgo' : cauce.clase === 'cerca' ? 'precaucion' : 'favorable'}>
-              {cauce.clase === 'muy_cerca' ? 'Muy cerca' : cauce.clase === 'cerca' ? 'Cerca' : 'Lejos'}
+              {cauce.clase === 'muy_cerca' ? t('terreno_cauce_muy_cerca') : cauce.clase === 'cerca' ? t('terreno_cauce_cerca') : t('terreno_cauce_lejos_chip')}
             </Chip>
           ) : null}
         </div>
         <p className="ps-nota" style={{ margin: '8px 4px 0 4px' }}>
-          La cercanía al cauce es orientativa: mide la altura, no la lluvia ni el caudal. Para deslizamientos y crecidas, sigue los avisos de SENAPRED.
+          {t('terreno_cauce_nota')}
         </p>
       </section>
 
@@ -198,43 +199,43 @@ export default function Terreno() {
         </h2>
         <div className="ps-grid-2">
           <div className="ps-card" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span className="ps-contexto">Temperatura</span>
+            <span className="ps-contexto">{t('terreno_temperatura')}</span>
             <span style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.05 }}>
-              {masFrio && masCalido ? `${numero(masFrio.valor, 1)}° a ${numero(masCalido.valor, 1)}°` : '—'}
+              {masFrio && masCalido ? t('terreno_periodo', { desde: `${numero(masFrio.valor, 1)}°`, hasta: `${numero(masCalido.valor, 1)}°` }) : '—'}
             </span>
             <span style={{ fontSize: 15, fontWeight: 700 }}>
-              {masFrio && masCalido ? `De ${nombreMes(masFrio.mes)} (el más frío) a ${nombreMes(masCalido.mes)} (el más cálido)` : 'Sin dato todavía'}
+              {masFrio && masCalido ? t('terreno_temp_rango', { frio: nombreMes(masFrio.mes), calido: nombreMes(masCalido.mes) }) : t('terreno_sin_dato')}
             </span>
             <SourceLink>CR2MET{periodo ? ` · ${periodo}` : ''}</SourceLink>
           </div>
           <div className="ps-card" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span className="ps-contexto">Lluvia del año</span>
+            <span className="ps-contexto">{t('terreno_lluvia_anio')}</span>
             <span style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.05 }}>{sitio?.lluvia_anual_mm != null ? `${numero(sitio.lluvia_anual_mm)} mm` : '—'}</span>
             <span style={{ fontSize: 15, fontWeight: 700 }}>
-              {helada ? `Noche más fría: ${numero(helada.valor, 1)}° en ${nombreMes(helada.mes)}` : 'Sin dato todavía'}
+              {helada ? t('terreno_noche_fria', { t: numero(helada.valor, 1), mes: nombreMes(helada.mes) }) : t('terreno_sin_dato')}
             </span>
             <SourceLink>CR2MET{periodo ? ` · ${periodo}` : ''}</SourceLink>
           </div>
           <div className="ps-card" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span className="ps-contexto">Suelo</span>
-            <span style={{ fontSize: 22, fontWeight: 800 }}>{sitio?.ph != null ? `pH ${numero(sitio.ph, 1)} · ${sitio.ph < 6.5 ? 'ácido' : sitio.ph <= 7.5 ? 'neutro' : 'alcalino'}` : '—'}</span>
+            <span className="ps-contexto">{t('terreno_suelo')}</span>
+            <span style={{ fontSize: 22, fontWeight: 800 }}>{sitio?.ph != null ? t('terreno_ph', { n: numero(sitio.ph, 1), tipo: t(sitio.ph < 6.5 ? 'terreno_ph_acido' : sitio.ph <= 7.5 ? 'terreno_ph_neutro' : 'terreno_ph_alcalino') }) : '—'}</span>
             <span style={{ fontSize: 15, fontWeight: 700 }}>
-              {sitio?.agua_disponible_suelo_mm != null ? `Guarda ${numero(sitio.agua_disponible_suelo_mm)} litros de agua por m²` : 'Agua del suelo sin dato'}
+              {sitio?.agua_disponible_suelo_mm != null ? t('terreno_agua_suelo', { n: numero(sitio.agua_disponible_suelo_mm) }) : t('terreno_agua_suelo_sin')}
             </span>
             <SourceLink>SoilGrids · CLSoilMaps</SourceLink>
           </div>
           <div className="ps-card" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span className="ps-contexto">Sol que llega cada día</span>
-            <span style={{ fontSize: 22, fontWeight: 800 }}>{solMedio !== null ? `${numero(solMedio, 1)} h de sol pleno` : '—'}</span>
+            <span className="ps-contexto">{t('terreno_sol_dia')}</span>
+            <span style={{ fontSize: 22, fontWeight: 800 }}>{solMedio !== null ? t('terreno_sol_horas', { n: numero(solMedio, 1) }) : '—'}</span>
             <span style={{ fontSize: 15, fontWeight: 700 }}>
-              {pasadas != null ? `El satélite ve tu parcela sin nubes el ${numero(pasadas)}% de las veces` : 'Promedio del año'}
+              {pasadas != null ? t('terreno_sol_nubes', { n: numero(pasadas) }) : t('terreno_promedio_anio')}
             </span>
-            <SourceLink>{sitio?.fuente_radiacion ?? 'Radiación solar'} · Sentinel-2 (Copernicus)</SourceLink>
+            <SourceLink>{sitio?.fuente_radiacion ?? t('terreno_radiacion')} · Sentinel-2 (Copernicus)</SourceLink>
           </div>
         </div>
         {sitio && sitio.altitud_m != null && Math.abs(sitio.correccion_temperatura_c) >= 0.3 ? (
           <p className="ps-nota" style={{ margin: '8px 4px 0 4px' }}>
-            La temperatura está ajustada a la altura de tu parcela ({numero(sitio.altitud_m)} m): es {numero(Math.abs(sitio.correccion_temperatura_c), 1)}° {sitio.correccion_temperatura_c > 0 ? 'más cálida' : 'más fría'} que el promedio de su zona de 5 km.
+            {t(sitio.correccion_temperatura_c > 0 ? 'terreno_ajuste_calida' : 'terreno_ajuste_fria', { alt: numero(sitio.altitud_m), dif: numero(Math.abs(sitio.correccion_temperatura_c), 1) })}
           </p>
         ) : null}
         {cargando ? <p className="ps-nota" style={{ marginTop: 8 }}>{t('cargando')}</p> : null}
@@ -243,11 +244,11 @@ export default function Terreno() {
       {suelo ? (
         <section aria-labelledby="suelo" className="ps-pad-16" style={{ marginTop: 16 }}>
           <h2 id="suelo" style={{ padding: '0 4px 8px 4px', margin: 0, fontSize: 14, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--texto-tenue)' }}>
-            Cuéntanos de tu suelo
+            {t('terreno_suelo_titulo')}
           </h2>
           <div className="ps-card" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <p className="ps-cuerpo" style={{ margin: 0 }}>
-              Esto no se ve desde el satélite. Responde lo que sepas: mejora la lista de qué sembrar. Toca una respuesta otra vez para quitarla.
+              {t('terreno_suelo_intro')}
             </p>
             {PREGUNTAS_SUELO.map((p) => (
               <PreguntaSuelo key={p.campo} pregunta={p.pregunta} ayuda={p.ayuda} opciones={p.opciones} valor={suelo[p.campo]} onElegir={(v) => elegirSuelo(p.campo, v)} />

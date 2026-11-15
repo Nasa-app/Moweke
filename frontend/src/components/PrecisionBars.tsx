@@ -2,9 +2,10 @@
 // % de compatibilidad y de precisión no están definidas todavía (ver CLAUDE.md del
 // handoff, "Pendientes conocidos" #1): este componente solo dibuja el nivel que se le
 // pase, no lo calcula.
-const ETIQUETAS = ['Baja', 'Media', 'Buena', 'Alta']
+import { useI18n } from '../i18n'
 
 export function PrecisionBars({ nivel, fecha }: { nivel: 1 | 2 | 3 | 4; fecha?: string }) {
+  const { t } = useI18n()
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
       <svg width={22} height={18} viewBox="0 0 22 18" aria-hidden="true">
@@ -21,8 +22,8 @@ export function PrecisionBars({ nivel, fecha }: { nivel: 1 | 2 | 3 | 4; fecha?: 
         ))}
       </svg>
       <span>
-        <b style={{ fontWeight: 800 }}>Confianza {ETIQUETAS[nivel - 1].toLowerCase()}</b>
-        {fecha ? <span className="ps-nota"> · datos al {fecha}</span> : null}
+        <b style={{ fontWeight: 800 }}>{t(`precision_confianza_${nivel}`)}</b>
+        {fecha ? <span className="ps-nota"> · {t('precision_datos_al', { fecha })}</span> : null}
       </span>
     </span>
   )

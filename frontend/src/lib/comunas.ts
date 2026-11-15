@@ -1,5 +1,6 @@
 import type { Punto } from './geometria'
 import { guardar, leer } from '../state/storage'
+import { tr } from '../i18n/dictionary'
 
 // Las comunas de Chiloé y dónde abrir el mapa para marcar la parcela. El punto es el pueblo cabecera de cada
 // comuna (coordenadas del geocodificador de Open-Meteo, revisadas el 15-nov-2026), no un deslinde: sirve para
@@ -31,6 +32,11 @@ export function centroDeComuna(nombre: string): Punto | null {
 }
 
 export const TERRENOS = ['Plano', 'Ladera', 'Alto'] as const
+
+// El valor guardado de TERRENOS se muestra con este nombre en el idioma vigente.
+export function nombreTerreno(terreno: (typeof TERRENOS)[number]): string {
+  return tr(`comunas_terreno_${terreno.toLowerCase()}`)
+}
 
 // Lo que la persona va respondiendo mientras arma su parcela. Queda en este dispositivo: el servidor todavía
 // no guarda comuna, sector ni terreno.

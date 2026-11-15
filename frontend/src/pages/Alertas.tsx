@@ -10,13 +10,8 @@ import { useI18n } from '../i18n'
 
 const TONO: Record<Horizonte, TonoChip> = { observado: 'riesgo', pronostico: 'precaucion', estimado: 'neutro' }
 const ORDEN: Horizonte[] = ['pronostico', 'observado', 'estimado']
-const TITULO: Record<Horizonte, string> = {
-  pronostico: 'Viene en el pronóstico',
-  observado: 'Ya ocurrió',
-  estimado: 'Si el año viene como el pasado',
-}
-
 function TarjetaEvento({ evento }: { evento: EventoDano }) {
+  const { t } = useI18n()
   const unDia = evento.primer_dia === evento.ultimo_dia
   return (
     <article className="ps-card" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -26,7 +21,7 @@ function TarjetaEvento({ evento }: { evento: EventoDano }) {
       </div>
       <span style={{ fontSize: 16, fontWeight: 700 }}>{nombreEfecto(evento.efecto)}</span>
       <span className="ps-detalle">
-        {unDia ? `El ${fechaCorta(evento.primer_dia)}` : `Del ${fechaCorta(evento.primer_dia)} al ${fechaCorta(evento.ultimo_dia)}`} · {nombreFase(evento.fase).toLowerCase()}
+        {unDia ? t('alertas_el_dia', { fecha: fechaCorta(evento.primer_dia) }) : t('alertas_del_al', { desde: fechaCorta(evento.primer_dia), hasta: fechaCorta(evento.ultimo_dia) })} · {nombreFase(evento.fase).toLowerCase()}
       </span>
     </article>
   )
@@ -63,16 +58,16 @@ export default function Alertas() {
           focos.slice(0, 5).map((dia) => (
             <article key={dia.fecha} className="ps-card" style={{ boxShadow: '0 0 0 3px var(--riesgo-texto), var(--sombra-1)', display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                <h3 style={{ margin: 0, fontWeight: 800, fontSize: 21 }}>Foco de calor</h3>
+                <h3 style={{ margin: 0, fontWeight: 800, fontSize: 21 }}>{t('alertas_foco_titulo')}</h3>
                 <Chip tono="riesgo">{fechaCorta(dia.fecha)}</Chip>
               </div>
               <span style={{ fontSize: 16, fontWeight: 700 }}>
-                {dia.focos} {dia.focos === 1 ? 'foco' : 'focos'} ese día
-                {dia.distancia_min_km !== null ? ` · la más cercana a ${numero(dia.distancia_min_km, 1)} km` : ''}
+                {t(dia.focos === 1 ? 'alertas_focos_uno' : 'alertas_focos_otros', { n: dia.focos })}
+                {dia.distancia_min_km !== null ? t('alertas_la_mas_cercana', { km: numero(dia.distancia_min_km, 1) }) : ''}
               </span>
-              <span className="ps-nota">Lo vio un satélite de NASA (FIRMS). No es una alerta oficial. Si ves humo o fuego, llama a Bomberos al 132 y sigue lo que indique SENAPRED.</span>
+              <span className="ps-nota">{t('alertas_foco_nota')}</span>
               <a href="tel:132" style={{ minHeight: 48, borderRadius: 14, border: '2px solid var(--riesgo-texto)', color: 'var(--riesgo-texto)', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800 }}>
-                Bomberos 132
+                {t('inicio_bomberos')}
               </a>
             </article>
           ))
@@ -81,12 +76,12 @@ export default function Alertas() {
             <IconoIncendio stroke="var(--favorable-texto)" />
             <span style={{ flex: 1, fontSize: 16, fontWeight: 700 }}>
               {!idParcela
-                ? 'Marca tu parcela para revisar focos de calor cerca.'
+                ? t('alertas_marca_parcela')
                 : !incendios
                   ? t('cargando')
                   : incendios.revisado
-                    ? `Sin focos de calor a menos de ${numero(incendios.radio_km)} km entre el ${fechaCorta(incendios.revisado[0])} y el ${fechaCorta(incendios.revisado[1])}.`
-                    : 'Los focos de calor todavía no se revisan para esta parcela.'}
+                    ? t('alertas_sin_focos', { km: numero(incendios.radio_km), desde: fechaCorta(incendios.revisado[0]), hasta: fechaCorta(incendios.revisado[1]) })
+                    : t('alertas_focos_sin_revisar')}
             </span>
           </div>
         )}
@@ -100,21 +95,21 @@ export default function Alertas() {
         {cargando ? <p className="ps-nota" style={{ margin: 0 }}>{t('cargando')}</p> : null}
         {!activo && !cargando ? (
           <p className="ps-cuerpo" style={{ margin: 0 }}>
-            Sin cultivos en seguimiento. <Link to="/onboarding/cultivos">Agrega qué sembraste</Link>.
+            {t('alertas_sin_cultivos')} <Link to="/onboarding/cultivos">{t('inicio_agrega_sembraste')}</Link>.
           </p>
         ) : null}
         {aviso ? <p className="ps-cuerpo" style={{ margin: 0 }}>{aviso}</p> : null}
         {fenologia && eventos.length === 0 ? (
           <div className="ps-card-plana" style={{ fontSize: 16, fontWeight: 700 }}>
-            Sin daños por clima para este cultivo, ni ocurridos ni en el pronóstico hasta el {fechaCorta(fenologia.horizontes.pronostico_hasta)}.
+            {t('alertas_sin_danos', { fecha: fechaCorta(fenologia.horizontes.pronostico_hasta) })}
           </div>
         ) : null}
         {ORDEN.map((horizonte) => {
           const delHorizonte = eventos.filter((e) => e.horizonte === horizonte)
           if (!delHorizonte.length) return null
           return (
-            <section key={horizonte} aria-label={TITULO[horizonte]} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <h3 className="ps-contexto" style={{ margin: '4px 4px 0 4px' }}>{TITULO[horizonte]}</h3>
+            <section key={horizonte} aria-label={t(`alertas_horizonte_${horizonte}`)} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <h3 className="ps-contexto" style={{ margin: '4px 4px 0 4px' }}>{t(`alertas_horizonte_${horizonte}`)}</h3>
               {delHorizonte.map((evento) => (
                 <TarjetaEvento key={`${evento.fase}-${evento.peligro}-${evento.efecto}-${evento.primer_dia}`} evento={evento} />
               ))}
@@ -124,7 +119,7 @@ export default function Alertas() {
       </div>
 
       <p className="ps-pad ps-nota" style={{ margin: 'auto 0 0 0', padding: '20px 20px 32px 20px' }}>
-        Los límites de daño de cada etapa son de referencia: aún no se han probado en terreno. El cálculo supone que no riegas.
+        {t('alertas_nota_final')}
       </p>
     </Screen>
   )

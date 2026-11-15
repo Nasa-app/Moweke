@@ -6,50 +6,36 @@ import { mapaParcela, mensajeDeError, verParcela, type CapaMapa, type CeldaMapa,
 import { fechaCorta, numero } from '../lib/formato'
 import { usePredio } from '../state/PredioContext'
 import { useI18n } from '../i18n'
+import { tr } from '../i18n/dictionary'
 
 // Cada capa de GET /api/parcelas/{id}/mapa: cómo se nombra, con qué colores (los de
 // tokens.css) y entre qué valores se reparte la escala. El verdor y la pendiente usan una
 // escala fija, para que un color signifique lo mismo en cualquier parcela; la altura, la
 // del propio predio, porque lo que importa es qué parte queda más alta.
 const CAPAS: Record<CapaMapa, {
-  nombre: string
   colores: string[]
   dominio: (resumen: { minimo: number; maximo: number }) => [number, number]
   formato: (valor: number) => string
-  bajo: string
-  alto: string
 }> = {
   ndvi: {
-    nombre: 'Verdor',
     colores: ['#d9cbb0', '#d9a85b', '#829e30', '#3f611c'],
     dominio: () => [0.1, 0.9],
     formato: (v) => numero(v, 2),
-    bajo: 'Suelo o pasto seco',
-    alto: 'Vegetación vigorosa',
   },
   altitud: {
-    nombre: 'Altura',
     colores: ['#eef4d9', '#d9a85b', '#8e4b2c'],
     dominio: (r) => [r.minimo, Math.max(r.maximo, r.minimo + 1)],
     formato: (v) => `${numero(v)} m`,
-    bajo: 'Más bajo',
-    alto: 'Más alto',
   },
   pendiente: {
-    nombre: 'Pendiente',
     colores: ['#617f26', '#d9a85b', '#a9542f'],
     dominio: () => [0, 30],
     formato: (v) => `${numero(v, 1)} %`,
-    bajo: 'Plano',
-    alto: 'Muy inclinado',
   },
   hand: {
-    nombre: 'Cauce',
     colores: ['#2f6f9f', '#9cc3d8', '#eef4d9'],
     dominio: () => [0, 10],
     formato: (v) => `${numero(v, 1)} m`,
-    bajo: 'Pegado al cauce',
-    alto: 'Bien sobre el cauce',
   },
 }
 const ORDEN: CapaMapa[] = ['ndvi', 'altitud', 'pendiente', 'hand']
@@ -79,7 +65,7 @@ export default function Zonas() {
     if (!idParcela) return
     verParcela(idParcela)
       .then((p) => setPerimetro(p.perimetro))
-      .catch((err) => setError(mensajeDeError(err, 'No pudimos cargar tu parcela. Revisa tu conexión e inténtalo de nuevo.')))
+      .catch((err) => setError(mensajeDeError(err, tr('zonas_error_parcela'))))
   }, [idParcela])
 
   const enCurso = mapa?.capa === capa && ['pendiente', 'en_proceso'].includes(mapa.estado_ingesta.estado)
@@ -97,7 +83,7 @@ export default function Zonas() {
           }
         })
         .catch((err) => {
-          if (vigente) setError(mensajeDeError(err, 'No pudimos cargar el mapa. Revisa tu conexión e inténtalo de nuevo.'))
+          if (vigente) setError(mensajeDeError(err, tr('zonas_error_mapa')))
         })
         .finally(() => {
           if (vigente && enCurso) reloj = setTimeout(consultar, SEGUNDOS_ENTRE_CONSULTAS * 1000)
@@ -135,14 +121,14 @@ export default function Zonas() {
     : !sinDatos
       ? null
       : enCurso
-        ? 'Estamos reuniendo estos datos. El mapa se completa solo cuando estén listos.'
+        ? t('zonas_reuniendo')
         : estadoCapa === 'sin_configurar'
-          ? 'Este mapa todavía no está disponible.'
+          ? t('zonas_no_disponible')
           : estadoCapa === 'error'
-            ? 'No pudimos cargar este mapa. Volvemos a intentarlo en unos minutos.'
+            ? t('zonas_error_reintento')
             : capa === 'ndvi'
-              ? 'Hubo muchas nubes en los últimos meses y el satélite no pudo ver tu parcela. Vuelve a mirar en unos días.'
-              : 'No hay datos de este mapa para tu parcela.'
+              ? t('zonas_nubes')
+              : t('zonas_sin_datos_mapa')
 
   return (
     <Screen>
@@ -150,10 +136,10 @@ export default function Zonas() {
       <Titulo>{t('zonas_titulo')}</Titulo>
 
       <div className="ps-pad-16" style={{ marginTop: 14 }}>
-        <div role="tablist" aria-label="Capa del mapa" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 4, padding: 4, borderRadius: 30, background: 'var(--hundido)' }}>
+        <div role="tablist" aria-label={t('zonas_capa_aria')} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 4, padding: 4, borderRadius: 30, background: 'var(--hundido)' }}>
           {ORDEN.map((clave) => (
             <button key={clave} type="button" role="tab" aria-selected={capa === clave} onClick={() => cambiarCapa(clave)} className={`ps-pill ${capa === clave ? 'activo' : ''}`} style={{ borderRadius: 26, minHeight: 48 }}>
-              {CAPAS[clave].nombre}
+              {t(`zonas_capa_${clave}`)}
             </button>
           ))}
         </div>
@@ -185,35 +171,35 @@ export default function Zonas() {
       ) : null}
 
       {actual?.resumen && dominio ? (
-        <section aria-label="Leyenda" className="ps-pad-16" style={{ marginTop: 12 }}>
+        <section aria-label={t('zonas_leyenda_aria')} className="ps-pad-16" style={{ marginTop: 12 }}>
           <div className="ps-card-plana" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div aria-hidden="true" style={{ height: 14, borderRadius: 7, background: `linear-gradient(to right, ${config.colores.join(', ')})` }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 700 }}>
               <span>
-                {config.bajo} · {config.formato(dominio[0])}
+                {t(`zonas_bajo_${capa}`)} · {config.formato(dominio[0])}
               </span>
               <span>
-                {config.alto} · {config.formato(dominio[1])}
+                {t(`zonas_alto_${capa}`)} · {config.formato(dominio[1])}
               </span>
             </div>
             <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, textAlign: 'center' }}>
-              {([['Mínimo', actual.resumen.minimo], ['Mitad', actual.resumen.mediana], ['Máximo', actual.resumen.maximo]] as const).map(([etiqueta, valor]) => (
+              {([['zonas_minimo', actual.resumen.minimo], ['zonas_mitad', actual.resumen.mediana], ['zonas_maximo', actual.resumen.maximo]] as const).map(([etiqueta, valor]) => (
                 <div key={etiqueta} style={{ display: 'flex', flexDirection: 'column-reverse' }}>
-                  <dt className="ps-nota">{etiqueta}</dt>
+                  <dt className="ps-nota">{t(etiqueta)}</dt>
                   <dd style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>{config.formato(valor)}</dd>
                 </div>
               ))}
             </dl>
             <Link to="/fuentes" className="ps-nota" style={{ textDecoration: 'none' }}>
-              {actual.fuente} · detalle de {actual.resolucion_de_la_fuente_m} m
+              {t('zonas_fuente_detalle', { fuente: actual.fuente, m: actual.resolucion_de_la_fuente_m })}
               {capa === 'ndvi'
                 ? actual.fecha_comun
-                  ? ` · imagen del ${fechaCorta(actual.fecha_comun)}`
-                  : ' · cada cuadro con su última foto sin nubes'
+                  ? ` · ${t('zonas_imagen_del', { fecha: fechaCorta(actual.fecha_comun) })}`
+                  : ` · ${t('zonas_cada_cuadro')}`
                 : capa === 'hand'
-                  ? ' · altura sobre el cauce más cercano, no es un aviso de crecida'
-                  : ' · incluye árboles y construcciones'}
-              {` · ${actual.celdas_con_dato} de ${actual.celdas} cuadros con dato`}
+                  ? ` · ${t('zonas_altura_cauce')}`
+                  : ` · ${t('zonas_incluye_arboles')}`}
+              {` · ${t('zonas_cuadros_con_dato', { n: actual.celdas_con_dato, total: actual.celdas })}`}
             </Link>
           </div>
         </section>
@@ -226,16 +212,16 @@ export default function Zonas() {
               <span aria-hidden="true" style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, border: '2px solid var(--linea)', background: elegida.properties.valor === null ? 'var(--hundido)' : colorDe(elegida.properties.valor) }} />
               <span style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                 <span style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.1 }}>
-                  {elegida.properties.valor === null ? 'Sin dato' : `${config.nombre}: ${config.formato(elegida.properties.valor)}`}
+                  {elegida.properties.valor === null ? t('zonas_sin_dato') : `${t(`zonas_capa_${capa}`)}: ${config.formato(elegida.properties.valor)}`}
                 </span>
                 <span className="ps-detalle">
-                  {elegida.properties.fecha ? `Imagen del ${fechaCorta(elegida.properties.fecha)} · ` : ''}
-                  {numero(elegida.properties.fraccion_dentro * 100)}% del cuadro dentro de tu parcela
+                  {elegida.properties.fecha ? `${t('zonas_imagen_del_cap', { fecha: fechaCorta(elegida.properties.fecha) })} · ` : ''}
+                  {t('zonas_fraccion_dentro', { n: numero(elegida.properties.fraccion_dentro * 100) })}
                 </span>
               </span>
             </>
           ) : (
-            <span className="ps-cuerpo">Toca un cuadro del mapa para ver su valor.</span>
+            <span className="ps-cuerpo">{t('zonas_toca_cuadro')}</span>
           )}
         </div>
       </section>

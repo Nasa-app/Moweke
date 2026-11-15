@@ -49,7 +49,7 @@ export default function Perimetro() {
 
   function usarUbicacion() {
     if (!('geolocation' in navigator)) {
-      setError('Este dispositivo no entrega ubicación. Mueve el mapa hasta tu parcela.')
+      setError(t('perimetro_sin_gps'))
       return
     }
     navigator.geolocation.getCurrentPosition(
@@ -57,7 +57,7 @@ export default function Perimetro() {
         setError(null)
         setVista({ centro: [pos.coords.latitude, pos.coords.longitude], zoom: ZOOM_PARCELA })
       },
-      () => setError('No se pudo obtener tu ubicación. Mueve el mapa hasta tu parcela.'),
+      () => setError(t('perimetro_gps_fallo')),
       { timeout: 8000 },
     )
   }
@@ -73,7 +73,7 @@ export default function Perimetro() {
       setCultivoActivo(null)
       navigate(`/terreno/preparando${enOnboarding ? '?desde=onboarding' : ''}`)
     } catch (err) {
-      setError(mensajeDeError(err, 'No se pudo guardar la parcela. Revisa las esquinas que marcaste e intenta otra vez.'))
+      setError(mensajeDeError(err, t('perimetro_error_guardar')))
     } finally {
       setEnviando(false)
     }
@@ -85,8 +85,8 @@ export default function Perimetro() {
       <Titulo
         sub={
           comunaElegida
-            ? `El mapa muestra ${comunaElegida}. Acércalo hasta tu parcela y toca cada esquina para dibujar su contorno. Puedes arrastrar una esquina para corregirla.`
-            : 'Mueve el mapa hasta tu parcela y toca cada esquina. Puedes arrastrar una esquina para corregirla.'
+            ? t('perimetro_sub_comuna', { comuna: comunaElegida })
+            : t('perimetro_sub')
         }
       >
         {t('perimetro_titulo')}
@@ -107,7 +107,7 @@ export default function Perimetro() {
       <div className="ps-pad-16" style={{ marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--texto-tenue)' }}>
-            {esquinas.length === 1 ? '1 esquina' : `${esquinas.length} esquinas`}
+            {esquinas.length === 1 ? t('perimetro_esquina_una') : t('perimetro_esquinas', { n: esquinas.length })}
           </span>
           <span style={{ fontSize: esquinas.length >= 3 ? 24 : 17, fontWeight: 800, lineHeight: 1.2 }}>
             {esquinas.length >= 3 ? `≈ ${numero(hectareas, 2)} ha` : t('perimetro_toca_esquinas')}
@@ -118,14 +118,14 @@ export default function Perimetro() {
             {t('deshacer')}
           </button>
           <button type="button" onClick={() => setEsquinas([])} disabled={esquinas.length === 0} className="ps-btn-secundario" style={{ padding: '0 14px', minHeight: 52 }}>
-            Borrar
+            {t('perimetro_borrar')}
           </button>
         </span>
       </div>
 
       {esquinas.length >= 3 && !medidaValida ? (
         <p className="ps-pad-16 ps-nota" role="status" style={{ margin: '8px 0 0 0' }}>
-          Mueve las esquinas: la parcela debe medir entre {numero(HECTAREAS_MIN, 2)} y {numero(HECTAREAS_MAX)} hectáreas.
+          {t('perimetro_medida', { min: numero(HECTAREAS_MIN, 2), max: numero(HECTAREAS_MAX) })}
         </p>
       ) : null}
       {error ? (

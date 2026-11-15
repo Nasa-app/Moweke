@@ -9,9 +9,9 @@ import { mesEnVentana, nombreCategoria, nombreSignificado, ventanaEnMeses } from
 import { useI18n } from '../i18n'
 
 const COLORES = [
-  { clave: 'verde', nombre: 'Verde', color: 'var(--verde)' },
-  { clave: 'amarillo', nombre: 'Amarillo', color: 'var(--semaforo-amarillo)' },
-  { clave: 'seco', nombre: 'Seco', color: 'var(--ilus-tierra)' },
+  { clave: 'verde', nombre: 'observacion_color_verde', color: 'var(--verde)' },
+  { clave: 'amarillo', nombre: 'observacion_color_amarillo', color: 'var(--semaforo-amarillo)' },
+  { clave: 'seco', nombre: 'observacion_color_seco', color: 'var(--ilus-tierra)' },
 ]
 
 export default function Observacion() {
@@ -81,7 +81,7 @@ export default function Observacion() {
           onChange={(e) => setFecha(e.target.value)}
           style={{ minHeight: 52, padding: '0 14px', borderRadius: 16, border: '2px solid var(--borde-control)', background: '#fff', color: 'var(--carbon)', font: "800 17px 'Alegreya Sans', sans-serif" }}
         />
-        <span className="ps-nota">Hoy por defecto. Cámbiala si lo viste otro día.</span>
+        <span className="ps-nota">{t('observacion_hoy_por_defecto')}</span>
       </label>
 
       <fieldset className="ps-pad-16" style={{ marginTop: 14, border: 'none', paddingBlock: 0 }}>
@@ -91,7 +91,7 @@ export default function Observacion() {
             <label key={c.clave} style={{ minHeight: 56, borderRadius: 16, boxShadow: color === c.clave ? 'inset 0 0 0 3px var(--verde)' : 'none', background: color === c.clave ? '#fff' : 'var(--hundido)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 16, fontWeight: color === c.clave ? 800 : 700, cursor: 'pointer' }}>
               <input type="radio" name="color" checked={color === c.clave} onChange={() => setColor(c.clave)} className="visually-hidden" />
               <span aria-hidden="true" style={{ width: 22, height: 22, borderRadius: 11, background: c.color }} />
-              {c.nombre}
+              {t(c.nombre)}
             </label>
           ))}
         </div>
@@ -141,7 +141,7 @@ export default function Observacion() {
 
       <div style={{ marginTop: 'auto', padding: '16px 16px 32px 16px' }}>
         <button type="button" onClick={enviar} disabled={enviando} className="ps-btn">
-          {t('enviar')}{aEnviar.length ? ` · ${aEnviar.length} ${aEnviar.length === 1 ? 'señal' : 'señales'}` : ''}
+          {t('enviar')}{aEnviar.length ? ` · ${t(aEnviar.length === 1 ? 'observacion_senal_una' : 'observacion_senales', { n: aEnviar.length })}` : ''}
         </button>
       </div>
     </Screen>

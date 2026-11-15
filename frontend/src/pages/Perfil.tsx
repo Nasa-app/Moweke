@@ -12,14 +12,14 @@ export default function Perfil() {
   const navigate = useNavigate()
 
   function manejarBorrado() {
-    if (!confirm(t('perfil_borrar_datos') + '. Esta acción no se puede deshacer. ¿Confirmas?')) return
+    if (!confirm(t('perfil_confirmar_borrado'))) return
     cerrarSesion()
     navigate('/')
   }
 
   const mosaicos = [
-    { a: '/terreno/parcelas', icono: IconoUbicacion, titulo: t('perfil_mi_parcela'), chip: idParcela ? 'Marcada' : 'Sin marcar', tonoChip: idParcela ? 'ps-chip-favorable' : 'ps-chip-precaucion' },
-    { a: '/historial', icono: IconoReloj, titulo: t('perfil_anio_pasado'), chip: 'Agregar', tonoChip: 'ps-chip-neutro' },
+    { a: '/terreno/parcelas', icono: IconoUbicacion, titulo: t('perfil_mi_parcela'), chip: idParcela ? t('perfil_marcada') : t('perfil_sin_marcar'), tonoChip: idParcela ? 'ps-chip-favorable' : 'ps-chip-precaucion' },
+    { a: '/historial', icono: IconoReloj, titulo: t('perfil_anio_pasado'), chip: t('perfil_agregar'), tonoChip: 'ps-chip-neutro' },
   ] as const
 
   return (
@@ -30,8 +30,8 @@ export default function Perfil() {
           {(usuario?.nombre ?? 'A')[0]?.toUpperCase()}
         </span>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 28, lineHeight: 1 }}>{usuario?.nombre ?? 'Agricultor'}</h1>
-          <span className="ps-contexto">{idParcela ? `Parcela ${idParcela}` : 'Sin parcela marcada'}</span>
+          <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 28, lineHeight: 1 }}>{usuario?.nombre === 'Anónimo' ? t('perfil_anonimo') : (usuario?.nombre ?? t('perfil_agricultor'))}</h1>
+          <span className="ps-contexto">{idParcela ? t('perfil_parcela_n', { n: idParcela }) : t('perfil_sin_parcela')}</span>
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fenologiaCultivo, listarCultivos, mensajeDeError, type Cultivo, type Fenologia } from '../lib/api'
 import { usePredio } from './PredioContext'
+import { tr } from '../i18n/dictionary'
 
 // Los cultivos de la parcela activa y el seguimiento por etapa del cultivo activo, para
 // las pantallas que hablan del mismo cultivo (Hoy, Cultivos, Alertas). `aviso` trae el
@@ -8,7 +9,7 @@ import { usePredio } from './PredioContext'
 export function useSeguimiento() {
   const { idParcela, idCultivoActivo, setCultivoActivo } = usePredio()
   const [cultivos, setCultivos] = useState<Cultivo[] | null>(null)
-  const [seguimiento, setSeguimiento] = useState<{ idCultivo: number; fenologia: Fenologia | null; aviso: string | null } | null>(null)
+  const [seguimiento, setSeguimiento] = useState<{ idCultivo: number; fenologia: Fenologia | null; error: unknown } | null>(null)
   // Subir este número vuelve a pedir el seguimiento (por ejemplo, tras anotar un riego); mientras
   // llega lo nuevo se sigue mostrando lo anterior.
   const [version, setVersion] = useState(0)
@@ -36,10 +37,10 @@ export function useSeguimiento() {
     if (!idCultivoActivo) return
     let vigente = true
     fenologiaCultivo(idCultivoActivo)
-      .then((fenologia) => vigente && setSeguimiento({ idCultivo: idCultivoActivo, fenologia, aviso: null }))
+      .then((fenologia) => vigente && setSeguimiento({ idCultivo: idCultivoActivo, fenologia, error: null }))
       .catch((err) => {
         if (vigente) {
-          setSeguimiento({ idCultivo: idCultivoActivo, fenologia: null, aviso: mensajeDeError(err, 'No pudimos cargar el seguimiento. Revisa tu conexión e inténtalo de nuevo.') })
+          setSeguimiento({ idCultivo: idCultivoActivo, fenologia: null, error: err })
         }
       })
     return () => {
@@ -54,7 +55,7 @@ export function useSeguimiento() {
     cultivos,
     activo,
     fenologia: delActivo?.fenologia ?? null,
-    aviso: delActivo?.aviso ?? null,
+    aviso: delActivo?.error ? mensajeDeError(delActivo.error, tr('seguimiento_error')) : null,
     cargando: (idParcela !== null && cultivos === null) || (activo !== null && delActivo === null),
     setCultivoActivo,
     recargar,

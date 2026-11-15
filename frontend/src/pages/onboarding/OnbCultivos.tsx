@@ -8,7 +8,7 @@ import { aIso, nombreClave, nombreEspecie } from '../../lib/formato'
 import { useI18n } from '../../i18n'
 
 export default function OnbCultivos() {
-  const { t, idioma } = useI18n()
+  const { t } = useI18n()
   const navigate = useNavigate()
   const { idParcela, setCultivoActivo } = usePredio()
   const [especies, setEspecies] = useState<EspecieConSeguimiento[] | null>(null)
@@ -22,7 +22,7 @@ export default function OnbCultivos() {
     let vigente = true
     especiesConSeguimiento()
       .then((r) => vigente && setEspecies(r.especies))
-      .catch((err) => vigente && setError(mensajeDeError(err, 'No pudimos cargar la lista de cultivos. Revisa tu conexión e inténtalo de nuevo.')))
+      .catch((err) => vigente && setError(mensajeDeError(err, t('onb_cultivos_error_lista'))))
     return () => {
       vigente = false
     }
@@ -51,7 +51,7 @@ export default function OnbCultivos() {
       if (primero) setCultivoActivo(primero.id, primero.especie)
       navigate('/onboarding/listo')
     } catch (err) {
-      setError(mensajeDeError(err, 'No se pudo guardar tu siembra. Revisa las fechas e intenta otra vez.'))
+      setError(mensajeDeError(err, t('onb_cultivos_error_guardar')))
     } finally {
       setEnviando(false)
     }
@@ -60,17 +60,17 @@ export default function OnbCultivos() {
   return (
     <Screen>
       <BarraSuperior volverA="/onboarding/meta" derecha={<StepDots paso={3} total={3} />} />
-      <Titulo sub="De estos cultivos te avisamos etapa por etapa. Para los demás, mira qué conviene sembrar en el análisis de tu terreno.">{t('onb_cultivos_titulo')}</Titulo>
+      <Titulo sub={t('onb_cultivos_sub')}>{t('onb_cultivos_titulo')}</Titulo>
 
       {!idParcela ? (
         <Link to="/terreno/perimetro?desde=onboarding" className="ps-card-plana" style={{ margin: '12px 16px 0 16px', textDecoration: 'none', color: 'var(--carbon)', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ flex: 1, fontSize: 16, fontWeight: 700 }}>Primero marca tu parcela: el seguimiento usa su clima.</span>
+          <span style={{ flex: 1, fontSize: 16, fontWeight: 700 }}>{t('onb_cultivos_primero_parcela')}</span>
           <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--verde)' }}>{t('onb_marcar_parcela')}</span>
         </Link>
       ) : null}
 
       <fieldset className="ps-pad-16" style={{ margin: '14px 0 0 0', border: 'none' }}>
-        <legend className="visually-hidden">Cultivos de esta temporada</legend>
+        <legend className="visually-hidden">{t('onb_cultivos_leyenda')}</legend>
         <div className="ps-grid-2">
           {(especies ?? []).map(({ especie, etapas }) => {
             const activo = seleccion.has(especie)
@@ -112,7 +112,7 @@ export default function OnbCultivos() {
               textDecoration: 'none',
             }}
           >
-            {idioma === 'en' ? 'Other' : 'Otro'}
+            {t('onb_cultivos_otro')}
           </Link>
         </div>
         {especies === null && !error ? <p className="ps-nota">{t('cargando')}</p> : null}
@@ -129,7 +129,7 @@ export default function OnbCultivos() {
                 <span style={{ flex: 1, fontSize: 16, fontWeight: 800 }}>{nombreEspecie(especie)}</span>
                 <input
                   type="date"
-                  aria-label={`Fecha de siembra de ${nombreEspecie(especie)}`}
+                  aria-label={t('onb_cultivos_fecha_siembra', { especie: nombreEspecie(especie) })}
                   value={fechas[especie] ?? hoy}
                   onChange={(e) => setFechas((previas) => ({ ...previas, [especie]: e.target.value }))}
                   style={{ minHeight: 48, padding: '0 12px', borderRadius: 14, border: '2px solid var(--borde-control)', background: 'var(--blanco)', color: 'var(--carbon)', font: "700 16px 'Alegreya Sans', sans-serif" }}
@@ -138,7 +138,7 @@ export default function OnbCultivos() {
             ))}
           </div>
           <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
-            Puede ser una siembra ya hecha (hasta un año atrás) o una planeada (hasta seis meses adelante).
+            {t('onb_cultivos_fecha_nota')}
           </p>
         </>
       ) : null}

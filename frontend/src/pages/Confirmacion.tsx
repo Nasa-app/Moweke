@@ -38,8 +38,8 @@ export default function Confirmacion() {
 
         <div style={{ marginTop: 24, padding: '0 24px', alignSelf: 'stretch', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
           <div className="ps-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <span style={{ fontSize: 24, fontWeight: 800 }}>Guardado</span>
-            <span className="ps-nota">En tu cola, se sube cuando haya señal</span>
+            <span style={{ fontSize: 24, fontWeight: 800 }}>{t('confirmacion_guardado')}</span>
+            <span className="ps-nota">{t('confirmacion_en_cola')}</span>
           </div>
         </div>
 

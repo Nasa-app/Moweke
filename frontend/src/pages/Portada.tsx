@@ -8,7 +8,7 @@ export default function Portada() {
   return (
     <Screen sinMenu>
       <div style={{ padding: '60px 0 0 0', display: 'flex', justifyContent: 'center' }}>
-        <img src="/logo.webp" width={104} height={104} alt="Logo de mogen: una planta con raíces entre el sol y la lluvia" />
+        <img src="/logo.webp" width={104} height={104} alt={t('portada_logo_alt')} />
       </div>
       <div style={{ margin: '14px 32px 0 32px', display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', textAlign: 'center' }}>
         <h1 style={{ margin: 0, fontFamily: 'var(--font-marca)', fontWeight: 800, fontSize: 48, lineHeight: 1 }}>mogen</h1>

@@ -4,6 +4,7 @@
 // de ejemplo desde lib/mock.ts, marcados como tal en la UI.
 import { guardar, leer } from '../state/storage'
 import type { NombresCatalogo } from './nombres'
+import { tr } from '../i18n/dictionary'
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000'
 
@@ -20,13 +21,33 @@ export class ApiError extends Error {
 // Texto para mostrar al agricultor a partir de un error del API. FastAPI responde
 // `detail` como texto, como objeto {mensaje, ...} o como lista de errores de validación.
 export function mensajeDeError(error: unknown, porDefecto: string): string {
-  if (!(error instanceof ApiError)) return 'No se pudo conectar con el servidor. Revisa tu conexión.'
+  if (!(error instanceof ApiError)) return tr('api_sin_conexion')
   const detalle = error.detail
-  if (typeof detalle === 'string') return detalle
+  if (typeof detalle === 'string') return delServidor(detalle)
   if (detalle && typeof detalle === 'object' && 'mensaje' in detalle) {
-    return String((detalle as { mensaje: unknown }).mensaje)
+    return delServidor(String((detalle as { mensaje: unknown }).mensaje))
   }
   return porDefecto
+}
+
+// Los mensajes fijos del servidor llegan en español: los que la gente puede ver se traducen aquí por su texto exacto.
+const MENSAJES_SERVIDOR: Record<string, string> = {
+  'Demasiados intentos. Espera unos minutos e intenta otra vez.': 'servidor_demasiados_intentos',
+  'Base de datos no disponible': 'servidor_sin_base',
+  'Parcela no existe': 'servidor_parcela_no_existe',
+  'El punto queda fuera de la cobertura actual (Chile continental)': 'servidor_fuera_cobertura',
+  'El perímetro se cruza a sí mismo; dibújalo de nuevo sin cruzar líneas': 'servidor_perimetro_cruzado',
+  'La especie no está en el catálogo': 'servidor_especie_no_catalogo',
+  'Cultivo no existe': 'servidor_cultivo_no_existe',
+  'El cultivo no tiene fecha de siembra': 'servidor_cultivo_sin_fecha',
+  'Todavía no hay clima diario del predio desde la fecha de siembra': 'servidor_sin_clima',
+  'Esta especie todavía no tiene seguimiento por etapa: solo se evalúa si el sitio le sirve': 'servidor_sin_seguimiento',
+  'Indicador no existe': 'servidor_indicador_no_existe',
+}
+
+function delServidor(texto: string): string {
+  const clave = MENSAJES_SERVIDOR[texto]
+  return clave ? tr(clave) : texto
 }
 
 function tokenActual(): string | null {

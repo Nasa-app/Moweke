@@ -4,20 +4,22 @@
 // (lib/api.ts). Nada de esto se presenta como dato real.
 export const FUENTE_EJEMPLO = 'Fuente: ejemplo, sin endpoint todavía'
 
+// Los textos de climaZona y novedadesZona son claves del diccionario (i18n/textos/onboarding.ts):
+// la pantalla las traduce con t().
 export const climaZona = {
   temperatura: 12,
-  descripcion: 'Nublado, lluvia en la tarde',
+  descripcion: 'explorar_clima_desc',
   humedad: 88,
   lluvia_mm: 6,
   viento_kmh: 22,
-  fecha: 'Hoy · 14 nov',
+  fecha: 'explorar_clima_fecha',
 }
 
 export const novedadesZona = [
-  { titulo: 'Heladas', valor: 'Posible jueves', chip: 'Nuevo' },
-  { titulo: 'Temporada', valor: '+1,2° más cálida', chip: null },
-  { titulo: 'Verdor del campo', valor: 'Subiendo', chip: 'Satélite' },
-  { titulo: 'Papa en Quemchi', valor: 'Con hojas', chip: 'Vecinos' },
+  { titulo: 'explorar_nov_heladas', valor: 'explorar_nov_heladas_valor', chip: 'explorar_nov_nuevo' },
+  { titulo: 'explorar_nov_temporada', valor: 'explorar_nov_temporada_valor', chip: null },
+  { titulo: 'explorar_nov_verdor', valor: 'explorar_nov_verdor_valor', chip: 'explorar_nov_satelite' },
+  { titulo: 'explorar_nov_papa', valor: 'explorar_nov_papa_valor', chip: 'explorar_nov_vecinos' },
 ]
 
 export const fuentesDatos = [

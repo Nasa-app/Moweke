@@ -54,7 +54,7 @@ export function MoonStrip() {
             }}
           >
             <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--verde)', lineHeight: 1, height: 12 }}>
-              {i === actual ? 'Ahora' : ''}
+              {i === actual ? t('moonstrip_ahora') : ''}
             </span>
             <IconoFase tipo={fase.tipo} />
             <span style={{ fontSize: 14, fontWeight: 800 }}>{fase.nombre}</span>
@@ -65,7 +65,7 @@ export function MoonStrip() {
       {nota ? (
         <p style={{ margin: '6px 4px 0', fontSize: 15, fontWeight: 700, color: 'var(--verde-oscuro)', lineHeight: 1.3 }}>{nota}</p>
       ) : null}
-      <p className="ps-nota" style={{ margin: '6px 4px 0' }}>Fechas aproximadas. Saber williche en validación con las comunidades.</p>
+      <p className="ps-nota" style={{ margin: '6px 4px 0' }}>{t('moonstrip_aproximadas')}</p>
     </section>
   )
 }

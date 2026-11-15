@@ -6,6 +6,7 @@ import { ApiError, climaParcela, mensajeDeError, type ClimaPredio, type DiaClima
 import { diaSemana, fechaCorta, numero } from '../lib/formato'
 import { usePredio } from '../state/PredioContext'
 import { useI18n } from '../i18n'
+import { tr } from '../i18n/dictionary'
 
 const PESTANAS = ['Calor', 'Lluvia', 'Heladas'] as const
 type Pestana = (typeof PESTANAS)[number]
@@ -13,13 +14,14 @@ const DIAS_ATRAS = 30
 const LLUVIA_MIN_MM = 1 // bajo esto un día no se muestra como lluvioso
 const ALTO = 120
 
-const SERIE: Record<Pestana, { valor: (d: DiaClima) => number | null; color: string; leyenda: string }> = {
-  Calor: { valor: (d) => d.tmax, color: 'var(--semaforo-amarillo)', leyenda: 'Temperatura más alta de cada día' },
-  Lluvia: { valor: (d) => d.lluvia_mm, color: 'var(--agua)', leyenda: 'Milímetros de lluvia de cada día' },
-  Heladas: { valor: (d) => d.tmin, color: 'var(--celeste)', leyenda: 'Temperatura más baja de cada día' },
+const SERIE: Record<Pestana, { valor: (d: DiaClima) => number | null; color: string }> = {
+  Calor: { valor: (d) => d.tmax, color: 'var(--semaforo-amarillo)' },
+  Lluvia: { valor: (d) => d.lluvia_mm, color: 'var(--agua)' },
+  Heladas: { valor: (d) => d.tmin, color: 'var(--celeste)' },
 }
 
 function Grafico({ dias, pestana, hoy }: { dias: DiaClima[]; pestana: Pestana; hoy: string }) {
+  const { t } = useI18n()
   const { valor, color } = SERIE[pestana]
   const valores = dias.map(valor).filter((v): v is number => v !== null)
   if (!valores.length) return null
@@ -29,7 +31,7 @@ function Grafico({ dias, pestana, hoy }: { dias: DiaClima[]; pestana: Pestana; h
   const y = (v: number) => ALTO - ((v - minimo) / (maximo - minimo)) * ALTO
   const indiceHoy = dias.findIndex((d) => d.fecha >= hoy)
   return (
-    <svg viewBox={`0 0 100 ${ALTO}`} preserveAspectRatio="none" role="img" aria-label={`${SERIE[pestana].leyenda}, del ${fechaCorta(dias[0].fecha)} al ${fechaCorta(dias[dias.length - 1].fecha)}`} style={{ display: 'block', width: '100%', height: ALTO }}>
+    <svg viewBox={`0 0 100 ${ALTO}`} preserveAspectRatio="none" role="img" aria-label={t('clima_grafico_aria', { leyenda: t(`clima_leyenda_${pestana.toLowerCase()}`), desde: fechaCorta(dias[0].fecha), hasta: fechaCorta(dias[dias.length - 1].fecha) })} style={{ display: 'block', width: '100%', height: ALTO }}>
       {dias.map((d, i) => {
         const v = valor(d)
         if (v === null) return null
@@ -71,7 +73,7 @@ export default function Clima() {
       .catch((err) => {
         if (!vigente) return
         if (err instanceof ApiError && err.status === 409) setSinClima(true)
-        else setError(mensajeDeError(err, 'No pudimos cargar el clima. Revisa tu conexión e inténtalo de nuevo.'))
+        else setError(mensajeDeError(err, tr('clima_error_cargar')))
       })
     return () => {
       vigente = false
@@ -95,8 +97,8 @@ export default function Clima() {
 
       {sinClima ? (
         <Link to="/terreno/preparando" className="ps-card-plana" style={{ margin: '12px 16px 0 16px', textDecoration: 'none', color: 'var(--carbon)', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ flex: 1, fontSize: 16, fontWeight: 700 }}>Todavía se está reuniendo el clima de tu parcela.</span>
-          <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--verde)' }}>Ver avance</span>
+          <span style={{ flex: 1, fontSize: 16, fontWeight: 700 }}>{t('inicio_reuniendo_clima')}</span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--verde)' }}>{t('inicio_ver_avance')}</span>
         </Link>
       ) : null}
       {error ? (
@@ -109,7 +111,7 @@ export default function Clima() {
       {clima ? (
         <>
           <div className="ps-pad-16" style={{ marginTop: 14 }}>
-            <div role="tablist" aria-label="Dato" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, padding: 5, borderRadius: 18, background: 'var(--cielo)' }}>
+            <div role="tablist" aria-label={t('clima_dato_aria')} style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, padding: 5, borderRadius: 18, background: 'var(--cielo)' }}>
               {PESTANAS.map((p) => (
                 <button
                   key={p}
@@ -119,7 +121,7 @@ export default function Clima() {
                   onClick={() => setPestana(p)}
                   style={{ minHeight: 48, borderRadius: 14, border: 'none', background: pestana === p ? 'var(--agua)' : 'transparent', color: pestana === p ? '#fff' : 'var(--carbon)', font: `${pestana === p ? 800 : 700} 16px 'Alegreya Sans', sans-serif`, cursor: 'pointer' }}
                 >
-                  {p}
+                  {t(`clima_pestana_${p.toLowerCase()}`)}
                 </button>
               ))}
             </div>
@@ -127,11 +129,11 @@ export default function Clima() {
 
           <div className="ps-pad-16" style={{ marginTop: 12 }}>
             <div style={{ background: 'var(--cielo)', borderRadius: 22, padding: '14px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <span style={{ fontSize: 15, fontWeight: 800 }}>{SERIE[pestana].leyenda}</span>
+              <span style={{ fontSize: 15, fontWeight: 800 }}>{t(`clima_leyenda_${pestana.toLowerCase()}`)}</span>
               <Grafico dias={dias} pestana={pestana} hoy={hoy} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700, color: 'var(--texto-tenue)' }}>
                 <span>{fechaCorta(dias[0]?.fecha)}</span>
-                <span>La línea marca hoy · lo más claro es pronóstico</span>
+                <span>{t('clima_linea_hoy')}</span>
                 <span>{fechaCorta(dias[dias.length - 1]?.fecha)}</span>
               </div>
             </div>
@@ -140,19 +142,19 @@ export default function Clima() {
           <div className="ps-pad-16" style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
             <div className="ps-card" style={{ textAlign: 'center', padding: 12 }}>
               <span style={{ display: 'block', fontSize: 22, fontWeight: 800 }}>{maximas.length ? `${numero(Math.max(...maximas), 1)}°` : '—'}</span>
-              <span className="ps-nota">Día más cálido</span>
+              <span className="ps-nota">{t('clima_dia_calido')}</span>
             </div>
             <div className="ps-card" style={{ textAlign: 'center', padding: 12 }}>
               <span style={{ display: 'block', fontSize: 22, fontWeight: 800 }}>{pasados.length ? `${numero(lluvia)} mm` : '—'}</span>
-              <span className="ps-nota">Lluvia</span>
+              <span className="ps-nota">{t('clima_lluvia')}</span>
             </div>
             <div className="ps-card" style={{ textAlign: 'center', padding: 12 }}>
               <span style={{ display: 'block', fontSize: 22, fontWeight: 800 }}>{pasados.length ? heladas : '—'}</span>
-              <span className="ps-nota">{heladas === 1 ? 'Helada' : 'Heladas'}</span>
+              <span className="ps-nota">{t(heladas === 1 ? 'clima_helada_uno' : 'clima_helada_otros')}</span>
             </div>
           </div>
           <p className="ps-pad ps-nota" style={{ margin: '6px 0 0 0' }}>
-            En los últimos {pasados.length} días.
+            {t('clima_ultimos_dias', { n: pasados.length })}
           </p>
 
           <section className="ps-pad-16" style={{ marginTop: 16 }}>
@@ -166,7 +168,7 @@ export default function Clima() {
                   const llueve = (d.lluvia_mm ?? 0) >= LLUVIA_MIN_MM
                   const Icono = helada ? IconoHelada : llueve ? IconoLluvia : IconoCalor
                   return (
-                    <li key={d.fecha} aria-label={`${fechaCorta(d.fecha)}: entre ${numero(d.tmin)} y ${numero(d.tmax)} grados${llueve ? `, ${numero(d.lluvia_mm)} mm de lluvia` : ''}${helada ? ', helada' : ''}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, borderRadius: 12, background: helada ? 'var(--precaucion-fondo)' : undefined, padding: '2px 0' }}>
+                    <li key={d.fecha} aria-label={`${t('clima_dia_aria', { fecha: fechaCorta(d.fecha), min: numero(d.tmin), max: numero(d.tmax) })}${llueve ? t('clima_dia_aria_lluvia', { mm: numero(d.lluvia_mm) }) : ''}${helada ? t('clima_dia_aria_helada') : ''}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, borderRadius: 12, background: helada ? 'var(--precaucion-fondo)' : undefined, padding: '2px 0' }}>
                       <span style={{ fontSize: 14, fontWeight: helada ? 800 : 700, color: helada ? 'var(--precaucion-texto)' : 'var(--texto-tenue)' }}>{diaSemana(d.fecha)}</span>
                       <Icono tamano={20} stroke={helada ? 'var(--precaucion-texto)' : llueve ? 'var(--agua)' : 'var(--semaforo-amarillo)'} />
                       <span style={{ fontSize: 16, fontWeight: 800 }}>{numero(d.tmax)}°</span>
@@ -176,16 +178,16 @@ export default function Clima() {
                 })}
               </ol>
             ) : (
-              <p className="ps-cuerpo" style={{ margin: '0 4px' }}>El pronóstico todavía no llega para esta parcela.</p>
+              <p className="ps-cuerpo" style={{ margin: '0 4px' }}>{t('clima_sin_pronostico')}</p>
             )}
           </section>
 
           <Link to="/fuentes" className="ps-pad ps-nota" style={{ margin: 'auto 0 0 0', padding: '16px 20px 8px 20px', textDecoration: 'none' }}>
-            Días pasados: CR2MET y NASA POWER (datos de estaciones y satélites). Próximos días: pronóstico de Open-Meteo, corregido con el clima de tu parcela. El pronóstico suele quedarse corto con las heladas: si la noche se ve fría, protege tu cultivo.
+            {t('clima_fuentes')}
           </Link>
           <p className="ps-pad ps-nota" style={{ margin: 0, padding: '0 20px 32px 20px' }}>
-            Datos del pronóstico: <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo.com</a>, licencia{' '}
-            <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>. Modificados: corregidos con el clima medido en tu parcela.
+            {t('clima_licencia_1')} <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo.com</a>, {t('clima_licencia_2')}{' '}
+            <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>. {t('clima_licencia_3')}
           </p>
         </>
       ) : null}

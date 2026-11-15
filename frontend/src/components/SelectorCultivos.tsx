@@ -1,5 +1,6 @@
 import { fechaCorta, nombreEspecie } from '../lib/formato'
 import type { Cultivo } from '../lib/api'
+import { useI18n } from '../i18n'
 
 // Elige qué cultivo se mira cuando hay más de uno. Con uno solo no hay nada que elegir y no se muestra.
 // Si la misma especie está sembrada en dos fechas, la fecha las distingue.
@@ -8,10 +9,11 @@ export function SelectorCultivos({ cultivos, activo, onElegir }: {
   activo: Cultivo | null
   onElegir: (id: number, especie: string) => void
 }) {
+  const { t } = useI18n()
   if (!cultivos || cultivos.length < 2) return null
   const repetida = (c: Cultivo) => cultivos.filter((o) => o.especie === c.especie).length > 1
   return (
-    <div role="radiogroup" aria-label="Cultivo" className="ps-pad-16" style={{ marginTop: 14, display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
+    <div role="radiogroup" aria-label={t('inicio_cultivo_aria')} className="ps-pad-16" style={{ marginTop: 14, display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
       {cultivos.map((c) => {
         const elegido = activo?.id === c.id
         return (

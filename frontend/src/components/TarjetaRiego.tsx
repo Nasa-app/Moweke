@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { anularRiego, declararRiego, mensajeDeError, type Riego } from '../lib/api'
 import { diasEntre, fechaCorta, numero } from '../lib/formato'
 import { useI18n } from '../i18n'
+import { tr } from '../i18n/dictionary'
 
 type RiegoConEstimacion = Extract<Riego, { estado: 'regar_ya' | 'proximos_dias' | 'sin_necesidad' }>
 
-const dias = (n: number) => `${n} ${n === 1 ? 'día' : 'días'}`
-const haceDias = (n: number) => (n <= 0 ? 'hoy' : n === 1 ? 'ayer' : `hace ${n} días`)
+const dias = (n: number) => tr(n === 1 ? 'inicio_dia_uno' : 'inicio_dia_otros', { n })
+const haceDias = (n: number) => (n <= 0 ? tr('inicio_hace_hoy') : n === 1 ? tr('inicio_hace_ayer') : tr('inicio_hace_n', { n }))
 
 // Cuándo regar según el balance de agua del cultivo. Es una estimación con el clima y el suelo de
 // la parcela, no una medición: la tarjeta lo dice y deja anotar un riego para que el cálculo parta de ahí.
@@ -26,18 +27,18 @@ export function TarjetaRiego({ riego, idCultivo, hoy, onCambio }: {
 
   const titulo =
     r.estado === 'regar_ya'
-      ? 'Conviene regar hoy'
+      ? t('riego_conviene_hoy')
       : r.estado === 'proximos_dias'
-        ? `Riega antes del ${fechaCorta(r.fecha_limite)}`
-        : 'No hace falta regar por ahora'
+        ? t('riego_antes_del', { fecha: fechaCorta(r.fecha_limite) })
+        : t('riego_no_hace_falta')
   const detalle =
     r.estado === 'regar_ya'
-      ? `Unos ${r.lamina_mm} mm para llenar la zona de raíces.${r.ks_hoy < 1 ? ' El cultivo ya siente la falta de agua.' : ''}`
+      ? `${t('riego_detalle_ya', { mm: String(r.lamina_mm) })}${r.ks_hoy < 1 ? t('riego_detalle_ya_estres') : ''}`
       : r.estado === 'proximos_dias'
-        ? `En ${dias(r.dias_para_riego ?? 0)} el agua llega al nivel en que conviene regar (unos ${r.lamina_mm} mm).`
+        ? t('riego_detalle_proximos', { dias: dias(r.dias_para_riego ?? 0), mm: String(r.lamina_mm) })
         : r.dias_revisados > 0
-          ? `Según el pronóstico, el suelo aguanta los próximos ${dias(r.dias_revisados)}.`
-          : 'Hoy el suelo tiene agua suficiente.'
+          ? t('riego_detalle_aguanta', { dias: dias(r.dias_revisados) })
+          : t('riego_detalle_suficiente')
 
   async function cambiar(accion: () => Promise<unknown>) {
     setEnviando(true)
@@ -46,7 +47,7 @@ export function TarjetaRiego({ riego, idCultivo, hoy, onCambio }: {
       await accion()
       onCambio()
     } catch (err) {
-      setError(mensajeDeError(err, 'No pudimos anotar el riego. Revisa tu conexión e inténtalo de nuevo.'))
+      setError(mensajeDeError(err, t('riego_error_anotar')))
     } finally {
       setEnviando(false)
     }
@@ -68,27 +69,27 @@ export function TarjetaRiego({ riego, idCultivo, hoy, onCambio }: {
       </span>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <span className="ps-contexto">Estos días</span>
+        <span className="ps-contexto">{t('riego_estos_dias')}</span>
         {r.lluvia_reciente ? (
           <span style={{ fontSize: 16, fontWeight: 700 }}>
             {r.lluvia_reciente.dias_con_dato < Math.ceil(r.lluvia_reciente.dias / 2)
-              ? 'Todavía sin datos de lluvia de estos días.'
+              ? t('riego_lluvia_sin_datos')
               : !r.lluvia_reciente.ultima_lluvia
-                ? `No llovió en los ${r.lluvia_reciente.dias} días hasta ayer.`
-                : `Llovieron ${numero(r.lluvia_reciente.total_mm, 1)} mm en los ${r.lluvia_reciente.dias} días hasta ayer · la última lluvia fue ${haceDias(r.lluvia_reciente.ultima_lluvia.hace_dias)} (${numero(r.lluvia_reciente.ultima_lluvia.mm, 1)} mm).`}
+                ? t('riego_no_llovio', { dias: r.lluvia_reciente.dias })
+                : t('riego_llovio', { total: numero(r.lluvia_reciente.total_mm, 1), dias: r.lluvia_reciente.dias, cuando: haceDias(r.lluvia_reciente.ultima_lluvia.hace_dias), mm: numero(r.lluvia_reciente.ultima_lluvia.mm, 1) })}
           </span>
         ) : null}
         {r.humedad_suelo_nasa ? (
           <span style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
             <span className="ps-chip ps-chip-clima" style={{ flexShrink: 0 }}>NASA</span>
             <span style={{ fontSize: 16, fontWeight: 700 }}>
-              {`Humedad del suelo ${haceDias(diasEntre(r.humedad_suelo_nasa.fecha, hoy))}: ${Math.round(r.humedad_suelo_nasa.zona_raices * 100)}% de lo que puede guardar`}
+              {t('riego_humedad_nasa', { cuando: haceDias(diasEntre(r.humedad_suelo_nasa.fecha, hoy)), pct: Math.round(r.humedad_suelo_nasa.zona_raices * 100) })}
             </span>
           </span>
         ) : null}
         <span className="ps-nota">
-          Lluvia: CR2MET y Open-Meteo, en el cuadro de unos 5 km donde está tu parcela.
-          {r.humedad_suelo_nasa ? ` Humedad: NASA POWER, celda de unos ${r.humedad_suelo_nasa.resolucion_km} km con ${diasEntre(r.humedad_suelo_nasa.fecha, hoy)} días de atraso; es de la región, no de tu parcela, y no es el mismo porcentaje de arriba.` : ''}
+          {t('riego_fuente_lluvia')}
+          {r.humedad_suelo_nasa ? t('riego_fuente_humedad', { km: r.humedad_suelo_nasa.resolucion_km, n: diasEntre(r.humedad_suelo_nasa.fecha, hoy) }) : ''}
         </span>
       </div>
 
@@ -107,8 +108,8 @@ export function TarjetaRiego({ riego, idCultivo, hoy, onCambio }: {
 
       {error ? <p role="alert" className="ps-nota" style={{ margin: 0, color: 'var(--riesgo-texto)', fontWeight: 700 }}>{error}</p> : null}
       <span className="ps-nota">
-        Es una estimación con el clima y el suelo de tu parcela; no mide la humedad del suelo. Si la tierra está húmeda, no riegues.
-        {r.suelo_medido ? '' : ' Todavía no tenemos el dato de agua del suelo de tu parcela: usamos un valor promedio.'}
+        {t('riego_estimacion')}
+        {r.suelo_medido ? '' : t('riego_suelo_promedio')}
       </span>
     </section>
   )

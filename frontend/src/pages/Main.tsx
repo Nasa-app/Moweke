@@ -25,12 +25,12 @@ export default function Main() {
       <div style={{ padding: '48px 16px 0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 30, lineHeight: 1 }}>{t('cultivo_titulo')}</h1>
         <Link to="/especies" className="ps-btn-texto" style={{ fontSize: 16, fontWeight: 800, color: 'var(--verde)' }}>
-          Agregar
+          {t('main_agregar')}
         </Link>
       </div>
 
       {cultivos && cultivos.length > 0 ? (
-        <div role="tablist" aria-label="Cultivo" className="ps-pad-16" style={{ marginTop: 12, display: 'flex', gap: 6, overflowX: 'auto' }}>
+        <div role="tablist" aria-label={t('inicio_cultivo_aria')} className="ps-pad-16" style={{ marginTop: 12, display: 'flex', gap: 6, overflowX: 'auto' }}>
           {cultivos.map((c) => (
             <button
               key={c.id}
@@ -53,11 +53,11 @@ export default function Main() {
             t('cargando')
           ) : !idParcela ? (
             <>
-              Todavía no marcaste tu parcela. <Link to="/terreno/perimetro">Marca tu parcela</Link>.
+              {t('inicio_sin_parcela_titulo')}. <Link to="/terreno/perimetro">{t('inicio_sin_parcela_link')}</Link>.
             </>
           ) : (
             <>
-              Todavía no tienes cultivos. <Link to="/onboarding/cultivos">Agrega qué sembraste</Link>.
+              {t('inicio_sin_cultivos_titulo')}. <Link to="/onboarding/cultivos">{t('inicio_agrega_sembraste')}</Link>.
             </>
           )}
         </p>
@@ -67,7 +67,7 @@ export default function Main() {
             <span style={{ fontSize: 24, fontWeight: 800 }}>{nombreEspecie(activo.especie)}</span>
             {activo.variedad_local ? <span style={{ fontSize: 16, color: 'var(--texto-tenue)' }}>{nombreVariedad(activo.especie, activo.variedad_local)}</span> : null}
             {fenologia?.fase_actual ? <Chip tono="acento">{nombreFase(fenologia.fase_actual)}</Chip> : null}
-            {fenologia?.estado === 'perdido' ? <Chip tono="riesgo">Cultivo perdido</Chip> : null}
+            {fenologia?.estado === 'perdido' ? <Chip tono="riesgo">{t('main_perdido')}</Chip> : null}
           </div>
 
           {aviso ? (
@@ -103,27 +103,27 @@ export default function Main() {
                         {alcanzada ? <IconoCheck tamano={22} stroke="#fff" /> : null}
                       </span>
                       <span style={{ fontSize: 14, fontWeight: 800, lineHeight: 1.1, color: alcanzada || siguiente ? 'var(--verde)' : undefined }}>{nombreClave(etapa.etapa)}</span>
-                      <span className="ps-nota" style={{ lineHeight: 1.1 }}>{etapa.fecha ? fechaCorta(etapa.fecha) : 'Sin fecha'}</span>
+                      <span className="ps-nota" style={{ lineHeight: 1.1 }}>{etapa.fecha ? fechaCorta(etapa.fecha) : t('main_sin_fecha')}</span>
                     </li>
                   )
                 })}
               </ol>
               <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
-                Observado hasta el {fechaCorta(fenologia.horizontes.observado_hasta)} · pronóstico hasta el {fechaCorta(fenologia.horizontes.pronostico_hasta)} · después, estimado con el año pasado.
+                {t('main_horizontes', { obs: fechaCorta(fenologia.horizontes.observado_hasta), pron: fechaCorta(fenologia.horizontes.pronostico_hasta) })}
               </p>
 
               <div className="ps-pad-16" style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
                 <div className="ps-card" style={{ textAlign: 'center', padding: 12 }}>
                   <span style={{ display: 'block', fontSize: 21, fontWeight: 800 }}>{proxima?.fecha ? fechaCorta(proxima.fecha) : '—'}</span>
-                  <span className="ps-nota">{proxima ? `${nombreClave(proxima.etapa)} · ${nombreHorizonte(proxima.horizonte).toLowerCase()}` : 'Ciclo completo'}</span>
+                  <span className="ps-nota">{proxima ? `${nombreClave(proxima.etapa)} · ${nombreHorizonte(proxima.horizonte).toLowerCase()}` : t('main_ciclo_completo')}</span>
                 </div>
                 <div className="ps-card" style={{ textAlign: 'center', padding: 12 }}>
-                  <span style={{ display: 'block', fontSize: 21, fontWeight: 800 }}>{diasDesdeSiembra >= 0 ? diasDesdeSiembra : `En ${-diasDesdeSiembra}`}</span>
-                  <span className="ps-nota">{diasDesdeSiembra >= 0 ? 'Días desde siembra' : 'Días para sembrar'}</span>
+                  <span style={{ display: 'block', fontSize: 21, fontWeight: 800 }}>{diasDesdeSiembra >= 0 ? diasDesdeSiembra : t('main_en_dias', { n: -diasDesdeSiembra })}</span>
+                  <span className="ps-nota">{diasDesdeSiembra >= 0 ? t('main_dias_desde_siembra') : t('main_dias_para_sembrar')}</span>
                 </div>
                 <Link to="/alertas" className="ps-card" style={{ textAlign: 'center', padding: 12, textDecoration: 'none', color: 'var(--carbon)' }}>
                   <span style={{ display: 'block', fontSize: 21, fontWeight: 800 }}>{perdida !== null ? `${aPorcentaje(perdida)}%` : '—'}</span>
-                  <span className="ps-nota">{eventos ? `Pérdida estimada · ${eventos} ${eventos === 1 ? 'aviso' : 'avisos'}` : 'Pérdida estimada'}</span>
+                  <span className="ps-nota">{eventos ? t(eventos === 1 ? 'main_perdida_avisos_uno' : 'main_perdida_avisos_otros', { n: eventos }) : t('main_perdida_estimada')}</span>
                 </Link>
               </div>
 
@@ -131,15 +131,15 @@ export default function Main() {
                 <section aria-labelledby="condiciones" className="ps-pad-16" style={{ marginTop: 14 }}>
                   <div className="ps-card-plana" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <h2 id="condiciones" className="ps-h2">
-                      En esta etapa, desde el {fechaCorta(faseActual.inicio)}
+                      {t('main_en_esta_etapa', { fecha: fechaCorta(faseActual.inicio) })}
                     </h2>
                     <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
                       {(
                         [
-                          ['Noche más fría', `${numero(faseActual.condiciones.tmin_mas_baja, 1)}°`],
-                          ['Día más cálido', `${numero(faseActual.condiciones.tmax_mas_alta, 1)}°`],
-                          ['Lluvia', `${numero(faseActual.condiciones.lluvia_mm)} mm`],
-                          ['Humedad del aire', faseActual.condiciones.humedad_relativa_media !== null ? `${numero(faseActual.condiciones.humedad_relativa_media)}%` : '—'],
+                          [t('main_noche_fria'), `${numero(faseActual.condiciones.tmin_mas_baja, 1)}°`],
+                          [t('main_dia_calido'), `${numero(faseActual.condiciones.tmax_mas_alta, 1)}°`],
+                          [t('main_lluvia'), `${numero(faseActual.condiciones.lluvia_mm)} mm`],
+                          [t('main_humedad_aire'), faseActual.condiciones.humedad_relativa_media !== null ? `${numero(faseActual.condiciones.humedad_relativa_media)}%` : '—'],
                         ] as const
                       ).map(([etiqueta, valor]) => (
                         <div key={etiqueta} style={{ display: 'flex', flexDirection: 'column-reverse' }}>
@@ -148,7 +148,7 @@ export default function Main() {
                         </div>
                       ))}
                     </dl>
-                    <span className="ps-nota">Incluye los días de pronóstico y estimados que le quedan a la etapa.</span>
+                    <span className="ps-nota">{t('main_incluye_dias')}</span>
                   </div>
                 </section>
               ) : null}

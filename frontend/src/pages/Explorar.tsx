@@ -20,7 +20,7 @@ export default function Explorar() {
       <section aria-labelledby="zona" style={{ padding: '48px 16px 16px 16px', borderRadius: '0 0 32px 32px', background: 'var(--verde)', color: '#fff', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <label style={{ minHeight: 44, padding: '0 12px 0 10px', borderRadius: 22, background: 'rgba(255,255,255,.14)', display: 'flex', alignItems: 'center', gap: 6, fontSize: 16, fontWeight: 800, cursor: 'pointer' }}>
-            <span className="visually-hidden">Comuna</span>
+            <span className="visually-hidden">{t('onb_comuna')}</span>
             <select value={comuna} onChange={(e) => setComuna(e.target.value)} style={{ appearance: 'none', border: 'none', background: 'transparent', color: '#fff', font: "800 16px 'Alegreya Sans', sans-serif", cursor: 'pointer' }}>
               {COMUNAS.map((c) => (
                 <option key={c} value={c} style={{ color: '#000' }}>
@@ -29,27 +29,27 @@ export default function Explorar() {
               ))}
             </select>
           </label>
-          <span style={{ fontSize: 15, fontWeight: 700, opacity: 0.9 }}>{climaZona.fecha}</span>
+          <span style={{ fontSize: 15, fontWeight: 700, opacity: 0.9 }}>{t(climaZona.fecha)}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <h1 id="zona" style={{ margin: 0, fontSize: 56, fontWeight: 800, lineHeight: 1 }}>
               {climaZona.temperatura}°
             </h1>
-            <span style={{ fontSize: 17, fontWeight: 700 }}>{climaZona.descripcion}</span>
+            <span style={{ fontSize: 17, fontWeight: 700 }}>{t(climaZona.descripcion)}</span>
           </div>
         </div>
         <dl style={{ margin: 0, padding: '10px 6px', borderRadius: 20, background: 'rgba(255,255,255,.12)', display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', textAlign: 'center' }}>
           <div style={{ display: 'flex', flexDirection: 'column-reverse', gap: 2 }}>
-            <dt style={{ fontSize: 14, fontWeight: 700, opacity: 0.9 }}>Humedad</dt>
+            <dt style={{ fontSize: 14, fontWeight: 700, opacity: 0.9 }}>{t('explorar_humedad')}</dt>
             <dd style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>{climaZona.humedad}%</dd>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column-reverse', gap: 2, borderLeft: '1px solid rgba(255,255,255,.25)', borderRight: '1px solid rgba(255,255,255,.25)' }}>
-            <dt style={{ fontSize: 14, fontWeight: 700, opacity: 0.9 }}>Lluvia</dt>
+            <dt style={{ fontSize: 14, fontWeight: 700, opacity: 0.9 }}>{t('explorar_lluvia')}</dt>
             <dd style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>{climaZona.lluvia_mm} mm</dd>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column-reverse', gap: 2 }}>
-            <dt style={{ fontSize: 14, fontWeight: 700, opacity: 0.9 }}>Viento</dt>
+            <dt style={{ fontSize: 14, fontWeight: 700, opacity: 0.9 }}>{t('explorar_viento')}</dt>
             <dd style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>{climaZona.viento_kmh} km/h</dd>
           </div>
         </dl>
@@ -63,11 +63,11 @@ export default function Explorar() {
           <Link key={n.titulo} to="/fuentes" className="ps-card" style={{ textDecoration: 'none', color: 'var(--carbon)', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {n.chip ? (
               <span className="ps-chip ps-chip-clima" style={{ alignSelf: 'flex-start' }}>
-                {n.chip}
+                {t(n.chip)}
               </span>
             ) : null}
-            <span className="ps-detalle">{n.titulo}</span>
-            <b style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>{n.valor}</b>
+            <span className="ps-detalle">{t(n.titulo)}</span>
+            <b style={{ fontSize: 22, fontWeight: 800, lineHeight: 1 }}>{t(n.valor)}</b>
           </Link>
         ))}
       </div>

@@ -5,6 +5,8 @@ import 'leaflet/dist/leaflet.css'
 import type { CeldaMapa, Poligono } from '../lib/api'
 import type { Punto } from '../lib/geometria'
 import { guardar, leer } from '../state/storage'
+import { useI18n } from '../i18n'
+import { tr } from '../i18n/dictionary'
 
 type Base = 'satelite' | 'mapa'
 
@@ -14,18 +16,19 @@ type Base = 'satelite' | 'mapa'
 // ni uso sin conexión; la atribución tiene que verse siempre sobre el mapa.
 // Cada tesela se pide por la zona que se mira: la ubicación aproximada de la parcela sale
 // del dispositivo hacia ese servicio.
-const BASES: Record<Base, { url: string; opciones: L.TileLayerOptions }> = {
+// La atribución del satélite se lee al crear la capa para seguir el idioma vigente.
+const BASES: Record<Base, { url: string; opciones: () => L.TileLayerOptions }> = {
   satelite: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    opciones: { attribution: 'Imagen: Esri, Maxar, Earthstar Geographics', maxNativeZoom: 18, maxZoom: 20 },
+    opciones: () => ({ attribution: tr('mapa_atribucion_satelite'), maxNativeZoom: 18, maxZoom: 20 }),
   },
   mapa: {
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    opciones: {
+    opciones: () => ({
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
       maxNativeZoom: 19,
       maxZoom: 20,
-    },
+    }),
   },
 }
 
@@ -52,20 +55,22 @@ function useBase(): [Base, (nueva: Base) => void] {
 // Pone la capa de fondo elegida y la cambia cuando cambia `base`. Va después del efecto
 // que crea el mapa.
 function useCapaBase(mapa: RefObject<L.Map | null>, base: Base) {
+  const { idioma } = useI18n()
   const capa = useRef<L.TileLayer | null>(null)
   useEffect(() => {
     if (!mapa.current) return
     capa.current?.remove()
-    capa.current = L.tileLayer(BASES[base].url, BASES[base].opciones).addTo(mapa.current)
+    capa.current = L.tileLayer(BASES[base].url, BASES[base].opciones()).addTo(mapa.current)
     capa.current.bringToBack()
-  }, [mapa, base])
+  }, [mapa, base, idioma])
 }
 
 function SelectorBase({ base, onCambio }: { base: Base; onCambio: (nueva: Base) => void }) {
+  const { t } = useI18n()
   return (
     <div
       role="group"
-      aria-label="Tipo de mapa"
+      aria-label={t('mapa_tipo')}
       style={{ position: 'absolute', top: 10, right: 10, zIndex: 2, display: 'flex', gap: 4, padding: 4, borderRadius: 16, background: 'rgba(255,255,255,.94)', boxShadow: 'var(--sombra-1)' }}
     >
       {(['satelite', 'mapa'] as const).map((opcion) => (
@@ -76,7 +81,7 @@ function SelectorBase({ base, onCambio }: { base: Base; onCambio: (nueva: Base) 
           onClick={() => onCambio(opcion)}
           style={{ minHeight: 44, padding: '0 14px', borderRadius: 12, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 15, fontWeight: 800, background: base === opcion ? 'var(--verde)' : 'transparent', color: base === opcion ? 'var(--sobre-verde)' : 'var(--carbon)' }}
         >
-          {opcion === 'mapa' ? 'Mapa' : 'Satélite'}
+          {opcion === 'mapa' ? t('mapa_opcion_mapa') : t('mapa_opcion_satelite')}
         </button>
       ))}
     </div>
@@ -105,6 +110,7 @@ export function MapaDibujo({
   const capa = useRef<L.LayerGroup | null>(null)
   const actuales = useRef(esquinas)
   const alCambiar = useRef(onCambio)
+  const { t } = useI18n()
   const [base, cambiarBase] = useBase()
   const [cerca, setCerca] = useState(zoom >= ZOOM_MINIMO_PARA_MARCAR)
 
@@ -158,14 +164,14 @@ export function MapaDibujo({
 
   return (
     <div style={{ position: 'relative' }}>
-      <div ref={contenedor} className="ps-mapa" role="application" aria-label="Mapa para marcar las esquinas de tu parcela" />
+      <div ref={contenedor} className="ps-mapa" role="application" aria-label={t('mapa_aria_dibujo')} />
       <SelectorBase base={base} onCambio={cambiarBase} />
       {cerca ? null : (
         <p
           role="status"
           style={{ position: 'absolute', left: 12, right: 12, bottom: 34, zIndex: 500, margin: 0, padding: '10px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.94)', color: 'var(--carbon)', fontSize: 16, fontWeight: 800, textAlign: 'center', pointerEvents: 'none', boxShadow: 'var(--sombra-1)' }}
         >
-          Acerca el mapa hasta tu parcela para marcar sus esquinas
+          {t('mapa_acerca')}
         </p>
       )}
     </div>
@@ -190,6 +196,7 @@ export function MapaCeldas({
   const mapa = useRef<L.Map | null>(null)
   const capa = useRef<L.LayerGroup | null>(null)
   const alElegir = useRef(onElegir)
+  const { t } = useI18n()
   const [base, cambiarBase] = useBase()
 
   useEffect(() => {
@@ -236,7 +243,7 @@ export function MapaCeldas({
 
   return (
     <div style={{ position: 'relative' }}>
-      <div ref={contenedor} className="ps-mapa" role="application" aria-label="Mapa de tu parcela dividida en cuadros" />
+      <div ref={contenedor} className="ps-mapa" role="application" aria-label={t('mapa_aria_celdas')} />
       <SelectorBase base={base} onCambio={cambiarBase} />
     </div>
   )

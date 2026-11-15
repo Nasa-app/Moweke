@@ -1,9 +1,14 @@
+import { textos as textosLib } from './textos/lib'
+import { textos as textosAnalisis } from './textos/analisis'
+import { textos as textosInicio } from './textos/inicio'
+import { textos as textosOnboarding } from './textos/onboarding'
+
 export type Idioma = 'es' | 'en'
 
 // Diccionario de la interfaz (navegación, botones, títulos y textos compartidos).
 // Los nombres de especie y variedad vienen por idioma desde el API (lib/nombres.ts); fechas y
 // cifras del satélite no se traducen aquí.
-export const diccionario: Record<string, { es: string; en: string }> = {
+const base: Record<string, { es: string; en: string }> = {
   // navegación inferior
   nav_hoy: { es: 'Hoy', en: 'Today' },
   nav_cultivos: { es: 'Cultivos', en: 'Crops' },
@@ -212,8 +217,43 @@ export const diccionario: Record<string, { es: string; en: string }> = {
   fuentes_mas_precision: { es: 'Datos más exactos: marca tu parcela', en: 'More accurate data: mark your plot' },
 }
 
-export function traducir(idioma: Idioma, clave: string): string {
+// Los textos por grupo de pantallas viven en i18n/textos/*.ts, con la clave prefijada por su grupo.
+export const diccionario: Record<string, { es: string; en: string }> = {
+  ...base,
+  ...textosLib,
+  ...textosAnalisis,
+  ...textosInicio,
+  ...textosOnboarding,
+}
+
+// Idioma en uso para el código que no es un componente (lib/*.ts): lo fija el I18nProvider en cada
+// render, igual que lib/nombres.ts. Un componente que muestre texto debe llamar a useI18n() para
+// volver a pintarse cuando cambia el idioma.
+let idiomaActivo: Idioma = 'es'
+
+export function fijarIdioma(idioma: Idioma): void {
+  idiomaActivo = idioma
+}
+
+export function idiomaVigente(): Idioma {
+  return idiomaActivo
+}
+
+// Formato local de fechas y números: es-CL para español, en-US para inglés.
+export function localeVigente(): string {
+  return idiomaActivo === 'en' ? 'en-US' : 'es-CL'
+}
+
+export type Variables = Record<string, string | number>
+
+// Reemplaza {nombre} por su valor. Una clave sin entrada se devuelve tal cual, para que se note.
+export function traducir(idioma: Idioma, clave: string, variables?: Variables): string {
   const entrada = diccionario[clave]
   if (!entrada) return clave
-  return entrada[idioma]
+  const texto = entrada[idioma]
+  return variables ? texto.replace(/\{(\w+)\}/g, (_, k: string) => (k in variables ? String(variables[k]) : `{${k}}`)) : texto
+}
+
+export function tr(clave: string, variables?: Variables): string {
+  return traducir(idiomaActivo, clave, variables)
 }

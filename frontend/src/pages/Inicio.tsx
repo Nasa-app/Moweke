@@ -13,6 +13,7 @@ import { cieloDelDia } from '../lib/tiempo'
 import { aIso, diasEntre, fechaCorta, nombreClave, nombreEfecto, nombreEspecie, nombreFase, nombreHorizonte, numero } from '../lib/formato'
 import { fasesLunares } from '../lib/luna'
 import { useI18n } from '../i18n'
+import { localeVigente } from '../i18n/dictionary'
 
 // Un foco de calor se avisa en la portada si es de los últimos días; más viejo queda en Alertas.
 const DIAS_FOCO_RECIENTE = 3
@@ -57,7 +58,7 @@ export default function Inicio() {
     helada: IconoHelada, calor: IconoCalor, sequia: IconoSequia, anegamiento: IconoInundacion, tizon: IconoLluvia,
   }
   const alertas: { clave: string; nombre: string; Icono: typeof IconoCampana }[] = []
-  if (focoReciente) alertas.push({ clave: 'incendio', nombre: 'Foco de calor cerca', Icono: IconoIncendio })
+  if (focoReciente) alertas.push({ clave: 'incendio', nombre: t('inicio_foco_cerca'), Icono: IconoIncendio })
   for (const e of porVenir) {
     if (!alertas.some((a) => a.clave === e.peligro)) alertas.push({ clave: e.peligro, nombre: nombreClave(e.peligro), Icono: ICONO_PELIGRO[e.peligro] ?? IconoCampana })
   }
@@ -70,9 +71,9 @@ export default function Inicio() {
       <div style={{ padding: '48px 20px 0 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <span className="ps-contexto">
-            {new Date().toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'short' })}
+            {new Date().toLocaleDateString(localeVigente(), { weekday: 'long', day: 'numeric', month: 'short' })}
           </span>
-          <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 30, lineHeight: 1.05 }}>Tu predio</h1>
+          <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 30, lineHeight: 1.05 }}>{t('inicio_titulo')}</h1>
         </div>
         <Link to="/perfil" aria-label={t('hoy_mi_perfil')} style={{ width: 44, height: 44, borderRadius: 22, background: 'var(--hundido)', color: 'var(--carbon)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <IconoPerfil />
@@ -85,32 +86,32 @@ export default function Inicio() {
             <IconoIncendio stroke="#fff" tamano={28} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <span style={{ fontSize: 14, fontWeight: 700, opacity: 0.9 }}>{t('emergencia_aviso')}</span>
-              <h2 id="emerg" style={{ margin: 0, fontSize: 22, fontWeight: 800, lineHeight: 1.1 }}>Foco de calor cerca de tu parcela</h2>
+              <h2 id="emerg" style={{ margin: 0, fontSize: 22, fontWeight: 800, lineHeight: 1.1 }}>{t('inicio_foco_titulo')}</h2>
               <span style={{ fontSize: 16, fontWeight: 700 }}>
-                {focoReciente.distancia_min_km !== null ? `A ${numero(focoReciente.distancia_min_km, 1)} km · ` : ''}
-                visto por satélite el {fechaCorta(focoReciente.fecha)}
+                {focoReciente.distancia_min_km !== null ? t('inicio_foco_distancia', { km: numero(focoReciente.distancia_min_km, 1) }) : ''}
+                {t('inicio_foco_visto', { fecha: fechaCorta(focoReciente.fecha) })}
               </span>
             </div>
           </div>
           <div className="ps-grid-2">
             <Link to="/alertas" style={{ minHeight: 52, borderRadius: 16, background: '#fff', color: 'var(--riesgo-texto)', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800 }}>
-              Ver detalle
+              {t('inicio_ver_detalle')}
             </Link>
             <a href="tel:132" style={{ minHeight: 52, borderRadius: 16, border: '2px solid #fff', color: '#fff', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 17, fontWeight: 800 }}>
               <IconoTelefono stroke="#fff" />
-              Bomberos 132
+              {t('inicio_bomberos')}
             </a>
           </div>
-          <span style={{ fontSize: 14, fontWeight: 700, opacity: 0.95 }}>No es una alerta oficial. Si ves humo o fuego, llama a Bomberos al 132. Si SENAPRED avisa, sigue sus indicaciones.</span>
+          <span style={{ fontSize: 14, fontWeight: 700, opacity: 0.95 }}>{t('inicio_foco_aviso')}</span>
         </section>
       ) : null}
 
       <div style={{ position: 'relative', margin: '8px 16px 0 16px' }}>
-        <EscenaTerreno conCultivo={activo !== null} etiqueta="Ilustración de tu predio con casa, árboles y tu terreno de cultivo" />
+        <EscenaTerreno conCultivo={activo !== null} etiqueta={t('inicio_escena_aria')} />
         {diaClima && (diaClima.tmax !== null || cielo) ? (
           <Link
             to="/clima"
-            aria-label={`Hoy${cielo ? `: ${cielo.texto.toLowerCase()}` : ''}${diaClima.tmax !== null ? `, máxima ${numero(diaClima.tmax)} grados` : ''}${diaClima.tmin !== null ? `, mínima ${numero(diaClima.tmin)} grados` : ''}. Ver el clima`}
+            aria-label={`${t('inicio_hoy')}${cielo ? `: ${cielo.texto.toLowerCase()}` : ''}${diaClima.tmax !== null ? t('inicio_aria_maxima', { n: numero(diaClima.tmax) }) : ''}${diaClima.tmin !== null ? t('inicio_aria_minima', { n: numero(diaClima.tmin) }) : ''}${t('inicio_aria_ver_clima')}`}
             style={{ position: 'absolute', top: '3%', left: '4%', minHeight: 48, padding: '4px 14px 4px 10px', borderRadius: 24, background: 'var(--blanco)', boxShadow: 'var(--sombra-1)', color: 'var(--carbon)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8 }}
           >
             {cielo ? <span style={{ color: 'var(--agua)', display: 'flex' }}><cielo.Icono tamano={28} /></span> : null}
@@ -126,7 +127,7 @@ export default function Inicio() {
         {alertas.length ? (
           <Link
             to="/alertas"
-            aria-label={`Avisos vigentes: ${alertas.map((a) => a.nombre).join(', ')}. Ver detalle`}
+            aria-label={t('inicio_aria_avisos', { lista: alertas.map((a) => a.nombre).join(', ') })}
             style={{ position: 'absolute', top: '9%', right: '4%', minHeight: 48, padding: '4px 12px', borderRadius: 24, background: 'var(--blanco)', boxShadow: 'var(--sombra-1)', color: 'var(--riesgo-texto)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8 }}
           >
             {alertas.slice(0, 3).map(({ clave, Icono }) => (
@@ -136,7 +137,7 @@ export default function Inicio() {
           </Link>
         ) : null}
         <span style={{ position: 'absolute', left: '4%', bottom: '10%', minHeight: 30, padding: '0 12px', borderRadius: 15, background: 'var(--blanco)', boxShadow: 'var(--sombra-1)', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center' }}>
-          Luna {fasesLunares().fases[fasesLunares().actual].nombre.toLowerCase()}
+          {t(`inicio_luna_${fasesLunares().fases[fasesLunares().actual].tipo}`)}
         </span>
         {activo ? (
           <span style={{ position: 'absolute', left: '24%', top: '52%', minHeight: 30, padding: '0 12px', borderRadius: 15, background: 'var(--blanco)', boxShadow: 'var(--sombra-1)', fontSize: 15, fontWeight: 800, display: 'flex', alignItems: 'center' }}>
@@ -150,9 +151,9 @@ export default function Inicio() {
       <div className="ps-pad-16" style={{ marginTop: 14, textAlign: 'center' }}>
         {!idParcela ? (
           <>
-            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, lineHeight: 1.1 }}>Todavía no marcaste tu parcela</h2>
+            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, lineHeight: 1.1 }}>{t('inicio_sin_parcela_titulo')}</h2>
             <p style={{ margin: '4px 0 0', fontSize: 16, fontWeight: 700, color: 'var(--texto-tenue)' }}>
-              <Link to="/terreno/perimetro">Marca tu parcela</Link> para ver su clima y qué sembrar.
+              <Link to="/terreno/perimetro">{t('inicio_sin_parcela_link')}</Link> {t('inicio_sin_parcela_resto')}
             </p>
           </>
         ) : activo ? (
@@ -162,12 +163,12 @@ export default function Inicio() {
               {fenologia?.fase_actual ? `: ${nombreFase(fenologia.fase_actual).toLowerCase()}` : ''}
             </h2>
             <p style={{ margin: '4px 0 0', fontSize: 17, fontWeight: 700, color: 'var(--texto-tenue)' }}>
-              {activo.fecha_siembra > hoy ? 'Siembra planeada para el' : 'Sembrado el'} {fechaCorta(activo.fecha_siembra)}
-              {proxima?.fecha ? ` · ${nombreClave(proxima.etapa).toLowerCase()} hacia el ${fechaCorta(proxima.fecha)}` : ''}
+              {t(activo.fecha_siembra > hoy ? 'inicio_siembra_planeada' : 'inicio_sembrado', { fecha: fechaCorta(activo.fecha_siembra) })}
+              {proxima?.fecha ? t('inicio_etapa_hacia', { etapa: nombreClave(proxima.etapa).toLowerCase(), fecha: fechaCorta(proxima.fecha) }) : ''}
             </p>
             {aviso ? <p className="ps-nota" style={{ margin: '6px 0 0' }}>{aviso}</p> : null}
             {etapas.length ? (
-              <ol aria-label="Etapas del cultivo" style={{ margin: '14px 0 0', padding: 0, listStyle: 'none', display: 'grid', gridTemplateColumns: `repeat(${etapas.length}, minmax(0, 1fr))`, gap: 6 }}>
+              <ol aria-label={t('inicio_etapas_aria')} style={{ margin: '14px 0 0', padding: 0, listStyle: 'none', display: 'grid', gridTemplateColumns: `repeat(${etapas.length}, minmax(0, 1fr))`, gap: 6 }}>
                 {etapas.map((e, i) => {
                   const pasada = e.fecha !== null && e.fecha <= hoy
                   const actual = !pasada && (i === 0 || etapas[i - 1].fecha !== null && etapas[i - 1].fecha! <= hoy)
@@ -176,7 +177,7 @@ export default function Inicio() {
                       <span aria-hidden="true" style={{ height: 8, borderRadius: 4, background: pasada ? 'var(--verde)' : actual ? 'var(--menta)' : 'var(--hundido)' }} />
                       <span style={{ fontSize: 14, fontWeight: actual || pasada ? 800 : 600, color: actual ? 'var(--verde)' : 'var(--texto-tenue)', lineHeight: 1.1 }}>
                         {nombreClave(e.etapa)}
-                        <span className="visually-hidden">{pasada ? ' (ya pasó)' : actual ? ' (ahora)' : ''}</span>
+                        <span className="visually-hidden">{pasada ? t('inicio_etapa_paso') : actual ? t('inicio_etapa_ahora') : ''}</span>
                       </span>
                     </li>
                   )
@@ -184,14 +185,14 @@ export default function Inicio() {
               </ol>
             ) : null}
             <Link to="/reportar" className="ps-btn-secundario" style={{ marginTop: 18, width: '100%', boxSizing: 'border-box', minHeight: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>
-              Cuéntanos cómo va
+              {t('inicio_cuentanos')}
             </Link>
           </>
         ) : cultivos ? (
           <>
-            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, lineHeight: 1.1 }}>Todavía no tienes cultivos</h2>
+            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, lineHeight: 1.1 }}>{t('inicio_sin_cultivos_titulo')}</h2>
             <p style={{ margin: '4px 0 0', fontSize: 16, fontWeight: 700, color: 'var(--texto-tenue)' }}>
-              <Link to="/onboarding/cultivos">Agrega qué sembraste</Link> o mira <Link to="/especies">qué conviene sembrar</Link>.
+              <Link to="/onboarding/cultivos">{t('inicio_agrega_sembraste')}</Link> {t('inicio_sin_cultivos_o')} <Link to="/especies">{t('inicio_sin_cultivos_mira')}</Link>.
             </p>
           </>
         ) : null}
@@ -203,11 +204,11 @@ export default function Inicio() {
           <span style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             <span className="ps-contexto">{nombreHorizonte('pronostico')}</span>
             <span style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.15 }}>
-              {nombreClave(porVenir[0].peligro)} hacia el {fechaCorta(porVenir[0].primer_dia)}
+              {t('inicio_peligro_hacia', { peligro: nombreClave(porVenir[0].peligro), fecha: fechaCorta(porVenir[0].primer_dia) })}
             </span>
             <span className="ps-detalle">
               {nombreEfecto(porVenir[0].efecto)}
-              {porVenir.length > 1 ? ` · y ${porVenir.length - 1} más` : ''}
+              {porVenir.length > 1 ? t('inicio_y_mas', { n: porVenir.length - 1 }) : ''}
             </span>
           </span>
           <IconoSiguiente stroke="var(--precaucion-texto)" />

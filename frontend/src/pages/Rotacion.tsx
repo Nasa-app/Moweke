@@ -3,17 +3,17 @@ import { Link } from 'react-router-dom'
 import { Screen } from '../components/Screen'
 import { CompatRing } from '../components/CompatRing'
 import { usePredio } from '../state/PredioContext'
-import { CATEGORIAS_COMIDA, candidatasSiembra, listarCultivos, type Cultivo } from '../lib/api'
+import { CATEGORIAS_COMIDA, candidatasSiembra, listarCultivos, type Candidata, type Cultivo } from '../lib/api'
 import { aPorcentaje, nombreClave, nombreEspecie } from '../lib/formato'
 import { useI18n } from '../i18n'
 
 export default function Rotacion() {
   const { t } = useI18n()
   const { idParcela } = usePredio()
-  const [especiesTerreno, setEspeciesTerreno] = useState<{ especie: string; nombre: string; compatibilidad: number; motivo: string }[]>([])
+  const [especiesTerreno, setEspeciesTerreno] = useState<{ especie: string; candidata: Candidata; compatibilidad: number; limitante: string | null }[]>([])
   const [elegido, setElegido] = useState<string | null>(null)
   const [siembras, setSiembras] = useState<Cultivo[]>([])
-  const [aviso, setAviso] = useState<string | null>(idParcela ? 'Buscando qué se da bien en tu parcela…' : 'Marca tu parcela para ver qué conviene sembrar.')
+  const [aviso, setAviso] = useState<string | null>(idParcela ? 'especies_buscando' : 'rotacion_marca_parcela')
 
   // Las cuatro especies de comida más compatibles con la parcela, del ranking real.
   useEffect(() => {
@@ -27,15 +27,15 @@ export default function Rotacion() {
           .slice(0, 4)
           .map((c) => ({
             especie: c.especie,
-            nombre: nombreEspecie(c.especie, c),
+            candidata: c,
             compatibilidad: aPorcentaje(c.puntaje),
-            motivo: c.factor_limitante && aPorcentaje(c.puntaje) < 100 ? `Lo limita: ${nombreClave(c.factor_limitante).toLowerCase()}` : 'Sin problemas',
+            limitante: c.factor_limitante && aPorcentaje(c.puntaje) < 100 ? c.factor_limitante : null,
           }))
         setEspeciesTerreno(mejores)
         setElegido(mejores[0]?.especie ?? null)
-        setAviso(mejores.length ? null : 'Ninguna especie de comida resultó apta para tu parcela.')
+        setAviso(mejores.length ? null : 'rotacion_ninguna_apta')
       })
-      .catch(() => vigente && setAviso('Todavía se está reuniendo el clima de tu parcela.'))
+      .catch(() => vigente && setAviso('rotacion_reuniendo_clima'))
     return () => {
       vigente = false
     }
@@ -53,13 +53,14 @@ export default function Rotacion() {
     }
   }, [idParcela])
 
-  const nombreElegido = especiesTerreno.find((e) => e.especie === elegido)?.nombre
+  const elegida = especiesTerreno.find((e) => e.especie === elegido)
+  const nombreElegido = elegida ? nombreEspecie(elegida.especie, elegida.candidata) : undefined
 
   return (
     <Screen>
       <div style={{ padding: '48px 20px 0 20px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
         <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 30, lineHeight: 1 }}>{t('planificar_titulo')}</h1>
-        <span className="ps-contexto">Según tu parcela</span>
+        <span className="ps-contexto">{t('rotacion_segun_parcela')}</span>
       </div>
 
       <fieldset className="ps-pad-16" style={{ marginTop: 16, border: 'none', paddingBlock: 0 }}>
@@ -67,6 +68,8 @@ export default function Rotacion() {
         <div className="ps-grid-2">
           {especiesTerreno.map((e, i) => {
             const activo = elegido === e.especie
+            const nombre = nombreEspecie(e.especie, e.candidata)
+            const motivo = e.limitante ? t('rotacion_lo_limita', { factor: nombreClave(e.limitante).toLowerCase() }) : t('rotacion_sin_problemas')
             return (
               <label
                 key={e.especie}
@@ -74,14 +77,14 @@ export default function Rotacion() {
               >
                 <input type="radio" name="cultivo" checked={activo} onChange={() => setElegido(e.especie)} className="visually-hidden" />
                 {i === 0 ? (
-                  <span style={{ position: 'absolute', left: 8, top: 8, fontSize: 13, fontWeight: 800, padding: '3px 8px', borderRadius: 10, background: 'var(--verde)', color: '#fff' }}>Mejor</span>
+                  <span style={{ position: 'absolute', left: 8, top: 8, fontSize: 13, fontWeight: 800, padding: '3px 8px', borderRadius: 10, background: 'var(--verde)', color: '#fff' }}>{t('especies_mejor')}</span>
                 ) : null}
-                <span style={{ fontSize: 18, fontWeight: 800, marginTop: i === 0 ? 18 : 0 }}>{e.nombre}</span>
-                <span role="img" aria-label={`${e.compatibilidad}% compatible con tu terreno. ${e.motivo}.`} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                <span style={{ fontSize: 18, fontWeight: 800, marginTop: i === 0 ? 18 : 0 }}>{nombre}</span>
+                <span role="img" aria-label={t('rotacion_aria_compat', { n: e.compatibilidad, motivo })} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
                   <CompatRing porcentaje={e.compatibilidad} />
                   <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
                     <b style={{ fontSize: 18, fontWeight: 800 }}>{e.compatibilidad}%</b>
-                    <span className="ps-detalle">{e.motivo}</span>
+                    <span className="ps-detalle">{motivo}</span>
                   </span>
                 </span>
               </label>
@@ -91,10 +94,10 @@ export default function Rotacion() {
             to="/especies"
             style={{ borderRadius: 20, border: '3px dashed var(--borde-control)', background: 'transparent', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 170, font: "800 18px 'Alegreya Sans', sans-serif", color: 'var(--carbon)', textDecoration: 'none' }}
           >
-            Otro
+            {t('rotacion_otro')}
           </Link>
         </div>
-        {aviso ? <p className="ps-nota">{aviso}</p> : null}
+        {aviso ? <p className="ps-nota">{t(aviso)}</p> : null}
       </fieldset>
 
       {siembras.length ? (

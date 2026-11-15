@@ -5,12 +5,25 @@ import { TERRENOS, guardarBorrador, leerBorrador } from '../../lib/comunas'
 import { leer, guardar } from '../../state/storage'
 import { useI18n } from '../../i18n'
 
-const OPCIONES = ['Papa', 'Ajo', 'Haba', 'Avena', 'Nada', 'Otro']
+// El valor ('Papa', 'Nada'...) es lo que se guarda en el dispositivo; la etiqueta es lo que se muestra.
+const OPCIONES = [
+  { valor: 'Papa', etiqueta: 'onb_antes_papa' },
+  { valor: 'Ajo', etiqueta: 'onb_antes_ajo' },
+  { valor: 'Haba', etiqueta: 'onb_antes_haba' },
+  { valor: 'Avena', etiqueta: 'onb_antes_avena' },
+  { valor: 'Nada', etiqueta: 'onb_antes_nada' },
+  { valor: 'Otro', etiqueta: 'onb_antes_otro' },
+]
+const ETIQUETA_TERRENO: Record<string, string> = {
+  Plano: 'onb_terreno_plano',
+  Ladera: 'onb_terreno_ladera',
+  Alto: 'onb_terreno_alto',
+}
 // Nada viene elegido de antemano: lo que no se responde queda sin responder, no como "Papa".
 const TEMPORADAS = [
-  { clave: 'esta', etiqueta: 'Esta temporada' },
-  { clave: 'pasado', etiqueta: 'Año pasado' },
-  { clave: 'hace2', etiqueta: 'Hace 2 años' },
+  { clave: 'esta', etiqueta: 'onb_antes_esta' },
+  { clave: 'pasado', etiqueta: 'onb_antes_pasado' },
+  { clave: 'hace2', etiqueta: 'onb_antes_hace2' },
 ] as const
 
 export default function OnbAntes() {
@@ -33,12 +46,12 @@ export default function OnbAntes() {
 
       {TEMPORADAS.map(({ clave, etiqueta }) => (
         <fieldset key={clave} className="ps-pad-16" style={{ marginTop: 14, border: 'none', padding: 0 }}>
-          <legend style={{ padding: '0 4px', marginBottom: 8, fontSize: 18, fontWeight: 800 }}>{etiqueta}</legend>
+          <legend style={{ padding: '0 4px', marginBottom: 8, fontSize: 18, fontWeight: 800 }}>{t(etiqueta)}</legend>
           <div className="ps-grid-3">
-            {OPCIONES.map((op) => (
-              <label key={op} className={`ps-pill ${elegido[clave] === op ? 'activo' : ''}`}>
-                <input type="radio" name={`t-${clave}`} defaultChecked={elegido[clave] === op} onChange={() => elegir(clave, op)} className="visually-hidden" />
-                {op}
+            {OPCIONES.map(({ valor, etiqueta: etiquetaOpcion }) => (
+              <label key={valor} className={`ps-pill ${elegido[clave] === valor ? 'activo' : ''}`}>
+                <input type="radio" name={`t-${clave}`} defaultChecked={elegido[clave] === valor} onChange={() => elegir(clave, valor)} className="visually-hidden" />
+                {t(etiquetaOpcion)}
               </label>
             ))}
           </div>
@@ -46,14 +59,14 @@ export default function OnbAntes() {
       ))}
 
       <fieldset className="ps-pad-16" style={{ marginTop: 22, border: 'none', padding: 0 }}>
-        <legend style={{ padding: '0 4px', marginBottom: 2, fontSize: 18, fontWeight: 800 }}>Sobre tu parcela (opcional)</legend>
+        <legend style={{ padding: '0 4px', marginBottom: 2, fontSize: 18, fontWeight: 800 }}>{t('onb_antes_parcela')}</legend>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-          <span style={{ fontSize: 16, fontWeight: 700, padding: '0 4px' }}>Sector o localidad</span>
+          <span style={{ fontSize: 16, fontWeight: 700, padding: '0 4px' }}>{t('onb_antes_sector')}</span>
           <input
             type="text"
             value={sector}
             maxLength={60}
-            placeholder="Por ejemplo, Aucar"
+            placeholder={t('onb_antes_sector_ejemplo')}
             onChange={(e) => {
               setSector(e.target.value)
               guardarBorrador({ sector: e.target.value })
@@ -61,8 +74,8 @@ export default function OnbAntes() {
             style={{ minHeight: 52, padding: '0 14px', borderRadius: 16, border: '2px solid var(--borde-control)', background: '#fff', color: 'var(--carbon)', font: "700 17px 'Alegreya Sans', sans-serif" }}
           />
         </label>
-        <div role="group" aria-label="Terreno" style={{ marginTop: 12 }}>
-          <span style={{ display: 'block', fontSize: 16, fontWeight: 700, padding: '0 4px 6px' }}>Terreno</span>
+        <div role="group" aria-label={t('onb_terreno')} style={{ marginTop: 12 }}>
+          <span style={{ display: 'block', fontSize: 16, fontWeight: 700, padding: '0 4px 6px' }}>{t('onb_terreno')}</span>
           <div className="ps-grid-3">
             {TERRENOS.map((tp) => (
               <button
@@ -76,7 +89,7 @@ export default function OnbAntes() {
                   guardarBorrador({ terreno: nuevo })
                 }}
               >
-                {tp}
+                {t(ETIQUETA_TERRENO[tp] ?? tp)}
               </button>
             ))}
           </div>
