@@ -92,7 +92,7 @@ app = FastAPI(title="Mogewe", docs_url="/docs" if _DOCS else None, redoc_url=Non
 _ORIGENES = [o.strip() for o in os.environ.get(
     "CORS_ORIGENES", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=_ORIGENES, allow_credentials=False,
-                   allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
+                   allow_methods=["GET", "POST", "PUT"], allow_headers=["Authorization", "Content-Type"])
 
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 

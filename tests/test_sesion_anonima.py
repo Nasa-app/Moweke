@@ -143,3 +143,13 @@ def test_crear_predios_se_acota_por_ip(monkeypatch):
     with pytest.raises(HTTPException) as error:
         intentar("10.0.0.2")                               # otra IP sigue pudiendo intentar
     assert error.value.status_code == 422
+
+
+def test_cors_permite_todos_los_metodos_que_el_frontend_usa():
+    """El navegador pregunta antes de un PUT entre dominios (web y API estan en dominios distintos); si el
+    metodo no esta permitido responde 400 y el dato no se guarda. Cada metodo de las rutas debe estar."""
+    cors = next(m for m in main.app.user_middleware if m.cls.__name__ == "CORSMiddleware")
+    permitidos = set(cors.kwargs["allow_methods"])
+    usados = {metodo for ruta in main.app.routes if getattr(ruta, "path", "").startswith("/api/")
+              for metodo in ruta.methods if metodo != "HEAD"}
+    assert usados <= permitidos, f"rutas con metodos que el CORS bloquea: {usados - permitidos}"
