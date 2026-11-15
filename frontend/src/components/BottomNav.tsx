@@ -16,6 +16,8 @@ export function BottomNav() {
   const { pathname } = useLocation()
   const { t } = useI18n()
 
+  if (pathname === '/') return null
+
   return (
     <nav className="ps-nav" aria-label={t('nav_hoy')}>
       {ITEMS.map(({ ruta, clave, Icono }) => (

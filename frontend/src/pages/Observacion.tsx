@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Screen, BarraSuperior, Titulo } from '../components/Screen'
-import { IconoFoto, IconoAudio, IconoMas, IconoCheck } from '../components/icons'
+import { IconoMas, IconoCheck } from '../components/icons'
 import { usePredio } from '../state/PredioContext'
 import { encolarReporte } from '../lib/colaReportes'
 import { indicadoresParcela, mensajeDeError, reportarIndicador, type IndicadorLocal } from '../lib/api'
@@ -132,15 +132,7 @@ export default function Observacion() {
         {error ? <p role="alert" className="ps-nota" style={{ margin: '8px 4px 0', color: 'var(--riesgo-texto)', fontWeight: 700 }}>{error}</p> : null}
       </fieldset>
 
-      <div className="ps-pad-16" style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
-        <button type="button" className="ps-btn-secundario" style={{ gap: 6, fontSize: 15, minHeight: 52 }}>
-          <IconoFoto tamano={18} />
-          {t('reportar_foto')}
-        </button>
-        <button type="button" className="ps-btn-secundario" style={{ gap: 6, fontSize: 15, minHeight: 52 }}>
-          <IconoAudio tamano={18} />
-          {t('reportar_audio')}
-        </button>
+      <div className="ps-pad-16" style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)' }}>
         <button type="button" style={{ minHeight: 52, borderRadius: 16, border: '2px dashed var(--borde-control)', background: '#fff', color: 'var(--carbon)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, font: "800 15px 'Alegreya Sans', sans-serif", cursor: 'pointer' }}>
           <IconoMas tamano={18} />
           {t('observacion_otra')}

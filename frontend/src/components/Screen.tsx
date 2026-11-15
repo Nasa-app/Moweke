@@ -3,10 +3,10 @@ import { Link } from 'react-router-dom'
 import { IconoVolver } from './icons'
 import { useI18n } from '../i18n'
 
-export function Screen({ children }: { children: ReactNode }) {
+export function Screen({ children, sinMenu }: { children: ReactNode; sinMenu?: boolean }) {
   return (
     <div className="ps-app">
-      <div className="ps-screen">{children}</div>
+      <div className="ps-screen" style={sinMenu ? { paddingBottom: 0 } : undefined}>{children}</div>
     </div>
   )
 }

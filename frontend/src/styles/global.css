@@ -432,3 +432,65 @@ button {
    lo pintaba de verde oscuro: texto verde sobre fondo verde en cada botón hecho con <Link>. */
 a.ps-btn:hover { color: var(--sobre-verde); }
 a.ps-btn-secundario:hover { color: var(--carbon); }
+
+/* ---- portada: galería tutorial con puntos ---- */
+.ps-galeria {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  border-radius: var(--radius-tarjeta);
+}
+.ps-galeria::-webkit-scrollbar {
+  display: none;
+}
+.ps-galeria:focus-visible {
+  outline: 3px solid var(--verde);
+  outline-offset: 2px;
+}
+.ps-galeria-paso {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  box-sizing: border-box;
+  text-align: center;
+}
+.ps-galeria-vista {
+  height: 150px;
+  border-radius: var(--radius-tarjeta);
+  overflow: hidden;
+  box-shadow: var(--sombra-1);
+}
+.ps-galeria-puntos {
+  margin-top: 10px;
+  display: flex;
+  justify-content: center;
+}
+.ps-galeria-puntos button {
+  width: var(--toque-min);
+  height: 28px;
+  border: none;
+  background: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.ps-galeria-puntos span {
+  width: 10px;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--borde-control);
+  opacity: 0.45;
+  transition: width 0.2s, opacity 0.2s, background 0.2s;
+}
+.ps-galeria-puntos button.activo span {
+  width: 26px;
+  background: var(--verde);
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ps-galeria-puntos span {
+    transition: none;
+  }
+}

@@ -28,6 +28,17 @@ export const diccionario: Record<string, { es: string; en: string }> = {
   reintentar: { es: 'Reintentar', en: 'Retry' },
 
   // portada / sesión
+  // portada: galería tutorial
+  tutorial_aria: { es: 'Cómo funciona mogen', en: 'How mogen works' },
+  tutorial_ir: { es: 'Ir a la pantalla', en: 'Go to screen' },
+  tutorial_1_titulo: { es: 'Marca tu parcela', en: 'Mark your plot' },
+  tutorial_1_texto: { es: 'Dibuja tu terreno en el mapa y reunimos el clima, el suelo y las imágenes de satélite de ese lugar.', en: 'Draw your land on the map and we gather the weather, soil and satellite imagery for that spot.' },
+  tutorial_2_titulo: { es: 'Mira cómo está hoy', en: 'See how today looks' },
+  tutorial_2_texto: { es: 'El tiempo, las alertas y cómo van tus cultivos, en una sola pantalla.', en: 'Weather, alerts and how your crops are doing, on one screen.' },
+  tutorial_3_titulo: { es: 'Descubre qué sembrar', en: 'Find what to plant' },
+  tutorial_3_texto: { es: 'Te mostramos qué especies y variedades se dan mejor en tu parcela, y por qué.', en: 'We show which species and varieties suit your plot best, and why.' },
+  tutorial_4_titulo: { es: 'Planifica la rotación', en: 'Plan your rotation' },
+  tutorial_4_texto: { es: 'Organiza qué sembrar después, alternando especies para cuidar el suelo.', en: 'Plan what to plant next, alternating species to look after the soil.' },
   mowege_slogan: { es: 'Cuándo sembrar, cuidar y cosechar.', en: 'When to sow, tend and harvest.' },
   telefono: { es: 'Teléfono', en: 'Phone' },
   contrasena: { es: 'Contraseña', en: 'Password' },
@@ -100,9 +111,6 @@ export const diccionario: Record<string, { es: string; en: string }> = {
 
   // reportar / observación
   reportar_titulo: { es: '¿Cómo está tu papa?', en: 'How is your potato doing?' },
-  reportar_foto: { es: 'Foto', en: 'Photo' },
-  reportar_audio: { es: 'Audio', en: 'Audio' },
-  reportar_senales: { es: 'Señales', en: 'Signs' },
   observacion_titulo: { es: '¿Qué ves en tu campo?', en: 'What do you see in your field?' },
   observacion_sub: { es: 'Marca lo que viste esta semana', en: 'Mark what you saw this week' },
   observacion_fecha: { es: 'Fecha de registro', en: 'Record date' },

@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Screen, BarraSuperior, Titulo } from '../components/Screen'
-import { IconoFoto, IconoAudio } from '../components/icons'
 import { usePredio } from '../state/PredioContext'
 import { encolarReporte } from '../lib/colaReportes'
 import { nombreEspecie } from '../lib/formato'
@@ -55,20 +54,6 @@ export default function Reportar() {
           ))}
         </div>
       </fieldset>
-
-      <div className="ps-pad-16" style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
-        <button type="button" className="ps-btn-secundario" style={{ gap: 8, fontSize: 16 }}>
-          <IconoFoto tamano={20} />
-          {t('reportar_foto')}
-        </button>
-        <button type="button" className="ps-btn-secundario" style={{ gap: 8, fontSize: 16 }}>
-          <IconoAudio tamano={20} />
-          {t('reportar_audio')}
-        </button>
-        <button type="button" onClick={() => navigate('/reportar/observacion')} className="ps-btn-secundario" aria-label="Señales del campo: floración, color de hojas, aves" style={{ gap: 8, fontSize: 16 }}>
-          {t('reportar_senales')}
-        </button>
-      </div>
 
       <div style={{ marginTop: 'auto', padding: '16px 16px 32px 16px' }}>
         <button type="button" onClick={enviar} className="ps-btn">
