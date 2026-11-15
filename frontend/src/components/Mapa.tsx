@@ -85,12 +85,18 @@ function SelectorBase({ base, onCambio }: { base: Base; onCambio: (nueva: Base) 
 
 // Mapa para dibujar el perímetro: cada toque agrega una esquina; las esquinas se pueden
 // arrastrar para corregirlas.
+// Desde este zoom se pueden marcar esquinas. Más lejos, un toque es para moverse o acercar el mapa (un doble
+// toque para acercar contaría como dos esquinas), así que se ignora y se avisa.
+export const ZOOM_MINIMO_PARA_MARCAR = 15
+
 export function MapaDibujo({
   centro,
+  zoom = 17,
   esquinas,
   onCambio,
 }: {
   centro: Punto
+  zoom?: number
   esquinas: Punto[]
   onCambio: (esquinas: Punto[]) => void
 }) {
@@ -100,6 +106,7 @@ export function MapaDibujo({
   const actuales = useRef(esquinas)
   const alCambiar = useRef(onCambio)
   const [base, cambiarBase] = useBase()
+  const [cerca, setCerca] = useState(zoom >= ZOOM_MINIMO_PARA_MARCAR)
 
   useEffect(() => {
     alCambiar.current = onCambio
@@ -110,8 +117,10 @@ export function MapaDibujo({
     const nuevo = crearMapa(contenedor.current)
     capa.current = L.layerGroup().addTo(nuevo)
     nuevo.on('click', (evento: L.LeafletMouseEvent) => {
+      if (nuevo.getZoom() < ZOOM_MINIMO_PARA_MARCAR) return
       alCambiar.current([...actuales.current, [evento.latlng.lat, evento.latlng.lng]])
     })
+    nuevo.on('zoomend', () => setCerca(nuevo.getZoom() >= ZOOM_MINIMO_PARA_MARCAR))
     mapa.current = nuevo
     return () => {
       nuevo.remove()
@@ -123,8 +132,8 @@ export function MapaDibujo({
   useCapaBase(mapa, base)
 
   useEffect(() => {
-    mapa.current?.setView(centro, 17)
-  }, [centro])
+    mapa.current?.setView(centro, zoom)
+  }, [centro, zoom])
 
   useEffect(() => {
     actuales.current = esquinas
@@ -151,6 +160,14 @@ export function MapaDibujo({
     <div style={{ position: 'relative' }}>
       <div ref={contenedor} className="ps-mapa" role="application" aria-label="Mapa para marcar las esquinas de tu parcela" />
       <SelectorBase base={base} onCambio={cambiarBase} />
+      {cerca ? null : (
+        <p
+          role="status"
+          style={{ position: 'absolute', left: 12, right: 12, bottom: 34, zIndex: 500, margin: 0, padding: '10px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.94)', color: 'var(--carbon)', fontSize: 16, fontWeight: 800, textAlign: 'center', pointerEvents: 'none', boxShadow: 'var(--sombra-1)' }}
+        >
+          Acerca el mapa hasta tu parcela para marcar sus esquinas
+        </p>
+      )}
     </div>
   )
 }

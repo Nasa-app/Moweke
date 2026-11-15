@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Screen, BarraSuperior, Titulo } from '../components/Screen'
 import { MapaDibujo } from '../components/Mapa'
+import { COMUNA_POR_DEFECTO, ZOOM_COMUNA, centroDeComuna, leerBorrador } from '../lib/comunas'
 import { aPoligono, hectareasDe, type Punto } from '../lib/geometria'
 import { IconoUbicacion } from '../components/icons'
 import { crearParcela, mensajeDeError } from '../lib/api'
@@ -10,11 +11,25 @@ import { usePredio } from '../state/PredioContext'
 import { guardar, leer } from '../state/storage'
 import { useI18n } from '../i18n'
 
-// Centro inicial del mapa cuando no se conoce la ubicación: Quemchi, la comuna piloto.
-const CENTRO_POR_DEFECTO: Punto = [-42.1581806, -73.6508595]
 // Los mismos límites que valida POST /api/parcelas.
 const HECTAREAS_MIN = 0.05
 const HECTAREAS_MAX = 1000
+// Zoom con el que se ve una parcela (se usa con la ubicación del dispositivo y con un predio ya marcado).
+const ZOOM_PARCELA = 17
+
+interface Vista {
+  centro: Punto
+  zoom: number
+}
+
+// Dónde abre el mapa. Al venir del registro, en la comuna que la persona acaba de elegir. Si no, donde quedó la
+// última parcela, y si no hay ninguna, en la comuna elegida o en la comuna piloto.
+function vistaInicial(enOnboarding: boolean): Vista {
+  const comuna = centroDeComuna(leerBorrador().comuna)
+  const ultima = leer<Punto | null>('mapa_centro', null)
+  if (!enOnboarding && ultima) return { centro: ultima, zoom: ZOOM_PARCELA }
+  return { centro: comuna ?? centroDeComuna(COMUNA_POR_DEFECTO)!, zoom: ZOOM_COMUNA }
+}
 
 export default function Perimetro() {
   const { t } = useI18n()
@@ -22,7 +37,8 @@ export default function Perimetro() {
   const [params] = useSearchParams()
   const enOnboarding = params.get('desde') === 'onboarding'
   const { setParcelaActiva, setCultivoActivo } = usePredio()
-  const [centro, setCentro] = useState<Punto>(() => leer<Punto>('mapa_centro', CENTRO_POR_DEFECTO))
+  const [vista, setVista] = useState<Vista>(() => vistaInicial(enOnboarding))
+  const comunaElegida = enOnboarding ? leerBorrador().comuna : null
   const [esquinas, setEsquinas] = useState<Punto[]>([])
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,7 +55,7 @@ export default function Perimetro() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setError(null)
-        setCentro([pos.coords.latitude, pos.coords.longitude])
+        setVista({ centro: [pos.coords.latitude, pos.coords.longitude], zoom: ZOOM_PARCELA })
       },
       () => setError('No se pudo obtener tu ubicación. Mueve el mapa hasta tu parcela.'),
       { timeout: 8000 },
@@ -65,12 +81,18 @@ export default function Perimetro() {
   return (
     <Screen>
       <BarraSuperior volverA={enOnboarding ? '/onboarding/predio' : '/terreno'} />
-      <Titulo sub="Mueve el mapa hasta tu parcela y toca cada esquina. Puedes arrastrar una esquina para corregirla.">
+      <Titulo
+        sub={
+          comunaElegida
+            ? `El mapa muestra ${comunaElegida}. Acércalo hasta tu parcela y toca cada esquina para dibujar su contorno. Puedes arrastrar una esquina para corregirla.`
+            : 'Mueve el mapa hasta tu parcela y toca cada esquina. Puedes arrastrar una esquina para corregirla.'
+        }
+      >
         {t('perimetro_titulo')}
       </Titulo>
 
       <div className="ps-pad-16" style={{ marginTop: 14, position: 'relative' }}>
-        <MapaDibujo centro={centro} esquinas={esquinas} onCambio={setEsquinas} />
+        <MapaDibujo centro={vista.centro} zoom={vista.zoom} esquinas={esquinas} onCambio={setEsquinas} />
         <button
           type="button"
           aria-label={t('perimetro_usar_ubicacion')}

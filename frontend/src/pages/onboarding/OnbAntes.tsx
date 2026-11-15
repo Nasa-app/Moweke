@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Screen, BarraSuperior, Titulo } from '../../components/Screen'
 import { StepDots } from '../../components/StepDots'
+import { TERRENOS, guardarBorrador, leerBorrador } from '../../lib/comunas'
 import { leer, guardar } from '../../state/storage'
 import { useI18n } from '../../i18n'
 
@@ -19,6 +21,10 @@ export default function OnbAntes() {
     pasado: 'Ajo',
     hace2: 'Papa',
   })
+
+  // Sobre la parcela ya marcada: opcional, y queda en este dispositivo (el servidor todavía no lo guarda).
+  const [sector, setSector] = useState(() => leerBorrador().sector)
+  const [terreno, setTerreno] = useState(() => leerBorrador().terreno)
 
   function elegir(temporada: string, valor: string) {
     guardar('onboarding_antes', { ...elegido, [temporada]: valor })
@@ -42,6 +48,44 @@ export default function OnbAntes() {
           </div>
         </fieldset>
       ))}
+
+      <fieldset className="ps-pad-16" style={{ marginTop: 22, border: 'none', padding: 0 }}>
+        <legend style={{ padding: '0 4px', marginBottom: 2, fontSize: 18, fontWeight: 800 }}>Sobre tu parcela (opcional)</legend>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+          <span style={{ fontSize: 16, fontWeight: 700, padding: '0 4px' }}>Sector o localidad</span>
+          <input
+            type="text"
+            value={sector}
+            maxLength={60}
+            placeholder="Por ejemplo, Aucar"
+            onChange={(e) => {
+              setSector(e.target.value)
+              guardarBorrador({ sector: e.target.value })
+            }}
+            style={{ minHeight: 52, padding: '0 14px', borderRadius: 16, border: '2px solid var(--borde-control)', background: '#fff', color: 'var(--carbon)', font: "700 17px 'Alegreya Sans', sans-serif" }}
+          />
+        </label>
+        <div role="group" aria-label="Terreno" style={{ marginTop: 12 }}>
+          <span style={{ display: 'block', fontSize: 16, fontWeight: 700, padding: '0 4px 6px' }}>Terreno</span>
+          <div className="ps-grid-3">
+            {TERRENOS.map((tp) => (
+              <button
+                key={tp}
+                type="button"
+                aria-pressed={terreno === tp}
+                className={`ps-pill ${terreno === tp ? 'activo' : ''}`}
+                onClick={() => {
+                  const nuevo = terreno === tp ? '' : tp
+                  setTerreno(nuevo)
+                  guardarBorrador({ terreno: nuevo })
+                }}
+              >
+                {tp}
+              </button>
+            ))}
+          </div>
+        </div>
+      </fieldset>
 
       <div style={{ marginTop: 'auto', padding: '20px 16px 32px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
         <button type="button" onClick={() => navigate('/onboarding/meta')} className="ps-btn">
