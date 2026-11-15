@@ -38,7 +38,8 @@ import services.cliente_solar as cliente_solar
 import services.indicadores_locales as indicadores_locales
 import services.ingesta_predio as ingesta_predio
 import services.multianual as multianual
-from services.auth import crear_token, decodificar_token, hash_password, verificar_password
+from services.auth import (EXPIRACION_ANONIMO_MINUTOS, crear_token, decodificar_token, hash_password,
+                          verificar_password)
 from services.db import obtener_sesion
 from services.limite_intentos import LimiteIntentos
 from services.repositorio_clima import (CAPAS_MAPA, guardar_consulta_grilla, lado_celda_para, leer_clima_diario,
@@ -102,6 +103,18 @@ _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 _REGISTROS_POR_IP = LimiteIntentos(10, 60 * 60)
 _LOGINS_POR_IP = LimiteIntentos(30, 5 * 60)
 _LOGINS_POR_CUENTA = LimiteIntentos(10, 15 * 60)
+# Sesion anonima (la app la pide sola al abrirse, sin registro): una cuenta por dispositivo. El tope
+# por IP es holgado porque en zonas rurales varios agricultores salen por la misma IP del operador
+# movil; el global acota cuantas cuentas puede crear cualquiera que reparta sus pedidos entre muchas IP.
+_ANONIMOS_POR_IP = LimiteIntentos(30, 60 * 60)
+_ANONIMOS_GLOBAL = LimiteIntentos(300, 24 * 60 * 60)
+# Cada predio nuevo dispara descargas a servicios externos. Con cuentas anonimas baratas de crear, el tope
+# por usuario (PARCELAS_MAX_POR_USUARIO) ya no basta: se acota tambien por IP. Holgado por la misma razon
+# que el de arriba (varios agricultores comparten la IP del operador movil).
+_PARCELAS_POR_IP = LimiteIntentos(30, 60 * 60)
+# Una cuenta anonima necesita un punto (usuarios.geometria es obligatoria): el de la comuna piloto,
+# igual que el registro con telefono. El predio real se marca despues.
+_PUNTO_ANONIMO = {"lon": -73.6508595, "lat": -42.1581806}
 # Reportes de indicadores locales: por usuario, para que una cuenta no llene la base ni
 # fabrique ella sola una senal "confirmada" (eso ademas exige agricultores distintos).
 _OBSERVACIONES_POR_USUARIO = LimiteIntentos(60, 60 * 60)
@@ -287,6 +300,21 @@ async def registro_agricultor(datos: RegistroAgricultor, request: Request,
     return TokenOut(access_token=crear_token(fila.id, "agricultor"))
 
 
+@app.post("/api/auth/anonimo", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
+async def sesion_anonima(request: Request, session: AsyncSession = Depends(obtener_sesion)):
+    """Cuenta sin telefono ni contrasena para usar la app sin registro. El token que devuelve ES la
+    cuenta: quien lo tiene ve y modifica los predios de esa cuenta, y nadie mas; no se puede volver a
+    entrar a ella de otra forma (no tiene datos con que iniciar sesion). Rol siempre 'agricultor'."""
+    _frenar(_ANONIMOS_POR_IP, _ip_cliente(request))
+    _frenar(_ANONIMOS_GLOBAL, "global")
+    fila = (await session.execute(
+        text("""INSERT INTO usuarios (nombre, pais, rol, geometria)
+                 VALUES ('Anónimo', 'Chile', 'agricultor', ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
+                 RETURNING id"""), _PUNTO_ANONIMO)).first()
+    await session.commit()
+    return TokenOut(access_token=crear_token(fila.id, "agricultor", EXPIRACION_ANONIMO_MINUTOS))
+
+
 @app.post("/api/auth/login", response_model=TokenOut)
 async def login_agricultor(datos: LoginAgricultor, request: Request,
                            session: AsyncSession = Depends(obtener_sesion)):
@@ -378,13 +406,14 @@ def _validar_perimetro(perimetro: dict) -> str:
 
 
 @app.post("/api/parcelas", status_code=status.HTTP_201_CREATED)
-async def crear_parcela(datos: ParcelaNueva, tareas: BackgroundTasks,
+async def crear_parcela(datos: ParcelaNueva, tareas: BackgroundTasks, request: Request,
                          session: AsyncSession = Depends(obtener_sesion),
                          usuario: dict = Depends(usuario_actual)):
     """Flujo 1, paso 7. Con `perimetro`, el predio es el poligono que el agricultor dibujo.
     Sin el, da un punto y las hectareas y el perimetro es un cuadrado de esa area centrado
     en el punto (aproximacion declarada, no un deslinde), armado en metros en la zona UTM
     del punto. En los dos casos deja encolada la ingesta y responde sin esperarla."""
+    _frenar(_PARCELAS_POR_IP, _ip_cliente(request))
     dibujado = _validar_perimetro(datos.perimetro) if datos.perimetro is not None else None
     if dibujado is None and not (_CHILE["lat_min"] <= datos.lat <= _CHILE["lat_max"]
                                  and _CHILE["lon_min"] <= datos.lon <= _CHILE["lon_max"]):

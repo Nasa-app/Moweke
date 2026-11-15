@@ -401,6 +401,12 @@ export function registrarAgricultor(datos: {
   return peticion<{ access_token: string }>('/api/auth/registro', { method: 'POST', body: datos })
 }
 
+// Cuenta sin teléfono ni contraseña que la app pide sola al abrirse: no hay pantalla de registro.
+// El token que devuelve es la cuenta (dura un año), por eso AuthContext lo guarda y no lo pierde.
+export function crearSesionAnonima() {
+  return peticion<{ access_token: string }>('/api/auth/anonimo', { method: 'POST' })
+}
+
 export function loginAgricultor(datos: { telefono: string; password: string }) {
   return peticion<{ access_token: string }>('/api/auth/login', { method: 'POST', body: datos })
 }

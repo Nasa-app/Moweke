@@ -19,6 +19,9 @@ _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
 ALGORITHM = "HS256"
 EXPIRACION_MINUTOS = 60 * 24  # 24h -- razonable para un agricultor que abre la app una vez al dia
+# Una cuenta anonima no tiene telefono ni contrasena: no hay forma de volver a entrar a ella salvo
+# con este mismo token. Por eso dura un ano (mas que una temporada de cultivo) y no un dia.
+EXPIRACION_ANONIMO_MINUTOS = 60 * 24 * 365
 
 
 class ConfiguracionAuthFaltante(RuntimeError):
@@ -34,10 +37,10 @@ def verificar_password(password: str, password_hash: str) -> bool:
     return _pwd.verify(password, password_hash)
 
 
-def crear_token(id_usuario: int, rol: str) -> str:
+def crear_token(id_usuario: int, rol: str, minutos: int = EXPIRACION_MINUTOS) -> str:
     if not SECRET_KEY:
         raise ConfiguracionAuthFaltante("JWT_SECRET_KEY no esta definida en el entorno.")
-    expira = datetime.now(timezone.utc) + timedelta(minutes=EXPIRACION_MINUTOS)
+    expira = datetime.now(timezone.utc) + timedelta(minutes=minutos)
     payload = {"sub": str(id_usuario), "rol": rol, "exp": expira}
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
