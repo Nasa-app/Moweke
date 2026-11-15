@@ -53,6 +53,7 @@ button {
   display: flex;
   flex-direction: column;
   position: relative;
+  padding-bottom: var(--reserva-nav);
 }
 .ps-pad {
   padding-left: var(--space-5);
@@ -229,7 +230,13 @@ button {
 
 /* ---- navegación inferior ---- */
 .ps-nav {
-  margin: auto 12px 20px 12px;
+  position: fixed;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  width: min(calc(100% - 24px), 406px);
+  z-index: 50;
+  box-sizing: border-box;
   padding: 8px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr)) 64px repeat(2, minmax(0, 1fr));
@@ -238,8 +245,6 @@ button {
   background: var(--blanco);
   border-radius: 30px;
   box-shadow: var(--sombra-2);
-  position: sticky;
-  bottom: 12px;
 }
 .ps-nav-item {
   min-height: var(--nav-alto);
@@ -311,6 +316,30 @@ button {
   background: var(--verde);
   color: var(--sobre-verde);
   font-weight: 800;
+}
+
+/* selector de idioma fijo arriba a la derecha: en todas las pantallas, sobre la franja libre de la barra superior */
+.ps-chrome-top {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(100%, 430px);
+  box-sizing: border-box;
+  padding: 0 16px;
+  display: flex;
+  justify-content: flex-end;
+  z-index: 50;
+  pointer-events: none;
+}
+.ps-chrome-top .ps-lang {
+  pointer-events: auto;
+  box-shadow: var(--sombra-2);
+}
+.ps-chrome-top .ps-lang button {
+  min-width: 44px;
+  min-height: 34px;
+  font-size: 14px;
 }
 
 /* ---- rejillas comunes ---- */

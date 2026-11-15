@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Screen } from '../components/Screen'
-import { BottomNav } from '../components/BottomNav'
 import { CompatRing } from '../components/CompatRing'
 import { usePredio } from '../state/PredioContext'
 import { CATEGORIAS_COMIDA, candidatasSiembra, listarCultivos, type Cultivo } from '../lib/api'
@@ -131,8 +130,6 @@ export default function Rotacion() {
           </Link>
         </div>
       </div>
-
-      <BottomNav />
     </Screen>
   )
 }

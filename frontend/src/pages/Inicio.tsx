@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Screen } from '../components/Screen'
-import { BottomNav } from '../components/BottomNav'
 import { MoonStrip } from '../components/MoonStrip'
 import { EscenaTerreno } from '../components/EscenaTerreno'
 import { SelectorCultivos } from '../components/SelectorCultivos'
@@ -233,8 +232,6 @@ export default function Inicio() {
       ) : null}
 
       <MoonStrip />
-
-      <BottomNav />
     </Screen>
   )
 }

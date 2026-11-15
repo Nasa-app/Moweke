@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { Screen, Titulo } from '../components/Screen'
-import { BottomNav } from '../components/BottomNav'
 import { EscenaTerreno } from '../components/EscenaTerreno'
 import { MiniPerimetro } from '../components/MiniPerimetro'
 import { SelectorParcelas } from '../components/SelectorParcelas'
@@ -247,8 +246,6 @@ export default function Terreno() {
           {t('onb_ver_que_sembrar')}
         </Link>
       </div>
-
-      <BottomNav />
     </Screen>
   )
 }

@@ -3,6 +3,8 @@ import { I18nProvider } from './i18n'
 import { AuthProvider } from './state/AuthContext'
 import { PredioProvider } from './state/PredioContext'
 import { RutaPrivada } from './components/RutaPrivada'
+import { BottomNav } from './components/BottomNav'
+import { LangSwitch } from './components/LangSwitch'
 
 import Portada from './pages/Portada'
 import Sesion from './pages/Sesion'
@@ -37,6 +39,10 @@ function App() {
       <AuthProvider>
         <PredioProvider>
           <BrowserRouter>
+            <div className="ps-chrome-top">
+              <LangSwitch />
+            </div>
+            <BottomNav />
             <Routes>
               <Route path="/" element={<Portada />} />
               <Route path="/sesion" element={<Sesion />} />

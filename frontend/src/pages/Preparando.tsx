@@ -158,7 +158,7 @@ export default function Preparando() {
         </p>
       ) : null}
 
-      <div style={{ position: 'sticky', bottom: 0, marginTop: 'auto', padding: '14px 16px 28px 16px', background: 'var(--arena)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ position: 'sticky', bottom: 84, marginTop: 'auto', padding: '14px 16px 28px 16px', background: 'var(--arena)', display: 'flex', flexDirection: 'column', gap: 6 }}>
         {climaListo ? (
           <Link to={enOnboarding ? '/onboarding/meta' : '/terreno'} className="ps-btn">
             {enOnboarding ? 'Seguir con el registro' : 'Ir a Tu terreno'}

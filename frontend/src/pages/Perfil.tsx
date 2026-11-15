@@ -1,6 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { Screen, BarraSuperior } from '../components/Screen'
-import { LangSwitch } from '../components/LangSwitch'
 import { useAuth } from '../state/AuthContext'
 import { usePredio } from '../state/PredioContext'
 import { IconoCandado, IconoUbicacion, IconoReloj } from '../components/icons'
@@ -50,10 +49,6 @@ export default function Perfil() {
         ))}
       </div>
 
-      <div className="ps-pad-16" style={{ margin: '16px 16px 0 16px', padding: '8px 8px 8px 16px', borderRadius: 20, background: 'var(--hundido)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 18, fontWeight: 800 }}>{t('perfil_idioma')}</span>
-        <LangSwitch />
-      </div>
 
       <div style={{ marginTop: 'auto', padding: '24px 16px 32px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <button

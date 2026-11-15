@@ -1,16 +1,12 @@
 import { Link } from 'react-router-dom'
 import { Screen } from '../components/Screen'
-import { LangSwitch } from '../components/LangSwitch'
 import { useI18n } from '../i18n'
 
 export default function Portada() {
   const { t } = useI18n()
   return (
     <Screen>
-      <div style={{ padding: '44px 20px 0 20px', display: 'flex', justifyContent: 'flex-end' }}>
-        <LangSwitch />
-      </div>
-      <div style={{ padding: '32px 0 0 0', display: 'flex', justifyContent: 'center' }}>
+      <div style={{ padding: '76px 0 0 0', display: 'flex', justifyContent: 'center' }}>
         <img src="/logo.webp" width={160} height={160} alt="Logo de Mowege: una planta con raíces entre el sol y la lluvia" />
 
       </div>

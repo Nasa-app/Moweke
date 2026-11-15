@@ -58,6 +58,7 @@
   --toque-min: 44px;
   --boton-alto: 60px;
   --nav-alto: 56px;
+  --reserva-nav: 100px;   /* espacio al pie para que la navegación fija no tape contenido */
 
   /* Sombras */
   --sombra-1: 0 1px 2px rgba(51, 48, 44, 0.06), 0 6px 16px rgba(51, 48, 44, 0.08);
