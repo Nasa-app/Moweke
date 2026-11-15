@@ -13,6 +13,7 @@ import sys
 from datetime import date, timedelta
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select, text
@@ -60,6 +61,8 @@ SIEMBRA_DIAS_ADELANTE_MAX = 180
 # Dias de clima previos a la siembra que se leen para que el balance de agua del suelo
 # no parta de un balde lleno justo el dia de la siembra.
 DIAS_PREVIOS_BALANCE = 30
+# Hasta cuantos dias hacia atras entrega el clima diario de un predio.
+DIAS_CLIMA_ATRAS_MAX = 120
 # Caja aproximada de Chile continental: CR2MET, CLSoilMaps y el Explorador Solar no
 # cubren nada fuera. Un punto dentro de la caja pero fuera de Chile (Argentina, mar)
 # pasa esta validacion y queda con sus fuentes en 'sin_cobertura'.
@@ -67,27 +70,38 @@ _CHILE = {"lat_min": -56.0, "lat_max": -17.4, "lon_min": -76.0, "lon_max": -66.0
 
 app = FastAPI(title="Mogewe")
 
+# El frontend (Vite, otro origen) llama a esta API desde el navegador con el token en la
+# cabecera Authorization: sin CORS el navegador bloquea cada llamada. Los origenes
+# permitidos vienen de CORS_ORIGENES (separados por coma); por defecto, solo el servidor
+# de desarrollo local. No se usan cookies, asi que no se permiten credenciales.
+_ORIGENES = [o.strip() for o in os.environ.get(
+    "CORS_ORIGENES", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=_ORIGENES, allow_credentials=False,
+                   allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
+
 _oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
 # ---------------------------------------------------------------- esquemas
+# Largos acotados en el borde: nada de lo que llega a estos endpoints sin autenticar
+# entra a la base ni al hash de la contrasena con tamano libre.
 class RegistroAgricultor(BaseModel):
-    nombre: str
-    telefono: str
-    password: str
-    pais: str = "Chile"
-    lat: float
-    lon: float
+    nombre: str = Field(min_length=1, max_length=120)
+    telefono: str = Field(min_length=6, max_length=32)
+    password: str = Field(min_length=6, max_length=128)
+    pais: str = Field("Chile", min_length=1, max_length=60)
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
 
 
 class LoginAgricultor(BaseModel):
-    telefono: str
-    password: str
+    telefono: str = Field(max_length=32)
+    password: str = Field(max_length=128)
 
 
 class LoginAdmin(BaseModel):
-    email: str
-    password: str
+    email: str = Field(max_length=254)
+    password: str = Field(max_length=128)
 
 
 class TokenOut(BaseModel):
@@ -128,7 +142,7 @@ async def usuario_actual(token: str | None = Depends(_oauth2), session: AsyncSes
     try:
         payload = decodificar_token(token)
     except Exception:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token invalido o expirado")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido o expirado")
     fila = (await session.execute(
         text("SELECT id, nombre, rol FROM usuarios WHERE id = :id"), {"id": int(payload["sub"])}
     )).mappings().first()
@@ -150,7 +164,7 @@ async def registro_agricultor(datos: RegistroAgricultor, session: AsyncSession =
         text("SELECT id FROM usuarios WHERE telefono = :t"), {"t": datos.telefono}
     )).first()
     if existe:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Telefono ya registrado")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Ese teléfono ya está registrado")
     fila = (await session.execute(
         text("""INSERT INTO usuarios (nombre, pais, telefono, password_hash, rol, geometria)
                  VALUES (:nombre, :pais, :telefono, :ph, 'agricultor', ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
@@ -168,7 +182,7 @@ async def login_agricultor(datos: LoginAgricultor, session: AsyncSession = Depen
         text("SELECT id, password_hash, rol FROM usuarios WHERE telefono = :t"), {"t": datos.telefono}
     )).mappings().first()
     if not fila or not fila["password_hash"] or not verificar_password(datos.password, fila["password_hash"]):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Telefono o contraseña incorrectos")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Teléfono o contraseña incorrectos")
     return TokenOut(access_token=crear_token(fila["id"], fila["rol"]))
 
 
@@ -219,7 +233,7 @@ def _validar_perimetro(perimetro: dict) -> str:
     tope de vertices y coordenadas dentro de Chile. Devuelve el GeoJSON normalizado (un
     solo anillo, cerrado, solo lon/lat) listo para ST_GeomFromGeoJSON. Levanta 422."""
     def rechazar(motivo: str):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Perimetro invalido: {motivo}")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Perímetro inválido: {motivo}")
 
     if perimetro.get("type") != "Polygon" or not isinstance(perimetro.get("coordinates"), list):
         rechazar("debe ser un GeoJSON de tipo Polygon")
@@ -227,13 +241,13 @@ def _validar_perimetro(perimetro: dict) -> str:
     if len(anillos) != 1 or not isinstance(anillos[0], list):
         rechazar("debe tener un solo contorno, sin huecos")
     if not 3 <= len(anillos[0]) <= VERTICES_MAX_PERIMETRO:
-        rechazar(f"debe tener entre 3 y {VERTICES_MAX_PERIMETRO} vertices")
+        rechazar(f"debe tener entre 3 y {VERTICES_MAX_PERIMETRO} vértices")
     anillo = []
     for punto in anillos[0]:
         if (not isinstance(punto, (list, tuple)) or len(punto) < 2
                 or not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
                            for v in punto[:2])):
-            rechazar("cada vertice debe ser [longitud, latitud]")
+            rechazar("cada vértice debe ser [longitud, latitud]")
         lon, lat = float(punto[0]), float(punto[1])
         if not (_CHILE["lat_min"] <= lat <= _CHILE["lat_max"] and _CHILE["lon_min"] <= lon <= _CHILE["lon_max"]):
             rechazar("queda fuera de la cobertura actual (Chile continental)")
@@ -241,7 +255,7 @@ def _validar_perimetro(perimetro: dict) -> str:
     if anillo[0] != anillo[-1]:
         anillo.append(anillo[0])     # un dibujo sin cerrar se cierra aca
     if len(anillo) < 4:
-        rechazar("necesita al menos tres vertices distintos")
+        rechazar("necesita al menos tres vértices distintos")
     return json.dumps({"type": "Polygon", "coordinates": [anillo]})
 
 
@@ -263,7 +277,7 @@ async def crear_parcela(datos: ParcelaNueva, tareas: BackgroundTasks,
             text("SELECT count(*) FROM parcela WHERE id_usuario = :u"), {"u": usuario["id"]})).scalar_one()
         if cantidad >= PARCELAS_MAX_POR_USUARIO:
             raise HTTPException(status.HTTP_409_CONFLICT,
-                                 f"Ya tienes {PARCELAS_MAX_POR_USUARIO} parcelas, el maximo permitido")
+                                 f"Ya tienes {PARCELAS_MAX_POR_USUARIO} parcelas, el máximo permitido")
 
     if dibujado is not None:
         # Segunda validacion, geometrica, en PostGIS: que el poligono no se cruce a si
@@ -274,10 +288,10 @@ async def crear_parcela(datos: ParcelaNueva, tareas: BackgroundTasks,
         """), {"gj": dibujado})).mappings().first()
         if not forma["valido"]:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
-                                 "El perimetro se cruza a si mismo; dibujalo de nuevo sin cruzar lineas")
+                                 "El perímetro se cruza a sí mismo; dibújalo de nuevo sin cruzar líneas")
         if not HECTAREAS_MIN_DIBUJADO <= forma["hectareas"] <= HECTAREAS_MAX:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
-                                 f"El perimetro mide {forma['hectareas']:.2f} hectareas; debe medir entre "
+                                 f"El perímetro mide {forma['hectareas']:.2f} hectáreas; debe medir entre "
                                  f"{HECTAREAS_MIN_DIBUJADO} y {HECTAREAS_MAX:.0f}")
         id_parcela = (await session.execute(text("""
             INSERT INTO parcela (id_usuario, geometria, origen_perimetro)
@@ -401,7 +415,7 @@ async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
     normales = catalogo_especies.normales_mensuales(sitio["clima"])
     if normales["tmedia"] is None:
         raise HTTPException(status.HTTP_409_CONFLICT, {
-            "mensaje": "Todavia no hay un ano de clima para este predio", "estado_ingesta": estado})
+            "mensaje": "Todavía no hay un año de clima para este predio", "estado_ingesta": estado})
 
     filtro = {c.strip() for c in categorias.split(",") if c.strip()} if categorias else None
     ranking = await catalogo_especies.ranking_idoneidad(
@@ -444,16 +458,16 @@ async def declarar_cultivo(id_parcela: int, datos: CultivoNuevo, tareas: Backgro
     if not (hoy - timedelta(days=SIEMBRA_DIAS_ATRAS_MAX) <= datos.fecha_siembra
             <= hoy + timedelta(days=SIEMBRA_DIAS_ADELANTE_MAX)):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
-                             f"La fecha de siembra debe estar entre {SIEMBRA_DIAS_ATRAS_MAX} dias atras "
-                             f"y {SIEMBRA_DIAS_ADELANTE_MAX} dias adelante")
+                             f"La fecha de siembra debe estar entre {SIEMBRA_DIAS_ATRAS_MAX} días atrás "
+                             f"y {SIEMBRA_DIAS_ADELANTE_MAX} días adelante")
     repo = RepositorioPostgres(session)
     if await repo.requisitos(datos.especie, datos.variedad_local) is None:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "La especie no esta en el catalogo")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "La especie no está en el catálogo")
     cantidad = (await session.execute(
         text("SELECT count(*) FROM predio_cultivos WHERE id_parcela = :p"), {"p": id_parcela})).scalar_one()
     if cantidad >= CULTIVOS_MAX_POR_PARCELA:
         raise HTTPException(status.HTTP_409_CONFLICT,
-                             f"La parcela ya tiene {CULTIVOS_MAX_POR_PARCELA} cultivos, el maximo permitido")
+                             f"La parcela ya tiene {CULTIVOS_MAX_POR_PARCELA} cultivos, el máximo permitido")
 
     id_cultivo = (await session.execute(text("""
         INSERT INTO predio_cultivos (id_parcela, especie, variedad_local, fecha_siembra)
@@ -520,7 +534,7 @@ async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
     manejo = (await session.execute(text(
         "SELECT tipo_labor, fecha FROM manejo_predio WHERE id_cultivo = :id"), {"id": id_cultivo})).mappings().all()
 
-    sin_clima = {"mensaje": "Todavia no hay clima diario del predio desde la fecha de siembra",
+    sin_clima = {"mensaje": "Todavía no hay clima diario del predio desde la fecha de siembra",
                  "estado_ingesta": estado}
     if clima is None:
         raise HTTPException(status.HTTP_409_CONFLICT, sin_clima)
@@ -530,7 +544,7 @@ async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
             cultivo["fecha_siembra"], parcela["lat"], awc, date.today(), manejo=tuple(dict(m) for m in manejo))
     except (catalogo_especies.EspecieSinPerfil, catalogo_especies.EspecieSinPerfilFenologico):
         raise HTTPException(status.HTTP_409_CONFLICT,
-                             "Esta especie todavia no tiene perfil fenologico: solo se puede evaluar su idoneidad de sitio")
+                             "Esta especie todavía no tiene seguimiento por etapa: solo se evalúa si el sitio le sirve")
     except ValueError:
         raise HTTPException(status.HTTP_409_CONFLICT, sin_clima)
     # Eventos que no salen del clima: focos de calor cerca del predio desde la siembra,
@@ -561,6 +575,58 @@ async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
             "variedad_local": cultivo["variedad_local"], **resultado, "curva_satelital": curva,
             "eventos_externos": externos, "incendios_revisados": incendios["revisado"],
             "correccion_sesgo": clima.attrs.get("correccion_sesgo"), "estado_ingesta": estado}
+
+
+@app.get("/api/especies/con_seguimiento")
+async def especies_con_seguimiento(session: AsyncSession = Depends(obtener_sesion),
+                                    usuario: dict = Depends(usuario_actual)):
+    """Las especies del catalogo que tienen seguimiento por fase, con sus etapas y la
+    fecha de siembra de referencia: lo que una pantalla necesita para ofrecer 'que
+    sembraste' sin llevar la lista escrita en el codigo."""
+    repo = RepositorioPostgres(session)
+    especies = []
+    for especie in sorted(await repo.especies_con_fenologia()):
+        etapas = catalogo_especies.elegir_etapas(await repo.umbrales_fenologicos(especie, None), None)
+        rasgos = await repo.rasgos_rotacion(especie) or {}
+        especies.append({"especie": especie, "etapas": [u["etapa"] for u in etapas],
+                         "nivel_madurez": await catalogo_especies.nivel_madurez(especie, None, repo),
+                         "siembra_mes": rasgos.get("siembra_mes"), "siembra_dia": rasgos.get("siembra_dia")})
+    return {"especies": especies}
+
+
+_FUENTES_CLIMA_DIARIO = ("power", "open_meteo")
+
+
+@app.get("/api/parcelas/{id_parcela}/clima")
+async def clima_parcela(id_parcela: int, tareas: BackgroundTasks,
+                         dias_atras: int = Query(30, ge=1, le=DIAS_CLIMA_ATRAS_MAX),
+                         session: AsyncSession = Depends(obtener_sesion),
+                         usuario: dict = Depends(usuario_actual)):
+    """El clima diario del predio alrededor de hoy: los ultimos `dias_atras` dias y el
+    pronostico, cada dia con su fuente y su horizonte ('observado' o 'pronostico') -- ver
+    repositorio_clima.leer_clima_diario(). Lo estimado con el ano anterior no se entrega:
+    aca se muestra tiempo, no una referencia para completar un ciclo. Si las fuentes
+    diarias estan vencidas las deja refrescandose y responde con lo que hay."""
+    await _parcela_autorizada(id_parcela, usuario, session)
+    jobs = await ingesta_predio.encolar(session, id_parcela, _FUENTES_CLIMA_DIARIO)
+    if jobs:
+        tareas.add_task(ingesta_predio.ingerir_predio, id_parcela, jobs)
+    completo = await ingesta_predio.estado_ingesta(session, id_parcela)
+    estado = {f: completo[f] for f in ("cr2met", *_FUENTES_CLIMA_DIARIO)}
+    hoy = date.today()
+    serie = await leer_clima_diario(session, id_parcela, hoy - timedelta(days=dias_atras), hoy)
+    if serie is not None:
+        serie = serie[serie["horizonte"] != "estimado"]
+    if serie is None or serie.empty:
+        raise HTTPException(status.HTTP_409_CONFLICT, {
+            "mensaje": "Todavía no hay clima diario para este predio", "estado_ingesta": estado})
+    numero = lambda v: None if v is None or v != v else round(float(v), 1)
+    return {"id_parcela": id_parcela, "hoy": hoy.isoformat(),
+            "dias": [{"fecha": fecha.date().isoformat(), "tmin": numero(d["tmin"]), "tmax": numero(d["tmax"]),
+                      "lluvia_mm": numero(d["lluvia"]), "humedad_relativa": numero(d["rh"]),
+                      "fuente": d["fuente"], "horizonte": d["horizonte"]}
+                     for fecha, d in serie.iterrows()],
+            "correccion_sesgo": serie.attrs.get("correccion_sesgo"), "estado_ingesta": estado}
 
 
 # ---------------------------------------------------------------- fuentes nuevas (extension

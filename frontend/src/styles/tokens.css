@@ -1,0 +1,66 @@
+/* Tokens de diseño de Mowege — fuente de verdad: design-system/tokens.json del handoff.
+   No inventar colores, radios ni tamaños fuera de aquí. */
+:root {
+  /* Color */
+  --arena: #ffffff;
+  --hundido: #f2f5ea;
+  --blanco: #ffffff;
+  --linea: #e3e9d6;
+  --borde-control: #75806f;
+  --carbon: #33302c;
+  --texto-tenue: #6a625a;
+  --bosque: #142807;
+  --verde-oscuro: #1d4939;
+  --verde: #3f611c;
+  --oliva: #829e30;
+  --menta: #eef4d9;
+  --sobre-verde: #ffffff;
+  --cielo: #dceef6;
+  --agua: #2b6480;
+  --celeste: #8ec3dd;
+  --favorable-fondo: #eef4d9;
+  --favorable-texto: #3f611c;
+  --precaucion-fondo: #f1e2c2;
+  --precaucion-texto: #6b4a12;
+  --riesgo-fondo: #f3d9cf;
+  --riesgo-texto: #7a3420;
+  --semaforo-verde: #617f26;
+  --semaforo-amarillo: #c99a4e;
+  --semaforo-rojo: #a9542f;
+  --ilus-tierra: #d9cbb0;
+  --ilus-hoja: #829e30;
+  --ilus-pasto: #a3b46c;
+  --ilus-techo: #8e4b2c;
+  --ilus-sol: #d9a85b;
+  --ilus-flor: #8e6fa8;
+  --ilus-maceta: #b4683f;
+
+  /* Tipografía */
+  --font-display: 'Alegreya Sans', system-ui, sans-serif;
+  --font-texto: 'Alegreya Sans', system-ui, sans-serif;
+
+  /* Espaciado */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Radios */
+  --radius-chip: 8px;
+  --radius-control: 14px;
+  --radius-boton: 16px;
+  --radius-tarjeta: 20px;
+  --radius-pildora: 22px;
+
+  /* Tamaños */
+  --toque-min: 44px;
+  --boton-alto: 60px;
+  --nav-alto: 56px;
+
+  /* Sombras */
+  --sombra-1: 0 1px 2px rgba(51, 48, 44, 0.06), 0 6px 16px rgba(51, 48, 44, 0.08);
+  --sombra-2: inset 0 1px 0 #ffffff, 0 2px 6px rgba(51, 48, 44, 0.06), 0 16px 34px rgba(63, 97, 28, 0.18);
+  --sombra-cta: 0 6px 14px rgba(63, 97, 28, 0.25);
+}
