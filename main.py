@@ -448,13 +448,17 @@ async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
                               limite: int = Query(20, ge=1, le=200),
                               categorias: str | None = Query(None, max_length=300),
                               incluir_no_aptas: bool = False,
+                              especie: str | None = Query(None, max_length=300),
                               session: AsyncSession = Depends(obtener_sesion),
                               usuario: dict = Depends(usuario_actual)):
     """Flujo 1b: especies candidatas para el predio, de mas a menos idoneas, segun
     tolerancia climatica (temperatura y helada letal), humedad (lluvia), pH y radiacion
     -- ver catalogo_especies.ranking_idoneidad(). `categorias`: lista separada por coma
     de categorias de EcoCrop (ej. 'vegetables,roots/tubers'); sin ella se dejan fuera
-    forestales, ornamentales y malezas. Responde 409 mientras no haya clima del predio."""
+    forestales, ornamentales y malezas. `limite` se aplica despues de filtrar por
+    categorias, y `especies_aptas` / `especies_evaluadas` cuentan solo esas categorias.
+    `especie`: lista separada por coma de claves; devuelve solo esas, aptas o no, sin
+    aplicar `limite` ni `incluir_no_aptas`. Responde 409 mientras no haya clima del predio."""
     parcela = await _parcela_autorizada(id_parcela, usuario, session)
     # Solo las fuentes de sitio: CR2MET vence cada mes y, si la tarea programada no
     # corrio, esta consulta lo deja refrescandose.
@@ -473,7 +477,12 @@ async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
         {"normales": normales, "ph": sitio["ph"], "ghi_mensual": sitio["ghi_mensual"], "awc_mm": sitio["awc_mm"]},
         RepositorioPostgres(session), clima=sitio["clima"], lat=parcela["lat"], categorias=filtro)
     aptas = sum(1 for r in ranking if r["apta"])
-    lista = ranking if incluir_no_aptas else ranking[:aptas]
+    if especie:
+        pedidas = {e.strip() for e in especie.split(",") if e.strip()}
+        lista = [r for r in ranking if r["especie"] in pedidas]
+        limite = max(limite, len(lista))
+    else:
+        lista = ranking if incluir_no_aptas else ranking[:aptas]
 
     inicio, fin = sitio["periodo_clima"]
     redondear = lambda serie: None if serie is None else [round(v, 2) for v in serie]

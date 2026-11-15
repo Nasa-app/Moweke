@@ -212,9 +212,20 @@ async def calcular_idoneidad(sitio: dict, especies: list[tuple[str, str | None]]
 # puede bajar el puntaje hasta PESO_LUZ -- nunca vuelve 'no apta' a una especie.
 PESO_LUZ = 0.3
 
+# Debajo de este puntaje una especie es posible pero no se recomienda: un puntaje de 0,02 solo
+# dice que el factor limitante no llega a cero. Queda con apta=False y marginal=True, y sale
+# en la lista solo si se piden las no aptas. Las simuladas por etapa nunca caen aca: para
+# ser aptas necesitan menos de 50 % de perdida, o sea puntaje >= 0,5.
+PUNTAJE_MINIMO_APTA = 0.2
+
 # Categorias de EcoCrop que no son cultivo. Una especie se deja fuera del ranking por
 # defecto solo si TODAS sus categorias estan aca; sin categoria (ej. maiz) se conserva.
 CATEGORIAS_NO_CULTIVO = frozenset({"forest/wood", "ornamentals/turf", "environmental", "weed"})
+
+# Categorias de EcoCrop que un agricultor reconoce como comida. Solo desempatan el orden:
+# con el mismo puntaje salen antes que forrajes, medicinales y plantas silvestres.
+CATEGORIAS_ALIMENTO = frozenset({"vegetables", "roots/tubers", "pulses (grain legumes)",
+                                 "cereals & pseudocereals", "fruits & nuts"})
 
 
 def respuesta_meseta(x, minimo, opt_min, opt_max, maximo) -> float | None:
@@ -440,6 +451,8 @@ async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.Da
                     fuera_de_rangos_ecocrop=fuera_de_rango,
                     # Sin 'perdida_simulada' la simulacion no completo el ciclo: puntaje 0.
                     puntaje=0.0 if fuera_de_rango else round(1 - simulacion.get("perdida_simulada", 1.0), 3))
+        if resultado["apta"] and resultado["puntaje"] < PUNTAJE_MINIMO_APTA:
+            resultado.update(apta=False, marginal=True)
 
         out.append({"especie": nombre, "especie_ecocrop": clave if clave != nombre else None,
                     "nombre_cientifico": identidad.get("nombre_cientifico"),
@@ -447,7 +460,16 @@ async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.Da
                     "categorias": sorted(cats), "forma_vida": identidad.get("forma_vida"),
                     "nivel_madurez": nivel, "fuente_requisitos": req.get("fuente"), **resultado})
 
-    out.sort(key=lambda r: (r["apta"] is True, r["puntaje"] if r["puntaje"] is not None else -1.0), reverse=True)
+    # Orden: aptas primero, por puntaje. Con el mismo puntaje, las de perfil fenologico (las
+    # que tienen seguimiento por etapa) antes que las demas, luego la comida antes que la
+    # maleza y el forraje, y al final el nombre, para que el orden no dependa de la base.
+    def prioridad(r: dict) -> tuple:
+        cats = set(r["categorias"])
+        return (r["nivel_madurez"] != "perfil_generico", bool(cats & CATEGORIAS_ALIMENTO) and "weed" not in cats)
+
+    out.sort(key=lambda r: r["especie"])
+    out.sort(key=lambda r: (r["apta"] is True, r["puntaje"] if r["puntaje"] is not None else -1.0, *prioridad(r)),
+             reverse=True)
     return out
 
 
