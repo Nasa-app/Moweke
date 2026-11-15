@@ -4,6 +4,7 @@ import { Screen } from '../components/Screen'
 import { BottomNav } from '../components/BottomNav'
 import { MoonStrip } from '../components/MoonStrip'
 import { SenalesLocales } from '../components/SenalesLocales'
+import { TarjetaRiego } from '../components/TarjetaRiego'
 import { IconoIncendio, IconoPerfil, IconoSiguiente, IconoTelefono } from '../components/icons'
 import { useSeguimiento } from '../state/useSeguimiento'
 import { verParcela, type DiaConFocos, type EventoDano } from '../lib/api'
@@ -15,7 +16,7 @@ const DIAS_FOCO_RECIENTE = 3
 
 export default function Inicio() {
   const { t } = useI18n()
-  const { idParcela, cultivos, activo, fenologia, aviso, cargando } = useSeguimiento()
+  const { idParcela, cultivos, activo, fenologia, aviso, cargando, recargar } = useSeguimiento()
   const [focos, setFocos] = useState<DiaConFocos[]>([])
 
   useEffect(() => {
@@ -122,6 +123,10 @@ export default function Inicio() {
           </span>
           <IconoSiguiente stroke="var(--precaucion-texto)" />
         </Link>
+      ) : null}
+
+      {activo && fenologia ? (
+        <TarjetaRiego riego={fenologia.riego} idCultivo={activo.id} hoy={fenologia.hoy} onCambio={recargar} />
       ) : null}
 
       {idParcela ? <SenalesLocales idParcela={idParcela} /> : null}

@@ -337,6 +337,28 @@ export interface FaseCultivo {
   eventos: EventoDano[]
 }
 
+// Cuándo regar, estimado con el balance de agua del cultivo (sin medir el suelo). Solo las
+// especies con parámetros de agua traen `disponible: true`.
+export type EstadoRiego = 'sin_sembrar' | 'fuera_de_ciclo' | 'regar_ya' | 'proximos_dias' | 'sin_necesidad'
+
+export type Riego =
+  | { disponible: false; motivo: string }
+  | { disponible: true; estado: 'sin_sembrar' | 'fuera_de_ciclo' }
+  | {
+      disponible: true
+      estado: 'regar_ya' | 'proximos_dias' | 'sin_necesidad'
+      agua_pct: number
+      umbral_pct: number
+      ks_hoy: number
+      capacidad_zona_raices_mm: number
+      lamina_mm: number | null
+      fecha_limite: string | null
+      dias_para_riego: number | null
+      dias_revisados: number
+      ultimo_riego: string | null
+      suelo_medido: boolean
+    }
+
 export interface Fenologia {
   id_cultivo: number
   id_parcela: number
@@ -349,6 +371,7 @@ export interface Fenologia {
   fase_actual: string | null
   fases: FaseCultivo[]
   estado: string
+  riego: Riego
   perdida_observada: number
   perdida_con_pronostico: number
   perdida_proyectada: number | null
@@ -483,6 +506,18 @@ export function listarCultivos(idParcela: number) {
 
 export function fenologiaCultivo(idCultivo: number) {
   return conMemoria(`fenologia/${idCultivo}`, () => peticion<Fenologia>(`/api/cultivos/${idCultivo}/fenologia`))
+}
+
+// El agricultor avisa que regó (se toma como un riego completo) o deshace un aviso. Ambos
+// vacían la memoria: el seguimiento se vuelve a calcular con el riego.
+export function declararRiego(idCultivo: number, fecha: string) {
+  olvidarLecturas()
+  return peticion<{ registrado: boolean }>(`/api/cultivos/${idCultivo}/riegos`, { method: 'POST', body: { fecha } })
+}
+
+export function anularRiego(idCultivo: number, fecha: string) {
+  olvidarLecturas()
+  return peticion<{ anulado: boolean }>(`/api/cultivos/${idCultivo}/riegos/anular`, { method: 'POST', body: { fecha } })
 }
 
 // ---------------------------------------------------------------- indicadores locales

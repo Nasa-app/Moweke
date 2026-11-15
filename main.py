@@ -60,6 +60,10 @@ HECTAREAS_MIN_DIBUJADO = 0.05     # 500 m2: menos que eso es un clic de mas, no 
 VERTICES_MAX_PERIMETRO = 500
 PARCELAS_MAX_POR_USUARIO = 20
 CULTIVOS_MAX_POR_PARCELA = 50
+# Riegos que el agricultor declara: hasta cuantos dias atras se acepta uno (el balance de agua
+# del predio mira un mes atras de la siembra) y cuantos puede tener un cultivo.
+RIEGO_DIAS_ATRAS_MAX = 30
+RIEGOS_MAX_POR_CULTIVO = 400
 # Ventana aceptada para una fecha de siembra: hacia atras hasta donde llega el clima
 # guardado del predio (un ano), hacia adelante una siembra planeada a pocos meses.
 SIEMBRA_DIAS_ATRAS_MAX = 365
@@ -101,6 +105,7 @@ _LOGINS_POR_CUENTA = LimiteIntentos(10, 15 * 60)
 # Reportes de indicadores locales: por usuario, para que una cuenta no llene la base ni
 # fabrique ella sola una senal "confirmada" (eso ademas exige agricultores distintos).
 _OBSERVACIONES_POR_USUARIO = LimiteIntentos(60, 60 * 60)
+_RIEGOS_POR_USUARIO = LimiteIntentos(60, 60 * 60)
 ESCENARIOS_CALENTAMIENTO = {"observado": None, "moderado": 0.3, "fuerte": 0.6}   # °C por decada hasta 2040
 _ALMACEN_CATALOGO: dict = {}   # catalogo de especies en memoria del proceso (ver multianual.RepositorioCacheado)
 # Detras de un proxy la conexion llega desde el proxy, no desde el cliente. Si
@@ -185,6 +190,10 @@ class CultivoNuevo(BaseModel):
     especie: str = Field(min_length=1, max_length=120)
     variedad_local: str | None = Field(None, min_length=1, max_length=120)
     fecha_siembra: date
+
+
+class RiegoDeclarado(BaseModel):
+    fecha: date
 
 
 class ZonaNueva(BaseModel):
@@ -745,6 +754,64 @@ async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
             "variedad_local": cultivo["variedad_local"], **resultado, "curva_satelital": curva,
             "eventos_externos": externos, "incendios_revisados": incendios["revisado"],
             "correccion_sesgo": clima.attrs.get("correccion_sesgo"), "estado_ingesta": estado}
+
+
+async def _cultivo_autorizado(id_cultivo: int, usuario: dict, session: AsyncSession) -> dict:
+    """El cultivo, solo si su parcela es del usuario (o el usuario es admin). Uno ajeno responde 404
+    igual que uno inexistente."""
+    cultivo = (await session.execute(text(
+        "SELECT id, id_parcela, fecha_siembra FROM predio_cultivos WHERE id = :id"), {"id": id_cultivo})).mappings().first()
+    try:
+        if cultivo is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND)
+        await _parcela_autorizada(cultivo["id_parcela"], usuario, session)
+    except HTTPException:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cultivo no existe")
+    return dict(cultivo)
+
+
+@app.post("/api/cultivos/{id_cultivo}/riegos", status_code=status.HTTP_201_CREATED)
+async def declarar_riego(id_cultivo: int, datos: RiegoDeclarado, respuesta: Response,
+                          session: AsyncSession = Depends(obtener_sesion),
+                          usuario: dict = Depends(usuario_actual)):
+    """El agricultor avisa que rego un dia. Se toma como un riego completo (deja la zona de raices
+    llena): no se le pregunta la lamina. Desde ese dia el balance de agua de /fenologia parte de
+    ahi. Declarar de nuevo el mismo dia responde 200 y no duplica."""
+    _frenar(_RIEGOS_POR_USUARIO, f"usuario:{usuario['id']}")
+    cultivo = await _cultivo_autorizado(id_cultivo, usuario, session)
+    if cultivo["fecha_siembra"] is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "El cultivo no tiene fecha de siembra")
+    hoy = date.today()
+    desde = max(cultivo["fecha_siembra"], hoy - timedelta(days=RIEGO_DIAS_ATRAS_MAX))
+    if not desde <= datos.fecha <= hoy:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                             f"La fecha del riego debe estar entre el {desde.isoformat()} y hoy")
+    parametros = {"c": id_cultivo, "f": datos.fecha}
+    if (await session.execute(text(
+            "SELECT 1 FROM manejo_predio WHERE id_cultivo = :c AND tipo_labor = 'riego' AND fecha = :f"), parametros)).first():
+        respuesta.status_code = status.HTTP_200_OK
+        return {"registrado": False}
+    cantidad = (await session.execute(text(
+        "SELECT count(*) FROM manejo_predio WHERE id_cultivo = :c AND tipo_labor = 'riego'"), {"c": id_cultivo})).scalar_one()
+    if cantidad >= RIEGOS_MAX_POR_CULTIVO:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Este cultivo ya tiene {RIEGOS_MAX_POR_CULTIVO} riegos registrados")
+    await session.execute(text(
+        "INSERT INTO manejo_predio (id_cultivo, tipo_labor, fecha) VALUES (:c, 'riego', :f)"), parametros)
+    await session.commit()
+    return {"registrado": True}
+
+
+@app.post("/api/cultivos/{id_cultivo}/riegos/anular")
+async def anular_riego(id_cultivo: int, datos: RiegoDeclarado, session: AsyncSession = Depends(obtener_sesion),
+                        usuario: dict = Depends(usuario_actual)):
+    """Borra el riego declarado ese dia (por si se marco sin querer). No falla si no habia ninguno."""
+    _frenar(_RIEGOS_POR_USUARIO, f"usuario:{usuario['id']}")
+    await _cultivo_autorizado(id_cultivo, usuario, session)
+    borrados = (await session.execute(text(
+        "DELETE FROM manejo_predio WHERE id_cultivo = :c AND tipo_labor = 'riego' AND fecha = :f RETURNING id"),
+        {"c": id_cultivo, "f": datos.fecha})).all()
+    await session.commit()
+    return {"anulado": bool(borrados)}
 
 
 @app.get("/api/especies/con_seguimiento")

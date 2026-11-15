@@ -140,26 +140,37 @@ def kc_diario(indice, siembra, fechas, c, params):
     return pd.Series(kc, index=indice)
 
 
-def balance_agua_fao56(clima, et0, kc, awc_total_mm, params, prof_suelo_m=None, riego=False, lat=None):
+def zona_raices_mm(awc_total_mm, params, prof_suelo_m=None):
+    """(TAW, RAW) en mm de la zona de raices: el agua aprovechable total y la parte que el cultivo
+    saca sin sufrir (p * TAW). El suelo somero limita las raices aunque la especie llegue mas hondo."""
+    zr = min(params.zr_m, prof_suelo_m) if prof_suelo_m else params.zr_m
+    taw = max(awc_total_mm * min(1.0, zr / PROFUNDIDAD_PERFIL_AWC_M), 1e-6)
+    return taw, params.p * taw
+
+
+def balance_agua_fao56(clima, et0, kc, awc_total_mm, params, prof_suelo_m=None, riego=False, lat=None, riegos=()):
     """Balance diario de la zona de raices (FAO-56, cap. 8). TAW = agua aprovechable de la zona de
     raices = AWC de 0-200 cm repartida en proporcion a la profundidad que alcanzan las raices
     (supone el agua aprovechable uniforme en el perfil). RAW = p * TAW. Con agotamiento Dr
     mayor que RAW el cultivo transpira solo la fraccion Ks = (TAW - Dr) / (TAW - RAW) de su demanda
     ETc = Kc * ET0. Sin escorrentia ni intercepcion; el drenaje profundo es lo que sobra sobre cero
     agotamiento. `riego`: el agricultor repone el agua (Ks = 1); el exceso de lluvia se conserva.
+    `riegos`: fechas en que el agricultor rego; cada una deja la zona de raices llena al empezar ese
+    dia (se supone un riego completo: no se conoce la lamina aplicada).
 
     Devuelve por dia: agua (fraccion de TAW disponible), ks, etc, eta, et0, ky y `exceso` (mm de
     drenaje que no cupieron en TODO el perfil: lo que usan las reglas de anegamiento)."""
-    zr = min(params.zr_m, prof_suelo_m) if prof_suelo_m else params.zr_m
-    taw = max(awc_total_mm * min(1.0, zr / PROFUNDIDAD_PERFIL_AWC_M), 1e-6)
-    raw = params.p * taw
+    taw, raw = zona_raices_mm(awc_total_mm, params, prof_suelo_m)
     et0 = np.asarray(et0, float)
     etc = np.asarray(kc, float) * et0
     lluvia = clima.lluvia.values
     n = len(clima)
     ks, eta, agua = np.ones(n), np.empty(n), np.empty(n)
+    dias_de_riego = {pd.Timestamp(f).normalize() for f in riegos}
     dr = 0.0
     for i in range(n):
+        if clima.index[i].normalize() in dias_de_riego:
+            dr = 0.0
         ks[i] = 1.0 if riego or dr <= raw else max(0.0, (taw - dr) / (taw - raw))
         eta[i] = ks[i] * etc[i]
         dr = min(taw, max(0.0, dr - lluvia[i] + eta[i]))

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { fenologiaCultivo, listarCultivos, mensajeDeError, type Cultivo, type Fenologia } from '../lib/api'
 import { usePredio } from './PredioContext'
 
@@ -9,6 +9,10 @@ export function useSeguimiento() {
   const { idParcela, idCultivoActivo, setCultivoActivo } = usePredio()
   const [cultivos, setCultivos] = useState<Cultivo[] | null>(null)
   const [seguimiento, setSeguimiento] = useState<{ idCultivo: number; fenologia: Fenologia | null; aviso: string | null } | null>(null)
+  // Subir este número vuelve a pedir el seguimiento (por ejemplo, tras anotar un riego); mientras
+  // llega lo nuevo se sigue mostrando lo anterior.
+  const [version, setVersion] = useState(0)
+  const recargar = useCallback(() => setVersion((v) => v + 1), [])
 
   useEffect(() => {
     if (!idParcela) return
@@ -41,7 +45,7 @@ export function useSeguimiento() {
     return () => {
       vigente = false
     }
-  }, [idCultivoActivo])
+  }, [idCultivoActivo, version])
 
   const activo = cultivos?.find((c) => c.id === idCultivoActivo) ?? null
   const delActivo = seguimiento && seguimiento.idCultivo === idCultivoActivo ? seguimiento : null
@@ -53,5 +57,6 @@ export function useSeguimiento() {
     aviso: delActivo?.aviso ?? null,
     cargando: (idParcela !== null && cultivos === null) || (activo !== null && delActivo === null),
     setCultivoActivo,
+    recargar,
   }
 }

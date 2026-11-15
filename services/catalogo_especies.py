@@ -40,7 +40,8 @@ import pandas as pd
 
 from pheno_engine import ClimaIncompleto, Cultivo, simular
 from motor_estres import (PROFUNDIDAD_SUELO_M, ParametrosAgua, Regla, balance_agua, balance_agua_fao56, evaluar,
-                          et0_hargreaves, factores_et0, fases, kc_diario)
+                          et0_hargreaves, factores_et0, fases, kc_diario, zona_raices_mm)
+from riego import recomendar_riego
 
 
 class EspecieSinPerfil(Exception):
@@ -81,16 +82,17 @@ async def construir_parametros_agua(especie: str, repo: RepositorioEspecies) -> 
 
 def balance_del_cultivo(clima: pd.DataFrame, lat: float, siembra, fechas: dict, c: Cultivo, params: ParametrosAgua | None,
                         cap_mm: float | None, riego: bool = False, et0_factores: list | None = None,
-                        prof_suelo_m: float | None = None) -> pd.DataFrame:
+                        prof_suelo_m: float | None = None, riegos: tuple = ()) -> pd.DataFrame:
     """El balance de agua que usa un cultivo: FAO-56 por zona de raices si hay parametros; si no, el balde del
-    perfil completo de antes (con riego, sin sequia). La ET0 es Hargreaves calibrada por mes contra Penman-Monteith."""
+    perfil completo de antes (con riego, sin sequia). La ET0 es Hargreaves calibrada por mes contra Penman-Monteith.
+    `riegos`: fechas en que el agricultor rego (solo las usa el balance FAO-56)."""
     if params is None:
         agua = balance_agua(clima, lat, cap_mm if cap_mm else 100.0)
         return agua.assign(agua=1.0) if riego else agua
     et0 = et0_hargreaves(clima, lat) * factores_et0(et0_factores, clima.index)
     kc = kc_diario(clima.index, siembra, fechas, c, params)
     return balance_agua_fao56(clima, et0, kc, cap_mm if cap_mm else AWC_POR_DEFECTO_MM, params,
-                              prof_suelo_m=prof_suelo_m, riego=riego, lat=lat)
+                              prof_suelo_m=prof_suelo_m, riego=riego, lat=lat, riegos=riegos)
 
 
 async def nivel_madurez(especie: str, variedad_local: str | None, repo: RepositorioEspecies) -> str:
@@ -816,7 +818,9 @@ async def seguimiento_cultivo(especie: str, variedad_local: str | None, repo: Re
     horizonte = clima["horizonte"]
     fechas = simular(numerico, siembra, lat, c)
     params = await construir_parametros_agua(especie, repo)
-    agua = balance_del_cultivo(numerico, lat, siembra, fechas, c, params, cap_mm, False, et0_factores, prof_suelo_m)
+    riegos = tuple(pd.Timestamp(m["fecha"]) for m in manejo if m["tipo_labor"] == "riego")
+    agua = balance_del_cultivo(numerico, lat, siembra, fechas, c, params, cap_mm, False, et0_factores, prof_suelo_m,
+                               riegos=riegos)
     resultado = evaluar(numerico, agua, siembra, fechas, c, reglas, manejo=manejo)
 
     dia = lambda t: t.date().isoformat()
@@ -876,12 +880,20 @@ async def seguimiento_cultivo(especie: str, variedad_local: str | None, repo: Re
         estado_cultivo = "ciclo_sin_completar_en_la_serie"
     else:
         estado_cultivo = resultado["estado"]
+    if params is None:
+        riego_hoy = {"disponible": False, "motivo": "especie_sin_parametros_de_agua"}
+    else:
+        taw, raw = zona_raices_mm(cap_mm if cap_mm else AWC_POR_DEFECTO_MM, params, prof_suelo_m)
+        hechos = [r for r in riegos if r <= hoy]
+        riego_hoy = {**recomendar_riego(agua, taw, raw, horizonte, hoy, siembra, fechas.get(c.etapas[-1][0]),
+                                        max(hechos) if hechos else None),
+                     "suelo_medido": bool(cap_mm)}
     return {
         "cultivo": c.nombre, "siembra": dia(siembra), "hoy": dia(hoy),
         "horizontes": {"observado_hasta": ultimo("observado"), "pronostico_hasta": ultimo("pronostico"),
                        "estimado_hasta": ultimo("estimado")},
         "etapas": etapas, "fase_actual": fase_actual, "fases": fases_out,
-        "estado": estado_cultivo,
+        "estado": estado_cultivo, "riego": riego_hoy,
         "perdida_observada": _perdida_de(observados),
         "perdida_con_pronostico": _perdida_de(con_pronostico),
         "perdida_proyectada": _perdida_de(eventos) if resultado["ciclo_completo"] else None,
