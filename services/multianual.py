@@ -318,14 +318,16 @@ def resumen_periodo(tipico: float, dificil: float) -> dict:
 async def ranking_multianual(sitio: dict, repo, historia: dict[int, pd.DataFrame] | None, clima: pd.DataFrame | None,
                              lat: float | None, categorias: set[str] | None = None, riego: bool = False,
                              delta_temp: float = 0.0, simular_curadas: bool = True,
-                             calentamiento_c_por_decada: float | None = None) -> tuple[list[dict], dict | None]:
+                             calentamiento_c_por_decada: float | None = None,
+                             incluir_malezas: bool = False) -> tuple[list[dict], dict | None]:
     """El ranking de ranking_idoneidad() con el criterio multianual: cada especie se puntua en cada ano de la serie
     historica de la parcela y `apta` pasa a ser su ano dificil reciente (el peor decil) >= PUNTAJE_MINIMO_APTA.
     `puntaje` queda como la compatibilidad tipica reciente y se agrega `puntaje_ano_dificil` y, en `clima`, los tres
     periodos y la categoria. Devuelve (ranking, resumen de la serie); sin al menos ANIOS_RECIENTE + MIN_ANIOS_PERIODO
     anos de historia devuelve el ranking de un ano y resumen None. `calentamiento_c_por_decada`: un escenario que
     reemplaza la tendencia observada de la temperatura (un supuesto, no un pronostico); None usa la observada."""
-    base = await ce.ranking_idoneidad(sitio, repo, clima=clima, lat=lat, categorias=categorias, riego=riego)
+    base = await ce.ranking_idoneidad(sitio, repo, clima=clima, lat=lat, categorias=categorias, riego=riego,
+                                      incluir_malezas=incluir_malezas)
     if not historia or len(historia) < ANIOS_RECIENTE + MIN_ANIOS_PERIODO:
         return base, None
 

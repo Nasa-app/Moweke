@@ -679,12 +679,17 @@ def _clima_ciclico(clima: pd.DataFrame | None) -> pd.DataFrame | None:
 
 async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.DataFrame | None = None,
                              lat: float | None = None, categorias: set[str] | None = None,
-                             riego: bool = False) -> list[dict]:
+                             riego: bool = False, incluir_malezas: bool = False) -> list[dict]:
     """Todo el catalogo contra un predio, ordenado de mas a menos idoneo. Una consulta
     por tabla (no por especie). sitio: lo que espera puntuar_especie() mas 'awc_mm'.
 
     categorias: si se pasa, solo especies con alguna de esas categorias; si no, se dejan
     fuera las que son unicamente CATEGORIAS_NO_CULTIVO.
+
+    Las que EcoCrop marca como maleza ('weed') no se recomiendan aunque tengan otra categoria
+    de uso (avena silvestre, quelite, chufa salian en "Comida" porque tambien son 'cereals' o
+    'vegetables'): solo entran con `incluir_malezas` (para consultar una especie puntual) o si
+    `categorias` pide 'weed' de forma expresa.
 
     Una especie curada con perfil fenologico (papa) y su fila de EcoCrop (solanum_tuberosum)
     salen una sola vez, con el nombre curado. Si la simulacion por fase del perfil curado
@@ -719,6 +724,8 @@ async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.Da
         nombre = gemelo.get(clave, clave)
         identidad = identidades.get(nombre) or identidades.get(clave) or {}
         cats = set(identidad.get("categorias") or [])
+        if "weed" in cats and not incluir_malezas and "weed" not in (categorias or ()):
+            continue
         if categorias is not None:
             if not cats & categorias:
                 continue

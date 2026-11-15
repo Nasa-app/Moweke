@@ -150,9 +150,13 @@ def test_empates_ordenan_comida_primero_y_el_resultado_no_depende_del_orden_de_e
     esperado = None
     for orden in (clones, clones[::-1], clones[2:] + clones[:2]):
         repo = repo_prueba(con_luz=False, extra=orden)
-        lista = [r["especie"] for r in ranking(sitio, repo) if r["especie"].endswith(("_maleza", "_forraje", "_comida"))]
+        # las malezas no se recomiendan por defecto; con el permiso expreso mantienen su lugar en el desempate
+        lista = [r["especie"] for r in ranking(sitio, repo, incluir_malezas=True)
+                 if r["especie"].endswith(("_maleza", "_forraje", "_comida"))]
         esperado = esperado or lista
         assert lista == esperado
+        por_defecto = [r["especie"] for r in ranking(sitio, repo) if r["especie"].endswith(("_maleza", "_forraje", "_comida"))]
+        assert "a_maleza" not in por_defecto
     assert esperado == ["c_comida", "d_comida", "a_maleza", "b_forraje"]
 
 
