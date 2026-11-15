@@ -216,6 +216,7 @@ export interface Candidata {
   nombres_comunes: string | null
   categorias: string[]
   apta: boolean | null
+  marginal?: boolean
   puntaje: number | null
   factores: Partial<Record<Factor, number>>
   factor_limitante?: Factor | null
@@ -359,11 +360,24 @@ export function reintentarIngesta(idParcela: number) {
   )
 }
 
-export function candidatasSiembra(idParcela: number) {
-  return conMemoria(`candidatas/${idParcela}`, () =>
-    peticion<CandidatasSiembra>(`/api/parcelas/${idParcela}/candidatas_siembra`, {
-      query: { limite: 200, incluir_no_aptas: true },
-    }),
+// Categorías de EcoCrop que el agricultor reconoce como comida.
+export const CATEGORIAS_COMIDA = ['vegetables', 'roots/tubers', 'pulses (grain legumes)', 'cereals & pseudocereals'] as const
+
+// Cada pantalla pide solo lo que muestra: el servidor filtra por categorías y recorta
+// después, así el corte nunca deja afuera especies aptas de un grupo. `especie` trae solo
+// esa (apta o no); `limite` en 1 sirve cuando solo importan los datos del sitio.
+export function candidatasSiembra(
+  idParcela: number,
+  opciones: { categorias?: readonly string[]; limite?: number; especie?: string } = {},
+) {
+  const query = {
+    limite: opciones.limite ?? 20,
+    incluir_no_aptas: false,
+    categorias: opciones.categorias?.length ? opciones.categorias.join(',') : undefined,
+    especie: opciones.especie,
+  }
+  return conMemoria(`candidatas/${idParcela}/${JSON.stringify(query)}`, () =>
+    peticion<CandidatasSiembra>(`/api/parcelas/${idParcela}/candidatas_siembra`, { query }),
   )
 }
 

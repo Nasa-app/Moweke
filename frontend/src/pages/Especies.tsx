@@ -5,13 +5,13 @@ import { CompatRing } from '../components/CompatRing'
 import { Chip } from '../components/Chip'
 import { IconoInfo, IconoSiguiente } from '../components/icons'
 import { usePredio } from '../state/PredioContext'
-import { ApiError, candidatasSiembra, mensajeDeError, type Candidata, type CandidatasSiembra } from '../lib/api'
+import { ApiError, CATEGORIAS_COMIDA, candidatasSiembra, mensajeDeError, type Candidata, type CandidatasSiembra } from '../lib/api'
 import { aPorcentaje, fechaCorta, nombreClave, nombreEspecie } from '../lib/formato'
 import { useI18n } from '../i18n'
 
 // Grupos de las categorías de uso de EcoCrop (el campo `categorias` de cada candidata).
 const GRUPOS = [
-  { clave: 'comida', nombre: 'Comida', categorias: ['vegetables', 'roots/tubers', 'pulses (grain legumes)', 'cereals & pseudocereals'] },
+  { clave: 'comida', nombre: 'Comida', categorias: CATEGORIAS_COMIDA },
   { clave: 'frutas', nombre: 'Frutas', categorias: ['fruits & nuts'] },
   { clave: 'forraje', nombre: 'Forraje', categorias: ['forage/pasture', 'cover crop'] },
   { clave: 'todas', nombre: 'Todas', categorias: null },
@@ -25,15 +25,18 @@ export default function Especies() {
   const { t } = useI18n()
   const { idParcela } = usePredio()
   const [grupo, setGrupo] = useState<(typeof GRUPOS)[number]['clave']>('comida')
-  const [ranking, setRanking] = useState<CandidatasSiembra | null>(null)
+  const [resultado, setResultado] = useState<{ grupo: string; datos: CandidatasSiembra } | null>(null)
   const [sinClima, setSinClima] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const categorias = GRUPOS.find((g) => g.clave === grupo)?.categorias ?? undefined
+  const ranking = resultado?.grupo === grupo ? resultado.datos : null
 
+  // Se pide solo el grupo que se mira: el servidor filtra por categorías y recorta después.
   useEffect(() => {
     if (!idParcela) return
     let vigente = true
-    candidatasSiembra(idParcela)
-      .then((r) => vigente && setRanking(r))
+    candidatasSiembra(idParcela, { categorias, limite: 3 + FILAS_MAX })
+      .then((r) => vigente && setResultado({ grupo, datos: r }))
       .catch((err) => {
         if (!vigente) return
         if (err instanceof ApiError && err.status === 409) setSinClima(true)
@@ -42,14 +45,11 @@ export default function Especies() {
     return () => {
       vigente = false
     }
-  }, [idParcela])
+  }, [idParcela, grupo, categorias])
 
   if (!idParcela) return <Navigate to="/terreno/perimetro" replace />
 
-  const categorias = GRUPOS.find((g) => g.clave === grupo)?.categorias ?? null
-  const aptas = (ranking?.candidatas ?? []).filter(
-    (c) => c.apta && (!categorias || c.categorias.some((cat) => (categorias as readonly string[]).includes(cat))),
-  )
+  const aptas = (ranking?.candidatas ?? []).filter((c) => c.apta)
   const destacadas = aptas.slice(0, 3)
   const resto = aptas.slice(3, 3 + FILAS_MAX)
   const enlace = (c: Candidata) => `/especies/analisis?especie=${encodeURIComponent(c.especie)}`
@@ -131,9 +131,9 @@ export default function Especies() {
           ))}
         </ol>
       ) : null}
-      {aptas.length > 3 + FILAS_MAX ? (
+      {ranking && ranking.especies_aptas > aptas.length ? (
         <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
-          Se muestran las {3 + FILAS_MAX} mejores de {aptas.length}.
+          Se muestran las {aptas.length} mejores de {ranking.especies_aptas}.
         </p>
       ) : null}
 

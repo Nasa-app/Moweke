@@ -30,7 +30,7 @@ export default function Terreno() {
     let vigente = true
     Promise.all([
       verParcela(idParcela).then((p) => vigente && setParcela(p)),
-      candidatasSiembra(idParcela)
+      candidatasSiembra(idParcela, { limite: 1 })
         .then((r) => vigente && setSitio(r.datos_sitio))
         .catch((err) => {
           if (err instanceof ApiError && err.status === 409) {

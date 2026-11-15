@@ -43,7 +43,7 @@ export default function Analisis() {
   useEffect(() => {
     if (!idParcela || !clave) return
     let vigente = true
-    candidatasSiembra(idParcela)
+    candidatasSiembra(idParcela, { especie: clave })
       .then((r) => vigente && setCandidata(r.candidatas.find((c) => c.especie === clave) ?? null))
       .catch((err) => vigente && setError(mensajeDeError(err, 'No pudimos cargar el análisis. Revisa tu conexión e inténtalo de nuevo.')))
     return () => {
@@ -82,7 +82,7 @@ export default function Analisis() {
     <Screen>
       <BarraSuperior
         volverA="/especies"
-        derecha={candidata ? <Chip tono={candidata.apta ? 'favorable' : 'riesgo'}>{candidata.apta ? 'Apta para tu parcela' : 'No apta para tu parcela'}</Chip> : undefined}
+        derecha={candidata ? <Chip tono={candidata.apta ? 'favorable' : candidata.marginal ? 'precaucion' : 'riesgo'}>{candidata.apta ? 'Apta para tu parcela' : candidata.marginal ? 'Muy poco compatible con tu parcela' : 'No apta para tu parcela'}</Chip> : undefined}
       />
 
       <section aria-labelledby="especie" className="ps-pad-16" style={{ marginTop: 14 }}>

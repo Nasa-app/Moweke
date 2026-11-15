@@ -4,7 +4,7 @@ import { Screen, BarraSuperior } from '../../components/Screen'
 import { StepDots } from '../../components/StepDots'
 import { IconoCheck, IconoSiguiente } from '../../components/icons'
 import { usePredio } from '../../state/PredioContext'
-import { candidatasSiembra } from '../../lib/api'
+import { CATEGORIAS_COMIDA, candidatasSiembra } from '../../lib/api'
 import { nombreEspecie } from '../../lib/formato'
 import { useI18n } from '../../i18n'
 
@@ -24,7 +24,7 @@ export default function OnbListo() {
   useEffect(() => {
     if (!idParcela) return
     let vigente = true
-    candidatasSiembra(idParcela)
+    candidatasSiembra(idParcela, { categorias: CATEGORIAS_COMIDA, limite: 3 })
       .then((r) => vigente && setMejores(r.candidatas.filter((c) => c.apta).slice(0, 3).map((c) => nombreEspecie(c.especie, c))))
       .catch(() => vigente && setReuniendo(true))
     return () => {

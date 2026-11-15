@@ -4,7 +4,7 @@ import { Screen } from '../components/Screen'
 import { BottomNav } from '../components/BottomNav'
 import { CompatRing } from '../components/CompatRing'
 import { usePredio } from '../state/PredioContext'
-import { candidatasSiembra } from '../lib/api'
+import { CATEGORIAS_COMIDA, candidatasSiembra } from '../lib/api'
 import { aPorcentaje, nombreClave, nombreEspecie } from '../lib/formato'
 import { useI18n } from '../i18n'
 
@@ -19,12 +19,11 @@ export default function Rotacion() {
   useEffect(() => {
     if (!idParcela) return
     let vigente = true
-    candidatasSiembra(idParcela)
+    candidatasSiembra(idParcela, { categorias: CATEGORIAS_COMIDA, limite: 4 })
       .then((r) => {
         if (!vigente) return
-        const comida = ['vegetables', 'roots/tubers', 'pulses (grain legumes)', 'cereals & pseudocereals']
         const mejores = r.candidatas
-          .filter((c) => c.apta && c.categorias.some((cat) => comida.includes(cat)))
+          .filter((c) => c.apta)
           .slice(0, 4)
           .map((c) => ({
             especie: c.especie,
