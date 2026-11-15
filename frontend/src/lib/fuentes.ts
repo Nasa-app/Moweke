@@ -26,10 +26,10 @@ export const FUENTES: FuenteDato[] = [
     nota: 'NASA POWER y CR2MET (Chile) · todos los días, con unos días de atraso',
   },
   {
-    titulo: 'Humedad del suelo y sol',
-    detalle: 'Qué tan mojada está la tierra en tu región y cuánto sol llega',
+    titulo: 'Sol',
+    detalle: 'Cuánto sol llega a tu zona en cada mes',
     origenes: ['NASA'],
-    nota: 'NASA POWER · celdas de 50 a 100 km: referencia de la región, no de tu parcela',
+    nota: 'NASA POWER · celda de unos 100 km: referencia de la región, no de tu parcela',
   },
   {
     titulo: 'Incendios',

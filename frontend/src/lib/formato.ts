@@ -1,6 +1,7 @@
 // Cómo se muestran al agricultor los nombres y fechas que el API entrega como claves
 // (ajo_chilote, emergencia->tuberizacion, 2026-11-14).
 import type { CategoriaClima, Escenario, SerieClimatica } from './api'
+import { idiomaDeNombres, nombreCatalogado } from './nombres'
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
@@ -75,10 +76,16 @@ export function ventanaEnMeses(desde: number, hasta: number): string {
   return desde === hasta ? MESES[desde - 1] : `${MESES[desde - 1]} a ${MESES[hasta - 1]}`
 }
 
-// Las especies curadas vienen con clave propia en español (ajo_chilote). Las de EcoCrop
-// usan como clave su nombre científico (chenopodium_quinoa) y traen una lista de nombres
-// comunes, casi siempre en inglés: se muestra el primero y, si no hay, el científico.
-export function nombreEspecie(especie: string, candidata?: { nombres_comunes: string | null; nombre_cientifico: string | null }): string {
+// El nombre sale, en este orden, de la candidata (nombre_es / nombre_en del idioma activo), del
+// catálogo de nombres y, si ninguno lo tiene, de la clave: las curadas usan una clave en español
+// (ajo_chilote) y las de EcoCrop su nombre científico, con el primer nombre común como último recurso.
+export function nombreEspecie(
+  especie: string,
+  candidata?: { nombres_comunes: string | null; nombre_cientifico: string | null; nombre_es?: string | null; nombre_en?: string | null },
+): string {
+  const propio = candidata ? (idiomaDeNombres() === 'en' ? candidata.nombre_en : candidata.nombre_es) : null
+  const nombre = propio || nombreCatalogado(especie)
+  if (nombre) return capitalizar(nombre)
   const cientifico = candidata?.nombre_cientifico
   const esDeEcocrop = cientifico ? cientifico.trim().toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_') === especie : false
   if (!esDeEcocrop) return capitalizar(especie.replace(/_/g, ' '))

@@ -4,7 +4,7 @@ import { Screen } from '../components/Screen'
 import { BottomNav } from '../components/BottomNav'
 import { CompatRing } from '../components/CompatRing'
 import { usePredio } from '../state/PredioContext'
-import { CATEGORIAS_COMIDA, candidatasSiembra } from '../lib/api'
+import { CATEGORIAS_COMIDA, candidatasSiembra, listarCultivos, type Cultivo } from '../lib/api'
 import { aPorcentaje, nombreClave, nombreEspecie } from '../lib/formato'
 import { useI18n } from '../i18n'
 
@@ -13,6 +13,7 @@ export default function Rotacion() {
   const { idParcela } = usePredio()
   const [especiesTerreno, setEspeciesTerreno] = useState<{ especie: string; nombre: string; compatibilidad: number; motivo: string }[]>([])
   const [elegido, setElegido] = useState<string | null>(null)
+  const [siembras, setSiembras] = useState<Cultivo[]>([])
   const [aviso, setAviso] = useState<string | null>(idParcela ? 'Buscando qué se da bien en tu parcela…' : 'Marca tu parcela para ver qué conviene sembrar.')
 
   // Las cuatro especies de comida más compatibles con la parcela, del ranking real.
@@ -40,6 +41,20 @@ export default function Rotacion() {
       vigente = false
     }
   }, [idParcela])
+
+  // Lo que el agricultor ya declaró sembrar, de la más antigua a la más reciente (las últimas tres).
+  useEffect(() => {
+    if (!idParcela) return
+    let vigente = true
+    listarCultivos(idParcela)
+      .then((r) => vigente && setSiembras([...r.cultivos].sort((a, b) => a.fecha_siembra.localeCompare(b.fecha_siembra)).slice(-3)))
+      .catch(() => vigente && setSiembras([]))
+    return () => {
+      vigente = false
+    }
+  }, [idParcela])
+
+  const nombreElegido = especiesTerreno.find((e) => e.especie === elegido)?.nombre
 
   return (
     <Screen>
@@ -83,29 +98,29 @@ export default function Rotacion() {
         {aviso ? <p className="ps-nota">{aviso}</p> : null}
       </fieldset>
 
-      <section className="ps-pad-16" style={{ margin: '12px 16px 0 16px', background: 'var(--menta)', color: 'var(--carbon)', borderRadius: 22, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 className="ps-h2">{t('planificar_rotacion')}</h2>
-          <span className="ps-chip ps-chip-neutro">Ejemplo</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          {['Papa', 'Haba', 'Ajo'].map((cultivo, i) => (
-            <span key={cultivo} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <span style={{ width: 48, height: 48, borderRadius: 24, background: 'var(--blanco)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800 }}>
-                  {cultivo[0]}
+      {siembras.length ? (
+        <section className="ps-pad-16" style={{ margin: '12px 16px 0 16px', background: 'var(--menta)', color: 'var(--carbon)', borderRadius: 22, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <h2 className="ps-h2">{t('planificar_lo_sembrado')}</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around' }}>
+            {siembras.map((c, i) => (
+              <span key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                  <span style={{ width: 48, height: 48, borderRadius: 24, background: 'var(--blanco)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800 }}>
+                    {nombreEspecie(c.especie)[0]}
+                  </span>
+                  <span className="ps-detalle">{nombreEspecie(c.especie)}</span>
+                  <span className="ps-nota">{c.fecha_siembra.slice(0, 4)}</span>
                 </span>
-                <span className="ps-detalle">{cultivo}</span>
+                {i < siembras.length - 1 ? <span aria-hidden="true" style={{ color: 'var(--texto-tenue)' }}>→</span> : null}
               </span>
-              {i < 2 ? <span style={{ color: 'var(--texto-tenue)' }}>→</span> : null}
-            </span>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="ps-pad-16" style={{ margin: '10px 16px 12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <Link to="/terreno" className="ps-btn">
-          {t('planificar_analizar_terreno')}
+        <Link to={elegido ? `/especies/analisis?especie=${encodeURIComponent(elegido)}` : '/especies'} className="ps-btn">
+          {nombreElegido ? `${t('planificar_ver')} ${nombreElegido}` : t('planificar_que_sembrar')}
         </Link>
         <div className="ps-grid-2">
           <Link to="/especies" className="ps-card" style={{ textDecoration: 'none', color: 'var(--carbon)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 16, fontWeight: 800, minHeight: 48 }}>

@@ -59,7 +59,7 @@ export default function OnbCultivos() {
 
   return (
     <Screen>
-      <BarraSuperior volverA="/onboarding/meta" derecha={<StepDots paso={4} total={4} />} />
+      <BarraSuperior volverA="/onboarding/meta" derecha={<StepDots paso={3} total={3} />} />
       <Titulo sub="De estos cultivos te avisamos etapa por etapa. Para los demás, mira qué conviene sembrar en el análisis de tu terreno.">{t('onb_cultivos_titulo')}</Titulo>
 
       {!idParcela ? (

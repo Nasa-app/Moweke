@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Screen, BarraSuperior, Titulo } from '../../components/Screen'
-import { StepDots } from '../../components/StepDots'
 import { TERRENOS, guardarBorrador, leerBorrador } from '../../lib/comunas'
 import { leer, guardar } from '../../state/storage'
 import { useI18n } from '../../i18n'
@@ -29,7 +28,7 @@ export default function OnbAntes() {
 
   return (
     <Screen>
-      <BarraSuperior volverA="/onboarding/predio" derecha={<StepDots paso={2} total={4} />} />
+      <BarraSuperior volverA="/onboarding/meta" />
       <Titulo sub={t('onb_antes_sub')}>{t('onb_antes_titulo')}</Titulo>
 
       {TEMPORADAS.map(({ clave, etiqueta }) => (

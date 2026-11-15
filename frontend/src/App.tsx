@@ -16,6 +16,7 @@ import Perfil from './pages/Perfil'
 import Rotacion from './pages/Rotacion'
 import Terreno from './pages/Terreno'
 import Perimetro from './pages/Perimetro'
+import Parcelas from './pages/Parcelas'
 import Preparando from './pages/Preparando'
 import Zonas from './pages/Zonas'
 import Especies from './pages/Especies'
@@ -51,6 +52,7 @@ function App() {
 
               <Route path="/planificar" element={<RutaPrivada><Rotacion /></RutaPrivada>} />
               <Route path="/terreno" element={<RutaPrivada><Terreno /></RutaPrivada>} />
+              <Route path="/terreno/parcelas" element={<RutaPrivada><Parcelas /></RutaPrivada>} />
               <Route path="/terreno/perimetro" element={<RutaPrivada><Perimetro /></RutaPrivada>} />
               <Route path="/terreno/preparando" element={<RutaPrivada><Preparando /></RutaPrivada>} />
               <Route path="/terreno/zonas" element={<RutaPrivada><Zonas /></RutaPrivada>} />

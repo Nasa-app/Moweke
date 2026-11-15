@@ -1,18 +1,12 @@
 import { useState } from 'react'
 import { anularRiego, declararRiego, mensajeDeError, type Riego } from '../lib/api'
-import { fechaCorta } from '../lib/formato'
+import { diasEntre, fechaCorta, numero } from '../lib/formato'
 import { useI18n } from '../i18n'
 
 type RiegoConEstimacion = Extract<Riego, { estado: 'regar_ya' | 'proximos_dias' | 'sin_necesidad' }>
 
 const dias = (n: number) => `${n} ${n === 1 ? 'día' : 'días'}`
-
-// Cómo viene cambiando la humedad del suelo de NASA en la última semana; menos de 3 puntos no se llama cambio.
-function tendencia(ultimos: { zona_raices: number }[]): string {
-  if (ultimos.length < 2) return ''
-  const cambio = ultimos[ultimos.length - 1].zona_raices - ultimos[0].zona_raices
-  return cambio >= 0.03 ? 'subiendo' : cambio <= -0.03 ? 'bajando' : 'estable'
-}
+const haceDias = (n: number) => (n <= 0 ? 'hoy' : n === 1 ? 'ayer' : `hace ${n} días`)
 
 // Cuándo regar según el balance de agua del cultivo. Es una estimación con el clima y el suelo de
 // la parcela, no una medición: la tarjeta lo dice y deja anotar un riego para que el cálculo parta de ahí.
@@ -73,21 +67,30 @@ export function TarjetaRiego({ riego, idCultivo, hoy, onCambio }: {
         {r.ultimo_riego ? ` · ${t('riego_ultimo')}: ${fechaCorta(r.ultimo_riego)}` : ''}
       </span>
 
-      {r.humedad_suelo_nasa ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="ps-chip ps-chip-clima">NASA</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span className="ps-contexto">Estos días</span>
+        {r.lluvia_reciente ? (
+          <span style={{ fontSize: 16, fontWeight: 700 }}>
+            {r.lluvia_reciente.dias_con_dato < Math.ceil(r.lluvia_reciente.dias / 2)
+              ? 'Todavía sin datos de lluvia de estos días.'
+              : !r.lluvia_reciente.ultima_lluvia
+                ? `No llovió en los ${r.lluvia_reciente.dias} días hasta ayer.`
+                : `Llovieron ${numero(r.lluvia_reciente.total_mm, 1)} mm en los ${r.lluvia_reciente.dias} días hasta ayer · la última lluvia fue ${haceDias(r.lluvia_reciente.ultima_lluvia.hace_dias)} (${numero(r.lluvia_reciente.ultima_lluvia.mm, 1)} mm).`}
+          </span>
+        ) : null}
+        {r.humedad_suelo_nasa ? (
+          <span style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <span className="ps-chip ps-chip-clima" style={{ flexShrink: 0 }}>NASA</span>
             <span style={{ fontSize: 16, fontWeight: 700 }}>
-              Humedad del suelo en tu región: {Math.round(r.humedad_suelo_nasa.zona_raices * 100)}%
-              {tendencia(r.humedad_suelo_nasa.ultimos_dias) ? ` · ${tendencia(r.humedad_suelo_nasa.ultimos_dias)}` : ''}
+              {`Humedad del suelo ${haceDias(diasEntre(r.humedad_suelo_nasa.fecha, hoy))}: ${Math.round(r.humedad_suelo_nasa.zona_raices * 100)}% de lo que puede guardar`}
             </span>
           </span>
-          <span className="ps-nota">
-            {r.humedad_suelo_nasa.fuente}, al {fechaCorta(r.humedad_suelo_nasa.fecha)}. Es una celda de unos {r.humedad_suelo_nasa.resolucion_km} km:
-            sirve de referencia de la región, no mide tu parcela.
-          </span>
-        </div>
-      ) : null}
+        ) : null}
+        <span className="ps-nota">
+          Lluvia: CR2MET y Open-Meteo, en el cuadro de unos 5 km donde está tu parcela.
+          {r.humedad_suelo_nasa ? ` Humedad: NASA POWER, celda de unos ${r.humedad_suelo_nasa.resolucion_km} km con ${diasEntre(r.humedad_suelo_nasa.fecha, hoy)} días de atraso; es de la región, no de tu parcela, y no es el mismo porcentaje de arriba.` : ''}
+        </span>
+      </div>
 
       {regoHoy ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

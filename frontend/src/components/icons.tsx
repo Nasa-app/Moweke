@@ -228,3 +228,63 @@ export function IconoAudio(props: Props) {
     </svg>
   )
 }
+
+// Estado del cielo (Hoy). Mismo trazo que el resto: línea de 2 px, sin relleno, currentColor.
+const NUBE = 'M7 18a4 4 0 1 1 .9-7.9A5 5 0 0 1 17.5 11 3.5 3.5 0 0 1 17 18z'
+
+export function IconoSol(props: Props) {
+  return IconoHoy(props)
+}
+
+export function IconoParcialmenteNublado(props: Props) {
+  return (
+    <svg {...base(props)} stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 3v1.5M3 8h1.5M4.6 4.6l1 1M12 4.6l-1 1" />
+      <path d="M7.2 11.2a3.3 3.3 0 1 1 5.1-3.6" />
+      <path d={'M9 20a3.5 3.5 0 1 1 .8-6.9A4.5 4.5 0 0 1 18.5 14 3 3 0 0 1 18 20z'} />
+    </svg>
+  )
+}
+
+export function IconoNublado(props: Props) {
+  return (
+    <svg {...base(props)} stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d={NUBE} />
+    </svg>
+  )
+}
+
+export function IconoNiebla(props: Props) {
+  return (
+    <svg {...base(props)} stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+      <path d="M4 9h16M6 13h12M4 17h16" />
+    </svg>
+  )
+}
+
+export function IconoNieve(props: Props) {
+  return (
+    <svg {...base(props)} stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 13a4 4 0 1 1 .9-7.9A5 5 0 0 1 17.5 6 3.5 3.5 0 0 1 17 13z" />
+      <path d="M8 17v.01M12 17v.01M16 17v.01M10 20.5v.01M14 20.5v.01" />
+    </svg>
+  )
+}
+
+export function IconoTormenta(props: Props) {
+  return (
+    <svg {...base(props)} stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 13a4 4 0 1 1 .9-7.9A5 5 0 0 1 17.5 6 3.5 3.5 0 0 1 17 13z" />
+      <path d="M12.5 13l-2.5 4h3l-2 4" />
+    </svg>
+  )
+}
+
+export function IconoSequia(props: Props) {
+  return (
+    <svg {...base(props)} stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3c3 4 5.5 6.6 5.5 10a5.5 5.5 0 0 1-11 0C6.5 9.6 9 7 12 3z" />
+      <path d="M4 4l16 16" />
+    </svg>
+  )
+}

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Screen, BarraSuperior, Titulo } from '../components/Screen'
 import { MapaDibujo } from '../components/Mapa'
-import { COMUNA_POR_DEFECTO, ZOOM_COMUNA, centroDeComuna, leerBorrador } from '../lib/comunas'
+import { COMUNA_POR_DEFECTO, ZOOM_COMUNA, centroDeComuna, guardarComunaDeParcela, leerBorrador } from '../lib/comunas'
 import { aPoligono, hectareasDe, type Punto } from '../lib/geometria'
 import { IconoUbicacion } from '../components/icons'
 import { crearParcela, mensajeDeError } from '../lib/api'
@@ -68,6 +68,7 @@ export default function Perimetro() {
     try {
       const parcela = await crearParcela(aPoligono(esquinas))
       guardar('mapa_centro', [parcela.lat, parcela.lon])
+      if (comunaElegida) guardarComunaDeParcela(parcela.id, comunaElegida)
       setParcelaActiva(parcela.id)
       setCultivoActivo(null)
       navigate(`/terreno/preparando${enOnboarding ? '?desde=onboarding' : ''}`)

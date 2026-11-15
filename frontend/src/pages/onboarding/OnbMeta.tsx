@@ -22,13 +22,17 @@ export default function OnbMeta() {
   const { t } = useI18n()
   return (
     <Screen>
-      <BarraSuperior volverA="/onboarding/antes" derecha={<StepDots paso={3} total={4} />} />
+      <BarraSuperior volverA="/onboarding/predio" derecha={<StepDots paso={2} total={3} />} />
       <Titulo>{t('onb_meta_titulo')}</Titulo>
 
       <div className="ps-pad-16" style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <Opcion a="/onboarding/cultivos" titulo={t('onb_seguir_cultivo')} sub={t('onb_seguir_cultivo_sub')} />
         <Opcion a="/onboarding/listo" titulo={t('onb_elegir_que_sembrar')} sub={t('onb_elegir_que_sembrar_sub')} />
       </div>
+
+      <Link to="/onboarding/antes" className="ps-btn-texto" style={{ margin: '12px 16px 0 16px' }}>
+        {t('onb_antes_opcional')}
+      </Link>
 
       <p style={{ margin: 'auto 20px 36px 20px', paddingTop: 16, textAlign: 'center', fontSize: 16, fontWeight: 700, color: 'var(--texto-tenue)' }}>
         {t('onb_cambiar_despues')}

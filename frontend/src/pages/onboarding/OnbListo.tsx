@@ -8,16 +8,9 @@ import { CATEGORIAS_COMIDA, candidatasSiembra } from '../../lib/api'
 import { nombreEspecie } from '../../lib/formato'
 import { useI18n } from '../../i18n'
 
-const CANALES = [
-  { clave: 'app', etiqueta: 'App' },
-  { clave: 'whatsapp', etiqueta: 'WhatsApp' },
-  { clave: 'sms', etiqueta: 'SMS' },
-]
-
 export default function OnbListo() {
   const { t } = useI18n()
   const { idParcela } = usePredio()
-  const [activos, setActivos] = useState<Set<string>>(new Set(['app', 'whatsapp']))
   const [mejores, setMejores] = useState<string[] | null>(null)
   const [reuniendo, setReuniendo] = useState(false)
 
@@ -40,16 +33,9 @@ export default function OnbListo() {
         ? { a: '/terreno/preparando', titulo: 'Reuniendo los datos de tu parcela', detalle: 'Toca para ver el avance' }
         : { a: '/terreno', titulo: 'Analizando tu terreno…', detalle: 'Buscando qué se da bien en tu parcela' }
 
-  function alternar(clave: string) {
-    const copia = new Set(activos)
-    if (copia.has(clave)) copia.delete(clave)
-    else copia.add(clave)
-    setActivos(copia)
-  }
-
   return (
     <Screen>
-      <BarraSuperior volverA="/onboarding/meta" derecha={<StepDots paso={4} total={4} />} />
+      <BarraSuperior volverA="/onboarding/meta" derecha={<StepDots paso={3} total={3} />} />
 
       <div style={{ margin: '24px 20px 0 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
         <span aria-hidden="true" style={{ width: 52, height: 52, borderRadius: 26, background: 'var(--verde)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -70,18 +56,6 @@ export default function OnbListo() {
         </span>
         <IconoSiguiente />
       </Link>
-
-      <fieldset className="ps-pad-16" style={{ marginTop: 24, border: 'none', paddingBlock: 0 }}>
-        <legend style={{ padding: '0 4px', marginBottom: 8, fontSize: 20, fontWeight: 800 }}>{t('onb_avisos_titulo')}</legend>
-        <div className="ps-grid-3">
-          {CANALES.map((c) => (
-            <label key={c.clave} className={`ps-pill ${activos.has(c.clave) ? 'activo' : ''}`} style={{ minHeight: 56 }}>
-              <input type="checkbox" checked={activos.has(c.clave)} onChange={() => alternar(c.clave)} className="visually-hidden" />
-              {c.etiqueta}
-            </label>
-          ))}
-        </div>
-      </fieldset>
 
       <div style={{ marginTop: 'auto', padding: '20px 16px 32px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
         <Link to="/especies" className="ps-btn">

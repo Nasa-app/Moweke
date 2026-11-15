@@ -3,6 +3,7 @@
 // tiene endpoint (reportes, observaciones, rotación comparada, red de semillas) usa datos
 // de ejemplo desde lib/mock.ts, marcados como tal en la UI.
 import { guardar, leer } from '../state/storage'
+import type { NombresCatalogo } from './nombres'
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000'
 
@@ -123,6 +124,7 @@ export interface ParcelaResumen {
   lat: number
   lon: number
   hectareas: number
+  perimetro: Poligono
 }
 
 export interface Parcela extends ParcelaResumen {
@@ -185,6 +187,8 @@ export interface DiaClima {
   tmax: number | null
   lluvia_mm: number | null
   humedad_relativa: number | null
+  // Código de tiempo del día (WMO, de Open-Meteo); null donde el modelo no lo trae (días viejos).
+  codigo_tiempo: number | null
   fuente: string | null
   horizonte: 'observado' | 'pronostico'
 }
@@ -256,6 +260,8 @@ export interface Candidata {
   especie: string
   nombre_cientifico: string | null
   nombres_comunes: string | null
+  nombre_es: string | null
+  nombre_en: string | null
   categorias: string[]
   apta: boolean | null
   marginal?: boolean
@@ -353,6 +359,14 @@ export interface HumedadSueloNasa {
   resolucion_km: number
 }
 
+// Lo que llovió en el predio los últimos días (la serie diaria del propio predio), en milímetros y días.
+export interface LluviaReciente {
+  dias: number
+  dias_con_dato: number
+  total_mm: number
+  ultima_lluvia: { hace_dias: number; mm: number } | null
+}
+
 export type Riego =
   | { disponible: false; motivo: string }
   | { disponible: true; estado: 'sin_sembrar' | 'fuera_de_ciclo' }
@@ -370,6 +384,7 @@ export type Riego =
       ultimo_riego: string | null
       suelo_medido: boolean
       humedad_suelo_nasa?: HumedadSueloNasa
+      lluvia_reciente?: LluviaReciente
     }
 
 export interface Fenologia {
@@ -505,6 +520,11 @@ export function candidatasSiembra(
 }
 
 // ---------------------------------------------------------------- cultivos
+// Catálogo público de nombres por idioma; no usa la memoria de lecturas porque se pide una vez al abrir.
+export function nombresEspecies() {
+  return peticion<NombresCatalogo>('/api/especies/nombres')
+}
+
 export function especiesConSeguimiento() {
   return conMemoria('especies', () => peticion<{ especies: EspecieConSeguimiento[] }>('/api/especies/con_seguimiento'))
 }

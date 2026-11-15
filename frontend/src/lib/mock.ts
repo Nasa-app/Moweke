@@ -1,5 +1,5 @@
 // Datos de ejemplo para las pantallas cuyo endpoint real todavía no existe: explorar la
-// zona, historial, fuentes y señales para reportar. Predio,
+// zona, fuentes y señales para reportar. Predio,
 // mapa, clima, especies candidatas, cultivos, seguimiento y alertas ya leen el API real
 // (lib/api.ts). Nada de esto se presenta como dato real.
 export const FUENTE_EJEMPLO = 'Fuente: ejemplo, sin endpoint todavía'
@@ -18,13 +18,6 @@ export const novedadesZona = [
   { titulo: 'Temporada', valor: '+1,2° más cálida', chip: null },
   { titulo: 'Verdor del campo', valor: 'Subiendo', chip: 'Satélite' },
   { titulo: 'Papa en Quemchi', valor: 'Con hojas', chip: 'Vecinos' },
-]
-
-export const historialTemporadas = [
-  { anio: 2026, especie: 'Papa', familia: 'Familia papa' },
-  { anio: 2025, especie: 'Ajo chilote', familia: 'Familia ajo' },
-  { anio: 2024, especie: 'Papa', familia: 'Familia papa' },
-  { anio: 2023, especie: 'Haba', familia: 'Legumbre' },
 ]
 
 export const fuentesDatos = [

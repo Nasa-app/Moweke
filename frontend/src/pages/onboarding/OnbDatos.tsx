@@ -19,7 +19,7 @@ export default function OnbDatos() {
 
   return (
     <Screen>
-      <BarraSuperior volverA="/explorar" derecha={<StepDots paso={1} total={4} />} />
+      <BarraSuperior volverA="/explorar" derecha={<StepDots paso={1} total={3} />} />
       <Titulo sub="Elige tu comuna. Después marcarás tu parcela sobre el mapa, tocando cada esquina.">
         ¿Dónde está tu parcela?
       </Titulo>
@@ -56,33 +56,28 @@ export default function OnbDatos() {
       </section>
 
       <section aria-label="Privacidad" className="ps-pad-16" style={{ margin: '18px 16px 0 16px', background: 'var(--cielo)', color: 'var(--carbon)', borderRadius: 20, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, textAlign: 'center', fontSize: 14, fontWeight: 700 }}>
-          <span>Sin tu nombre</span>
-          <span>No se vende</span>
-          <span>Lo borras</span>
-        </div>
+        <h2 className="ps-h2">{t('onb_priv_titulo')}</h2>
+        <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8, fontSize: 16, fontWeight: 700, lineHeight: 1.3 }}>
+          <li>{t('onb_priv_nombre')}</li>
+          <li>{t('onb_priv_uso')}</li>
+          <li>{t('onb_priv_borrar')}</li>
+        </ul>
         <label style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48, padding: '0 12px', borderRadius: 14, background: 'var(--blanco)', cursor: 'pointer' }}>
           <input type="checkbox" defaultChecked={leerBorrador().acepto} onChange={(e) => guardarBorrador({ acepto: e.target.checked })} style={{ width: 24, height: 24, accentColor: 'var(--verde)' }} />
           <span style={{ flex: 1, fontSize: 16, fontWeight: 800 }}>{t('onb_acepto')}</span>
         </label>
       </section>
 
-      <div style={{ marginTop: 'auto', padding: '20px 16px 32px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ position: 'sticky', bottom: 0, marginTop: 'auto', padding: '14px 16px 28px 16px', background: 'var(--arena)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <button type="button" onClick={() => navigate(IR_AL_MAPA)} className="ps-btn" style={{ gap: 8 }}>
+          <IconoUbicacion stroke="#fff" />
+          {t('onb_seguir_marcar')}
+        </button>
         {idParcela ? (
-          <>
-            <button type="button" onClick={() => navigate('/onboarding/antes')} className="ps-btn">
-              {t('seguir')}
-            </button>
-            <button type="button" onClick={() => navigate(IR_AL_MAPA)} className="ps-btn-texto">
-              Ya marcaste una parcela · marcar otra
-            </button>
-          </>
-        ) : (
-          <button type="button" onClick={() => navigate(IR_AL_MAPA)} className="ps-btn" style={{ gap: 8 }}>
-            <IconoUbicacion stroke="#fff" />
-            Marcar mi parcela en el mapa
+          <button type="button" onClick={() => navigate('/onboarding/meta')} className="ps-btn-secundario">
+            {t('onb_quedarme')}
           </button>
-        )}
+        ) : null}
       </div>
     </Screen>
   )

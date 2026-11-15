@@ -53,6 +53,18 @@ export function leerBorrador(): BorradorPredio {
   }
 }
 
+// La comuna de cada parcela, anotada al marcarla en el registro (cuando la persona acaba de elegirla). Las
+// parcelas marcadas de otra forma, o antes de este registro, quedan sin comuna: no se adivina.
+export function guardarComunaDeParcela(idParcela: number, comuna: string): void {
+  guardar('comunas_parcelas', { ...leer<Record<string, string>>('comunas_parcelas', {}), [String(idParcela)]: comuna })
+}
+
+export function comunaDeParcela(idParcela: number | null): string | null {
+  if (idParcela === null) return null
+  const comuna = leer<Record<string, string>>('comunas_parcelas', {})[String(idParcela)]
+  return COMUNAS.some((c) => c.nombre === comuna) ? comuna : null
+}
+
 export function guardarBorrador(cambios: Partial<BorradorPredio>): void {
   guardar(CLAVE_BORRADOR, { ...leerBorrador(), ...cambios })
 }

@@ -5,6 +5,7 @@ import { BottomNav } from '../components/BottomNav'
 import { Chip } from '../components/Chip'
 import { IconoCheck } from '../components/icons'
 import { useSeguimiento } from '../state/useSeguimiento'
+import { nombreVariedad } from '../lib/nombres'
 import { aIso, aPorcentaje, diasEntre, fechaCorta, nombreClave, nombreEspecie, nombreFase, nombreHorizonte, numero } from '../lib/formato'
 import { useI18n } from '../i18n'
 
@@ -65,7 +66,7 @@ export default function Main() {
         <>
           <div className="ps-pad-16" style={{ marginTop: 14, display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 24, fontWeight: 800 }}>{nombreEspecie(activo.especie)}</span>
-            {activo.variedad_local ? <span style={{ fontSize: 16, color: 'var(--texto-tenue)' }}>{activo.variedad_local}</span> : null}
+            {activo.variedad_local ? <span style={{ fontSize: 16, color: 'var(--texto-tenue)' }}>{nombreVariedad(activo.especie, activo.variedad_local)}</span> : null}
             {fenologia?.fase_actual ? <Chip tono="acento">{nombreFase(fenologia.fase_actual)}</Chip> : null}
             {fenologia?.estado === 'perdido' ? <Chip tono="riesgo">Cultivo perdido</Chip> : null}
           </div>

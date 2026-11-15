@@ -4,18 +4,19 @@ import { Screen, BarraSuperior, Titulo } from '../components/Screen'
 import { Chip, type TonoChip } from '../components/Chip'
 import { mensajeDeError, reintentarIngesta, verParcela, type EstadoIngesta, type ParcelaDetalle } from '../lib/api'
 import { numero } from '../lib/formato'
+import { CLASE_ORIGEN } from '../lib/fuentes'
 import { usePredio } from '../state/PredioContext'
 import { useI18n } from '../i18n'
 
 // Las fuentes de ingesta_predio.py agrupadas como las entiende quien mira su predio.
 const GRUPOS = [
-  { titulo: 'Clima del último año', detalle: 'Temperatura y lluvia de cada día', fuentes: ['cr2met'] },
-  { titulo: 'Clima de estos días', detalle: 'Últimos días y pronóstico', fuentes: ['power', 'open_meteo'] },
-  { titulo: 'Suelo', detalle: 'Acidez y agua que guarda', fuentes: ['soilgrids', 'clsoilmaps'] },
-  { titulo: 'Sol', detalle: 'Sol de cada mes', fuentes: ['explorador_solar'] },
-  { titulo: 'Relieve', detalle: 'Altura y pendiente', fuentes: ['relieve'] },
-  { titulo: 'Satélite', detalle: 'Verdor del campo', fuentes: ['sentinel2_nubes', 'sentinel2_ndvi', 'sentinel2_celdas'] },
-  { titulo: 'Focos de calor', detalle: 'Incendios cerca de tu parcela', fuentes: ['firms'] },
+  { titulo: 'Clima del último año', detalle: 'Temperatura y lluvia de cada día', fuentes: ['cr2met'], origenes: ['Chile'], fuente: 'CR2MET, del Centro de Ciencia del Clima y la Resiliencia (Chile)' },
+  { titulo: 'Clima de estos días', detalle: 'Últimos días y pronóstico', fuentes: ['power', 'open_meteo'], origenes: ['NASA', 'Otras fuentes'], fuente: 'NASA POWER (últimos días) y Open-Meteo.com (pronóstico a 16 días)' },
+  { titulo: 'Suelo', detalle: 'Acidez y agua que guarda', fuentes: ['soilgrids', 'clsoilmaps'], origenes: ['Otras fuentes', 'Chile'], fuente: 'SoilGrids, de ISRIC (acidez y textura), y CLSoilMaps, de Chile (agua que guarda)' },
+  { titulo: 'Sol', detalle: 'Sol de cada mes', fuentes: ['explorador_solar'], origenes: ['NASA', 'Chile'], fuente: 'NASA POWER y Explorador Solar de Chile (respaldo)' },
+  { titulo: 'Relieve', detalle: 'Altura y pendiente', fuentes: ['relieve'], origenes: ['Copernicus'], fuente: 'Modelo de elevación Copernicus GLO-30' },
+  { titulo: 'Satélite', detalle: 'Verdor del campo', fuentes: ['sentinel2_nubes', 'sentinel2_ndvi', 'sentinel2_celdas'], origenes: ['Copernicus'], fuente: 'Sentinel-2, de la ESA (Copernicus)' },
+  { titulo: 'Focos de calor', detalle: 'Incendios cerca de tu parcela', fuentes: ['firms'], origenes: ['NASA'], fuente: 'NASA FIRMS (satélites VIIRS)' },
 ] as const
 
 type Avance = 'cargando' | 'listo' | 'fallo' | 'sin_cobertura' | 'no_disponible'
@@ -112,7 +113,7 @@ export default function Preparando() {
         {cargando ? 'Preparando tu parcela' : 'Tu parcela está lista'}
       </Titulo>
       <p className="ps-pad ps-cuerpo" style={{ margin: '8px 0 0 0' }}>
-        Se están reuniendo los datos de tu parcela. La primera vez tarda unos minutos; puedes seguir y volver después.
+        Se están reuniendo los datos de tu parcela. La primera vez tarda unos minutos.
       </p>
 
       <ul aria-live="polite" className="ps-pad-16" style={{ margin: '14px 0 0 0', listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -123,6 +124,12 @@ export default function Preparando() {
               <span style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                 <span style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.15 }}>{grupo.titulo}</span>
                 <span className="ps-detalle">{grupo.detalle}</span>
+                <span className="ps-nota" style={{ marginTop: 4 }}>Fuente: {grupo.fuente}</span>
+                <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                  {grupo.origenes.map((o) => (
+                    <span key={o} className={`ps-chip ${CLASE_ORIGEN[o]}`}>{o}</span>
+                  ))}
+                </span>
               </span>
               <Chip tono={ETIQUETA[avance].tono}>{ETIQUETA[avance].texto}</Chip>
             </li>
@@ -151,19 +158,23 @@ export default function Preparando() {
         </p>
       ) : null}
 
-      <div style={{ marginTop: 'auto', padding: '20px 16px 32px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ position: 'sticky', bottom: 0, marginTop: 'auto', padding: '14px 16px 28px 16px', background: 'var(--arena)', display: 'flex', flexDirection: 'column', gap: 6 }}>
         {climaListo ? (
-          <Link to={enOnboarding ? '/onboarding/antes' : '/terreno'} className="ps-btn">
-            {t('seguir')}
+          <Link to={enOnboarding ? '/onboarding/meta' : '/terreno'} className="ps-btn">
+            {enOnboarding ? 'Seguir con el registro' : 'Ir a Tu terreno'}
           </Link>
         ) : (
           <button type="button" disabled className="ps-btn">
             {climaSinCobertura ? 'Sin datos en este lugar' : 'Reuniendo el clima…'}
           </button>
         )}
-        <Link to="/terreno/zonas" className="ps-btn-texto">
+        <p className="ps-nota" style={{ margin: '0 0 8px 0', textAlign: 'center' }}>
+          {climaListo ? (enOnboarding ? 'Sigue con lo que quieres hacer ahora.' : 'Aquí ves tu parcela y lo medido en ella.') : 'Podrás seguir cuando llegue el clima.'}
+        </p>
+        <Link to="/terreno/zonas" className="ps-btn-secundario" style={{ minHeight: 52, display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>
           Ver el mapa de mi parcela
         </Link>
+        <p className="ps-nota" style={{ margin: 0, textAlign: 'center' }}>Verdor, altura y pendiente de cada parte. Es opcional.</p>
         {climaSinCobertura ? (
           <Link to="/terreno/perimetro" className="ps-btn-texto">
             Marcar la parcela de nuevo

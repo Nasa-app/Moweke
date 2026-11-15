@@ -3,6 +3,8 @@ import { Link, Navigate } from 'react-router-dom'
 import { Screen, Titulo } from '../components/Screen'
 import { BottomNav } from '../components/BottomNav'
 import { EscenaTerreno } from '../components/EscenaTerreno'
+import { MiniPerimetro } from '../components/MiniPerimetro'
+import { SelectorParcelas } from '../components/SelectorParcelas'
 import { Chip } from '../components/Chip'
 import { SourceLink } from '../components/SourceLink'
 import { PreguntaSuelo } from '../components/PreguntaSuelo'
@@ -10,10 +12,10 @@ import { IconoIncendio, IconoSiguiente, IconoUbicacion } from '../components/ico
 import { usePredio } from '../state/PredioContext'
 import {
   ApiError, candidatasSiembra, guardarSuelo, mensajeDeError, verParcela,
-  type DatosSitio, type ParcelaDetalle, type Poligono, type SueloDeclarado,
+  type DatosSitio, type ParcelaDetalle, type SueloDeclarado,
 } from '../lib/api'
 import { PREGUNTAS_SUELO } from '../lib/suelo'
-import { leerBorrador } from '../lib/comunas'
+import { comunaDeParcela, leerBorrador } from '../lib/comunas'
 import { fechaCorta, nombreMes, numero } from '../lib/formato'
 import { useI18n } from '../i18n'
 
@@ -21,25 +23,6 @@ function extremo(serie: number[] | null, elegir: (...valores: number[]) => numbe
   if (!serie || serie.length === 0) return null
   const valor = elegir(...serie)
   return { valor, mes: serie.indexOf(valor) }
-}
-
-// El contorno real de la parcela marcada, escalado a un recuadro (el este-oeste se acorta con la latitud).
-function MiniPerimetro({ perimetro }: { perimetro: Poligono }) {
-  const anillo = perimetro.coordinates[0] ?? []
-  if (anillo.length < 3) return <IconoUbicacion stroke="var(--verde)" />
-  const lat0 = anillo.reduce((suma, p) => suma + p[1], 0) / anillo.length
-  const k = Math.cos((lat0 * Math.PI) / 180)
-  const xs = anillo.map((p) => p[0] * k)
-  const ys = anillo.map((p) => -p[1])
-  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]
-  const lado = Math.max(x1 - x0, y1 - y0) || 1
-  const escala = 36 / lado
-  const puntos = anillo.map((_, i) => `${((xs[i] - x0) * escala + (36 - (x1 - x0) * escala) / 2 + 8).toFixed(1)},${((ys[i] - y0) * escala + (36 - (y1 - y0) * escala) / 2 + 8).toFixed(1)}`).join(' ')
-  return (
-    <svg width={52} height={52} viewBox="0 0 52 52" aria-hidden="true">
-      <polygon points={puntos} fill="var(--ilus-verde, #829E30)" fillOpacity={0.35} stroke="var(--verde)" strokeWidth={2} strokeLinejoin="round" />
-    </svg>
-  )
 }
 
 export default function Terreno() {
@@ -56,6 +39,13 @@ export default function Terreno() {
   useEffect(() => {
     if (!idParcela) return
     let vigente = true
+    // Al cambiar de parcela no se deja a la vista lo de la anterior mientras llega lo nuevo.
+    setParcela(null)
+    setSitio(null)
+    setSuelo(null)
+    setSinClima(false)
+    setError(null)
+    setCargando(true)
     Promise.all([
       verParcela(idParcela).then((p) => {
         if (!vigente) return
@@ -93,8 +83,9 @@ export default function Terreno() {
   }
 
   const predio = leerBorrador()
+  const comuna = comunaDeParcela(idParcela)
   const subtitulo = parcela
-    ? [predio.sector ? `${predio.sector}, ${predio.comuna}` : predio.comuna,
+    ? [predio.sector && comuna ? `${predio.sector}, ${comuna}` : comuna ?? (predio.sector || null),
         `${numero(parcela.hectareas, 2)} ha`,
         parcela.altitud_msnm !== null ? `${numero(parcela.altitud_msnm)} msnm` : null,
         parcela.ecorregion?.nombre].filter(Boolean).join(' · ')
@@ -118,6 +109,7 @@ export default function Terreno() {
     <Screen>
       <div className="ps-topbar" style={{ paddingBottom: 0 }} />
       <Titulo sub={subtitulo}>{t('terreno_titulo')}</Titulo>
+      <SelectorParcelas />
 
       <Link to="/terreno/zonas" className="ps-card" style={{ margin: '12px 16px 0 16px', textDecoration: 'none', color: 'var(--carbon)', display: 'flex', alignItems: 'center', gap: 12 }}>
         <span aria-hidden="true" style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--menta)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -129,8 +121,8 @@ export default function Terreno() {
         </span>
         <IconoSiguiente stroke="var(--verde)" />
       </Link>
-      <Link to="/terreno/perimetro" className="ps-btn-texto" style={{ margin: '4px 20px 0 20px', justifyContent: 'flex-start', fontSize: 15 }}>
-        {t('terreno_cambiar_perimetro')}
+      <Link to="/terreno/parcelas" className="ps-btn-texto" style={{ margin: '4px 20px 0 20px', justifyContent: 'flex-start', fontSize: 15 }}>
+        {t('terreno_mis_parcelas')}
       </Link>
 
       <div className="ps-pad-16" style={{ margin: '8px 16px 0 16px' }}>

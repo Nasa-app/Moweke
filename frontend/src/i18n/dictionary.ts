@@ -1,9 +1,8 @@
 export type Idioma = 'es' | 'en'
 
 // Diccionario de la interfaz (navegación, botones, títulos y textos compartidos).
-// El dato que llega del agricultor o del satélite (nombres de especie, fechas, cifras)
-// no se traduce acá: ES/EN cubre el "idioma del agricultor" que pide el handoff para el
-// armazón de la app, no una traducción automática de contenido agronómico.
+// Los nombres de especie y variedad vienen por idioma desde el API (lib/nombres.ts); fechas y
+// cifras del satélite no se traducen aquí.
 export const diccionario: Record<string, { es: string; en: string }> = {
   // navegación inferior
   nav_hoy: { es: 'Hoy', en: 'Today' },
@@ -51,10 +50,17 @@ export const diccionario: Record<string, { es: string; en: string }> = {
   onb_terreno: { es: 'Terreno', en: 'Land' },
   onb_marcar_parcela: { es: 'Marcar mi parcela', en: 'Mark my plot' },
   onb_privacidad_titulo: { es: 'Privacidad', en: 'Privacy' },
-  onb_acepto: { es: 'Acepto', en: 'I agree' },
+  onb_acepto: { es: 'Acepto que se guarde dónde está mi parcela', en: 'I agree to save where my plot is' },
+  onb_seguir_marcar: { es: 'Seguir y marcar mi parcela', en: 'Continue and mark my plot' },
+  onb_quedarme: { es: 'Quedarme con la parcela que ya marqué', en: 'Keep the plot I already marked' },
+  onb_priv_titulo: { es: 'Qué pasa con tus datos', en: 'What happens to your data' },
+  onb_priv_nombre: { es: 'No te pedimos el nombre: tu cuenta es anónima.', en: "We don't ask for your name: your account is anonymous." },
+  onb_priv_uso: { es: 'Guardamos dónde está tu parcela solo para mostrarte su clima y qué conviene sembrar. No la vendemos ni la compartimos.', en: 'We save where your plot is only to show you its weather and what to plant. We never sell or share it.' },
+  onb_priv_borrar: { es: 'Cuando quieras, borras todo desde tu perfil.', en: 'Whenever you want, you can delete everything from your profile.' },
   onb_leer_mas: { es: 'Leer más', en: 'Read more' },
   onb_antes_titulo: { es: '¿Qué sembraste antes?', en: 'What did you plant before?' },
-  onb_antes_sub: { es: 'Así sabemos qué le conviene a tu suelo.', en: "That way we know what suits your soil." },
+  onb_antes_sub: { es: 'Es opcional. Así sabemos qué le conviene a tu suelo.', en: "It's optional. That way we know what suits your soil." },
+  onb_antes_opcional: { es: 'Contar qué sembraste antes (opcional)', en: 'Tell us what you planted before (optional)' },
   onb_no_me_acuerdo: { es: 'No me acuerdo', en: "I don't remember" },
   onb_meta_titulo: { es: '¿Qué quieres hacer ahora?', en: 'What do you want to do now?' },
   onb_seguir_cultivo: { es: 'Seguir lo que sembré', en: 'Follow what I planted' },
@@ -65,7 +71,6 @@ export const diccionario: Record<string, { es: string; en: string }> = {
   onb_cultivos_titulo: { es: '¿Qué sembraste ahora?', en: 'What are you planting now?' },
   onb_cuando: { es: '¿Cuándo?', en: 'When?' },
   onb_listo_titulo: { es: 'Tu parcela está lista', en: 'Your plot is ready' },
-  onb_avisos_titulo: { es: '¿Por dónde te avisamos?', en: 'How should we notify you?' },
   onb_ver_que_sembrar: { es: 'Ver qué sembrar', en: 'See what to plant' },
   onb_ir_a_hoy: { es: 'Ir a Hoy', en: 'Go to Today' },
 
@@ -150,15 +155,15 @@ export const diccionario: Record<string, { es: string; en: string }> = {
   // planificar
   planificar_titulo: { es: 'Planificar', en: 'Plan' },
   planificar_que_sembrar: { es: '¿Qué sembrar?', en: 'What to plant?' },
-  planificar_rotacion: { es: 'Rotación', en: 'Rotation' },
-  planificar_analizar_terreno: { es: 'Analizar mi terreno', en: 'Analyse my land' },
+  planificar_lo_sembrado: { es: 'Lo que has sembrado', en: 'What you have planted' },
+  planificar_ver: { es: 'Ver', en: 'See' },
   planificar_especies: { es: 'Especies', en: 'Species' },
   planificar_historial: { es: 'Historial', en: 'History' },
 
   // terreno / perímetro / zonas
   terreno_titulo: { es: 'Tu terreno', en: 'Your land' },
   terreno_zonas_sembrar: { es: 'Mapa de tu parcela', en: 'Map of your plot' },
-  terreno_cambiar_perimetro: { es: 'Marcar otra parcela', en: 'Mark another plot' },
+  terreno_mis_parcelas: { es: 'Mis parcelas · marcar otra', en: 'My plots · mark another' },
   terreno_cambio_20_anios: { es: 'Cómo viene cambiando · 20 años', en: 'How it has been changing · 20 years' },
   terreno_medido: { es: 'Medido en tu parcela', en: 'Measured on your plot' },
   terreno_riesgos: { es: 'Riesgos en tu parcela', en: 'Risks on your plot' },
@@ -180,6 +185,7 @@ export const diccionario: Record<string, { es: string; en: string }> = {
   especies_precision: { es: 'Confianza', en: 'Confidence' },
   analisis_compatible: { es: 'Compatible con tu terreno', en: 'Compatible with your land' },
   analisis_variedad: { es: 'Variedad', en: 'Variety' },
+  analisis_variedad_placeholder: { es: 'Escribe tu variedad', en: 'Type your variety' },
   analisis_rendimiento: { es: 'Cuánto rinde si el clima…', en: 'Yield if the climate…' },
   analisis_sigue_igual: { es: 'Sigue igual', en: 'Stays the same' },
   analisis_cambia_algo: { es: 'Cambia algo', en: 'Changes a bit' },

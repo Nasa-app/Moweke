@@ -71,7 +71,17 @@ function Surcos() {
   )
 }
 
-export function EscenaTerreno({ etiqueta }: { etiqueta: string }) {
+// Brote genérico: no representa ninguna especie, solo que hay algo sembrado en el paño.
+const Brote = ({ u, v }: { u: number; v: number }) => (
+  <En u={u} v={v}>
+    <Sombra rx={8} ry={3} />
+    <path d="M0 0V-10" stroke="#1D4939" strokeWidth="1.6" />
+    <ellipse cx="-4.5" cy="-9" rx="5.5" ry="3.8" fill="#3F611C" />
+    <ellipse cx="4.5" cy="-11" rx="5.5" ry="3.8" fill="#829E30" />
+  </En>
+)
+
+export function EscenaTerreno({ etiqueta, conCultivo = false }: { etiqueta: string; conCultivo?: boolean }) {
   return (
     <svg viewBox="14 6 332 246" role="img" aria-label={etiqueta} style={{ display: 'block', width: '100%', height: 'auto' }}>
       <path d="M24 122L180 200L180 230L24 152z" fill="#A68B6B" />
@@ -80,6 +90,9 @@ export function EscenaTerreno({ etiqueta }: { etiqueta: string }) {
       <path d="M180 200L336 122L336 129L180 207z" fill="#6F8A2C" />
       <path d="M180 44L336 122L180 200L24 122z" fill="#A3B46C" />
       <Surcos />
+      {conCultivo
+        ? [1, 1.9, 2.8].flatMap((u) => [3.1, 4.1, 5.1].map((v) => <Brote key={`${u}-${v}`} u={u} v={v} />))
+        : null}
       <Casa u={4.6} v={1} />
       <Arbol u={0.6} v={0.9} escala={0.9} />
       <Pino u={2.3} v={0.7} escala={0.9} />

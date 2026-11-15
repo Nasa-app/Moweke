@@ -8,6 +8,7 @@ import { usePredio } from '../state/PredioContext'
 import { ESCENARIOS, candidatasSiembra, declararCultivo, mensajeDeError, type Candidata, type Factor, type PeriodoClima, type SerieClimatica } from '../lib/api'
 import { NOMBRE_ESCENARIO, TEXTO_CATEGORIA_CLIMA, aIso, aPorcentaje, fechaCorta, nombreClave, nombreEspecie, nombreMes, textoDatosFaltantes } from '../lib/formato'
 import { useI18n } from '../i18n'
+import { claveVariedad, variedadesConocidas } from '../lib/nombres'
 
 const ORDEN_FACTORES: Factor[] = [
   'temperatura', 'helada', 'humedad', 'ph', 'radiacion', 'altitud', 'textura',
@@ -79,7 +80,7 @@ export default function Analisis() {
     try {
       const cultivo = await declararCultivo(idParcela, {
         especie: clave,
-        variedad_local: variedad.trim() || null,
+        variedad_local: claveVariedad(clave, variedad) || null,
         fecha_siembra: fechaSiembra,
       })
       setCultivoActivo(cultivo.id, cultivo.especie)
@@ -224,7 +225,11 @@ export default function Analisis() {
               <span style={{ fontSize: 15, fontWeight: 800 }}>
                 {t('analisis_variedad')} <span className="ps-nota">({t('opcional').toLowerCase()})</span>
               </span>
-              <input value={variedad} onChange={(e) => setVariedad(e.target.value)} maxLength={120} placeholder="Escribe tu variedad" style={campoEstilo} />
+              <input value={variedad} onChange={(e) => setVariedad(e.target.value)} maxLength={120} list="variedades-conocidas"
+                placeholder={t('analisis_variedad_placeholder')} style={campoEstilo} />
+              <datalist id="variedades-conocidas">
+                {variedadesConocidas(clave).map((v) => <option key={v.clave} value={v.nombre} />)}
+              </datalist>
             </label>
           </div>
         </>

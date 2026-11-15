@@ -19,7 +19,7 @@ export default function Perfil() {
   }
 
   const mosaicos = [
-    { a: '/terreno/perimetro', icono: IconoUbicacion, titulo: t('perfil_mi_parcela'), chip: idParcela ? 'Marcada' : 'Sin marcar', tonoChip: idParcela ? 'ps-chip-favorable' : 'ps-chip-precaucion' },
+    { a: '/terreno/parcelas', icono: IconoUbicacion, titulo: t('perfil_mi_parcela'), chip: idParcela ? 'Marcada' : 'Sin marcar', tonoChip: idParcela ? 'ps-chip-favorable' : 'ps-chip-precaucion' },
     { a: '/historial', icono: IconoReloj, titulo: t('perfil_anio_pasado'), chip: 'Agregar', tonoChip: 'ps-chip-neutro' },
   ] as const
 
