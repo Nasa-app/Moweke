@@ -12,7 +12,7 @@ import {
   mensajeDeError, type Candidata, type CandidatasSiembra, type CategoriaClima, type Escenario,
 } from '../lib/api'
 import {
-  NOMBRE_ESCENARIO, TEXTO_CATEGORIA_CLIMA, aPorcentaje, fechaCorta, nombreClave, nombreEspecie, textoDatosFaltantes,
+  NOMBRE_ESCENARIO, TEXTO_CATEGORIA_CLIMA, aPorcentaje, fechaCorta, nombreClave, nombreEspecie, textoDatosFaltantes, textoVariedad,
   textoEscenario, textoSueloSinDeclarar,
 } from '../lib/formato'
 import { useI18n } from '../i18n'
@@ -95,6 +95,16 @@ export default function Especies() {
 
   // En 'Nuevas' y 'En riesgo' el servidor ya filtró por esa categoría, y entran también las que todavía no son aptas.
   const aptas = (ranking?.candidatas ?? []).filter((c) => vista !== 'todas' || c.apta)
+  // Dos especies distintas pueden compartir nombre común (cebollín, bledo): se distinguen con su nombre científico.
+  const veces = new Map<string, number>()
+  for (const c of ranking?.candidatas ?? []) {
+    const n = nombreEspecie(c.especie, c)
+    veces.set(n, (veces.get(n) ?? 0) + 1)
+  }
+  const nombreDe = (c: Candidata) => {
+    const n = nombreEspecie(c.especie, c)
+    return (veces.get(n) ?? 0) > 1 && c.nombre_cientifico ? `${n} (${c.nombre_cientifico})` : n
+  }
   const destacadas = aptas.slice(0, 3)
   const resto = aptas.slice(3, 3 + FILAS_MAX)
   const serie = ranking?.serie_climatica ?? null
@@ -229,7 +239,8 @@ export default function Especies() {
                 <span style={{ position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)', padding: '2px 9px', borderRadius: 999, background: 'var(--verde)', color: '#fff', fontSize: 13, fontWeight: 800 }}>Mejor</span>
               ) : null}
             </span>
-            <span style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.05 }}>{nombreEspecie(c.especie, c)}</span>
+            <span style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.05 }}>{nombreDe(c)}</span>
+            {c.variedad_recomendada ? <span className="ps-nota" style={{ lineHeight: 1.1 }}>Mejor: {textoVariedad(c.variedad_recomendada)}</span> : null}
             <span style={{ display: 'flex', flexDirection: 'column', fontSize: 14, fontWeight: 700, lineHeight: 1.1, color: 'var(--texto-tenue)' }}>
               <b style={{ fontSize: 20, fontWeight: 800, color: 'var(--verde)' }}>{porcentaje(c)}%</b>
               compatible
@@ -248,7 +259,8 @@ export default function Especies() {
               <Link to={enlace(c)} className="ps-card" style={{ textDecoration: 'none', color: 'var(--carbon)', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px' }}>
                 <CompatRing porcentaje={porcentaje(c)} tamano={44} />
                 <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.15 }}>{nombreEspecie(c.especie, c)}</span>
+                  <span style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.15 }}>{nombreDe(c)}</span>
+                  {c.variedad_recomendada ? <span className="ps-nota">Variedad que más conviene: {textoVariedad(c.variedad_recomendada)}</span> : null}
                   <span className="ps-detalle">
                     {textoCompatible(c)}
                     {!c.apta ? ' · todavía no es apta' : c.factor_limitante && porcentaje(c) < 100 ? ` · lo limita: ${nombreClave(c.factor_limitante).toLowerCase()}` : ''}

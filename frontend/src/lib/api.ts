@@ -256,8 +256,22 @@ export interface SerieClimatica {
   escenario: 'observado' | 'supuesto'
 }
 
+// Una variedad, subespecie o cultivar de la misma especie, tal como la distingue EcoCrop, con su compatibilidad.
+export interface VariedadEcocrop {
+  nombre_cientifico: string
+  rango: 'variedad' | 'subespecie' | 'forma' | 'cultivar' | null
+  nombre: string | null
+  puntaje: number | null
+  apta: boolean | null
+  mejor: boolean
+}
+
 export interface Candidata {
   especie: string
+  // Solo si la especie tiene variedades: todas, de la que más conviene a la que menos, y cuál es la mejor
+  // (null si la mejor es la especie sin variedad).
+  variedades?: VariedadEcocrop[]
+  variedad_recomendada?: { rango: NonNullable<VariedadEcocrop['rango']>; nombre: string } | null
   nombre_cientifico: string | null
   nombres_comunes: string | null
   nombre_es: string | null

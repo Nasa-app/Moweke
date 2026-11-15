@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { Screen, BarraSuperior } from '../components/Screen'
 import { CompatRing } from '../components/CompatRing'
 import { Chip } from '../components/Chip'
 import { SourceLink } from '../components/SourceLink'
 import { usePredio } from '../state/PredioContext'
 import { ESCENARIOS, candidatasSiembra, declararCultivo, mensajeDeError, type Candidata, type Factor, type PeriodoClima, type SerieClimatica } from '../lib/api'
-import { NOMBRE_ESCENARIO, TEXTO_CATEGORIA_CLIMA, aIso, aPorcentaje, fechaCorta, nombreClave, nombreEspecie, nombreMes, textoDatosFaltantes } from '../lib/formato'
+import { NOMBRE_ESCENARIO, TEXTO_CATEGORIA_CLIMA, aIso, aPorcentaje, fechaCorta, nombreClave, nombreEspecie, nombreMes, textoDatosFaltantes, textoVariedad } from '../lib/formato'
 import { useI18n } from '../i18n'
 import { claveVariedad, variedadesConocidas } from '../lib/nombres'
 
@@ -133,6 +133,43 @@ export default function Analisis() {
           ) : null}
         </div>
       </section>
+
+      {candidata?.variedades?.length ? (
+        <section aria-labelledby="variedades">
+          <h2 id="variedades" className="ps-h2" style={{ margin: '18px 20px 0 20px' }}>
+            Qué variedad te conviene
+          </h2>
+          <p className="ps-pad ps-cuerpo" style={{ margin: '6px 0 0 0' }}>
+            {candidata.variedad_recomendada
+              ? `La que mejor calza con tu parcela es la ${textoVariedad(candidata.variedad_recomendada)}, aunque quizás no la conozcas.`
+              : 'La que mejor calza con tu parcela es la especie sin variedad.'}
+          </p>
+          <ul aria-label="Variedades" className="ps-pad-16" style={{ margin: '10px 0 0 0', listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {candidata.variedades.map((v) => (
+              <li key={v.nombre_cientifico}>
+                <Link
+                  to={`/especies/analisis?especie=${encodeURIComponent(v.nombre_cientifico.trim().toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_'))}`}
+                  className="ps-card"
+                  aria-current={v.nombre_cientifico === candidata.nombre_cientifico ? 'true' : undefined}
+                  style={{ textDecoration: 'none', color: 'var(--carbon)', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', boxShadow: v.mejor ? '0 0 0 3px var(--verde)' : undefined }}
+                >
+                  <CompatRing porcentaje={aPorcentaje(v.puntaje)} tamano={44} />
+                  <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.15 }}>
+                      {v.rango && v.nombre ? `${v.rango[0].toUpperCase()}${v.rango.slice(1)} ${v.nombre}` : 'Especie sin variedad'}
+                    </span>
+                    <span className="ps-contexto" style={{ fontStyle: 'italic' }}>{v.nombre_cientifico}</span>
+                  </span>
+                  {v.mejor ? <Chip tono="favorable">La que más conviene</Chip> : null}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="ps-pad ps-nota" style={{ margin: '8px 0 0 0' }}>
+            Según la guía de la FAO (EcoCrop). Puede que no sea una variedad conocida ni fácil de conseguir en tu zona: pregunta en tu comuna o a un técnico.
+          </p>
+        </section>
+      ) : null}
 
       {candidata ? (
         <>

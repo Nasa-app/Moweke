@@ -36,6 +36,11 @@ function capitalizar(texto: string): string {
   return texto ? texto[0].toUpperCase() + texto.slice(1) : texto
 }
 
+// 'subespecie biflora' / 'variedad reptans': como se dice una variedad de EcoCrop a quien no es botánico.
+export function textoVariedad(v: { rango: string | null; nombre: string | null }): string {
+  return v.rango && v.nombre ? `${v.rango} ${v.nombre}` : 'la especie sin variedad'
+}
+
 export function nombreClave(clave: string): string {
   return PALABRAS[clave] ?? capitalizar(clave.replace(/_/g, ' '))
 }
