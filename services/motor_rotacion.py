@@ -27,6 +27,7 @@ y haba no tenian entrada en reglas hasta que se agrego en database/seed_especies
 """
 from __future__ import annotations
 
+import unicodedata
 from itertools import product
 
 import numpy as np
@@ -36,7 +37,13 @@ from motor_estres import balance_agua, contingencia, evaluar
 from pheno_engine import simular
 
 PESOS = dict(riesgo=0.35, peor_ano=0.20, diversidad=0.15, precedente=0.15, cobertura=0.15)
+# Con la fertilidad declarada 'low' entra un sexto criterio: cuanto de la rotacion repone nitrogeno o cubre el suelo.
+PESOS_FERTILIDAD_BAJA = dict(riesgo=0.30, peor_ano=0.15, diversidad=0.10, precedente=0.15, cobertura=0.10, fertilidad=0.20)
 DIAS_COSECHA, MAX_BARBECHO = 14, 270
+# Familias que no pueden ir una tras otra porque consumen lo mismo y comparten plagas y enfermedades. Se compara el
+# comienzo del nombre, sin tildes ni mayusculas: cubre 'solanaceas' (seed) y 'Solanaceae' (EcoCrop).
+FAMILIAS_SIN_SEGUIDAS = ("solanac",)
+MAX_ESPECIES = 6      # tope de especies que entran a buscar(): 6 ** 5 = 7.776 secuencias como maximo
 
 
 # ---------------------------------------------------------------- 1. Evaluacion por cultivo
@@ -71,10 +78,23 @@ def evaluar_cultivos(clima, anos, lat, cap, cultivos, perfil, reglas, max_ciclo=
         tabla[n] = dict(viable=cierra >= 0.8 and p_perdido <= 0.3,
                         dur=float(np.nanpercentile(durs, 80)) if cierra > 0 else np.nan,
                         perdidas=perd, cierra=cierra, p_perdido=p_perdido, modelado=True)
+    return rellenar_no_modelados(tabla)
+
+
+def rellenar_no_modelados(tabla, piso=0.0, por_defecto=None):
+    """Da a cada cultivo no modelado el riesgo medio, ano a ano, de los modelados y viables. `piso`: perdida minima
+    del relleno (un cultivo sin modelar nunca queda con riesgo cero); `por_defecto`: perdida constante para cuando no
+    hay ningun modelado y viable que promediar (None deja lo que traia)."""
     ref = [v["perdidas"] for v in tabla.values() if v["modelado"] and v["viable"]]
     for v in tabla.values():
-        if not v["modelado"] and ref:
-            v["perdidas"] = np.mean(ref, axis=0)
+        if v["modelado"]:
+            continue
+        if ref:
+            v["perdidas"] = np.maximum(np.mean(ref, axis=0), piso)
+        elif por_defecto is not None:
+            v["perdidas"] = np.full(len(v["perdidas"]), max(por_defecto, piso))
+        elif piso:
+            v["perdidas"] = np.maximum(v["perdidas"], piso)
     return tabla
 
 
@@ -95,6 +115,64 @@ def cumple_intervalo(seq, perfil, extra=None):
             if sep - 1 < req:
                 return False
     return True
+
+
+def _sin_tildes(texto):
+    base = unicodedata.normalize("NFKD", str(texto or ""))
+    return "".join(c for c in base if not unicodedata.combining(c)).lower().strip()
+
+
+def _grupo_sin_seguidas(familia):
+    f = _sin_tildes(familia)
+    return next((g for g in FAMILIAS_SIN_SEGUIDAS if f.startswith(g)), None)
+
+
+def par_prohibido(a, b, perfil):
+    """True si `a` y `b` son de la misma familia de FAMILIAS_SIN_SEGUIDAS (solanaceas con solanaceas). Un cultivo sin
+    perfil no se juzga."""
+    if a not in perfil or b not in perfil:
+        return False
+    grupo = _grupo_sin_seguidas(perfil[a].get("familia"))
+    return grupo is not None and grupo == _grupo_sin_seguidas(perfil[b].get("familia"))
+
+
+def sin_familia_seguida(seq, perfil):
+    """Ninguna temporada de la rotacion va seguida de una de su misma familia restringida. Es ciclica: tras la ultima
+    temporada vuelve la primera."""
+    L = len(seq)
+    return not any(par_prohibido(seq[i], seq[(i + 1) % L], perfil) for i in range(L))
+
+
+def cumple_historial(seq, previos, perfil, extra=None):
+    """`previos`: lo sembrado hasta ahora, del mas antiguo al mas reciente; `seq` empieza en la temporada siguiente.
+    Respeta el intervalo contra la siembra previa mas reciente de cada cultivo y la regla de familias contra el ultimo
+    previo. Un previo sin perfil no se juzga."""
+    previos = list(previos)
+    if not previos:
+        return True
+    if par_prohibido(previos[-1], seq[0], perfil):
+        return False
+    for n in set(seq):
+        if n not in perfil:
+            continue
+        ultimo = max((i for i, p in enumerate(previos) if p == n), default=None)
+        if ultimo is None:
+            continue
+        req = perfil[n]["intervalo"] + (extra or {}).get(n, 0)
+        entre = (len(previos) - 1 - ultimo) + seq.index(n)     # temporadas entre esa siembra y la de la rotacion
+        if entre < req:
+            return False
+    return True
+
+
+def inicio_desde_historial(seq, previos, perfil, extra=None):
+    """La primera rotacion del ciclo (el mismo ciclo empezando en otra temporada) que cumple el historial, o None."""
+    seq = tuple(seq)
+    for i in range(len(seq)):
+        giro = seq[i:] + seq[:i]
+        if cumple_historial(giro, previos, perfil, extra):
+            return giro
+    return None
 
 
 def _prox_fecha(md, desde):
@@ -142,15 +220,28 @@ def puntuar(seq, tabla, perfil, pesos=PESOS):
         precedente=(float(np.mean(trans)) + 1) / 2,
         cobertura=min(1.0, dias_cultivo / total),
     )
+    if "fertilidad" in pesos:
+        repone = np.mean([bool(perfil[n]["legum"] or perfil[n].get("perenne")) for n in seq])
+        crit["fertilidad"] = min(1.0, float(repone) / 0.5)    # credito completo desde la mitad de las temporadas
     crit["total"] = sum(pesos[k] * crit[k] for k in pesos)
     crit["anos"], crit["max_barbecho"] = round(total / 365, 1), max_gap
     return crit
 
 
-def buscar(tablas, perfil, largos=(3, 4, 5), pesos=PESOS, extra_intervalo=None, top=5):
-    """tablas {escenario: tabla}. Una rotacion vale lo que vale en su peor escenario."""
+def buscar(tablas, perfil, largos=(3, 4, 5), pesos=PESOS, extra_intervalo=None, top=5, previos=(),
+           max_especies=MAX_ESPECIES):
+    """tablas {escenario: tabla}. Una rotacion vale lo que vale en su peor escenario. Descarta por intervalo
+    sanitario, por familias seguidas, por historial (`previos`) y por calendario; `seq` sale empezando en la primera
+    temporada del ciclo que cumple el historial. Las viables se ordenan por riesgo medio y solo entran `max_especies`:
+    las demas quedan en `recortadas` (el tope acota el producto cartesiano a max_especies ** largo)."""
+    previos = tuple(previos)
     viables = [n for n in perfil if all(t[n]["viable"] for t in tablas.values())]
-    vistos, res, descartes = set(), [], dict(intervalo=0, calendario=0)
+    riesgo = lambda n: float(np.mean([np.mean(t[n]["perdidas"]) for t in tablas.values()]))
+    viables.sort(key=lambda n: (riesgo(n), n))
+    recortadas = viables[max_especies:]
+    viables = viables[:max_especies]
+    vistos, res = set(), []
+    descartes = dict(intervalo=0, familia=0, historial=0, calendario=0)
     for L in largos:
         for seq in product(viables, repeat=L):
             seq = canonica(seq)
@@ -160,6 +251,13 @@ def buscar(tablas, perfil, largos=(3, 4, 5), pesos=PESOS, extra_intervalo=None, 
             if not cumple_intervalo(seq, perfil, extra_intervalo):
                 descartes["intervalo"] += 1
                 continue
+            if not sin_familia_seguida(seq, perfil):
+                descartes["familia"] += 1
+                continue
+            seq = inicio_desde_historial(seq, previos, perfil, extra_intervalo)
+            if seq is None:
+                descartes["historial"] += 1
+                continue
             por_esc = {e: puntuar(seq, t, perfil, pesos) for e, t in tablas.items()}
             if any(c["max_barbecho"] > MAX_BARBECHO for c in por_esc.values()):
                 descartes["calendario"] += 1
@@ -167,8 +265,8 @@ def buscar(tablas, perfil, largos=(3, 4, 5), pesos=PESOS, extra_intervalo=None, 
             peor = min(por_esc, key=lambda e: por_esc[e]["total"])
             res.append(dict(rotacion=" > ".join(seq), seq=seq, puntaje=round(por_esc[peor]["total"], 3),
                             peor_escenario=peor, **{k: round(v, 2) for k, v in por_esc[peor].items() if k != "total"}))
-    res.sort(key=lambda r: -r["puntaje"])
-    return res[:top], dict(viables=viables, evaluadas=len(res), **descartes)
+    res.sort(key=lambda r: (-r["puntaje"], r["seq"]))
+    return res[:top], dict(viables=viables, recortadas=recortadas, evaluadas=len(res), **descartes)
 
 
 # ---------------------------------------------------------------- 4. Plan B por posicion

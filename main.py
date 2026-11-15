@@ -39,6 +39,7 @@ import services.indicadores_locales as indicadores_locales
 from services.riego import lluvia_reciente
 import services.ingesta_predio as ingesta_predio
 import services.multianual as multianual
+import services.plan_rotacion as plan_rotacion
 from services.auth import (EXPIRACION_ANONIMO_MINUTOS, crear_token, decodificar_token, hash_password,
                           verificar_password)
 from services.db import obtener_sesion
@@ -564,6 +565,22 @@ async def reintentar_ingesta(id_parcela: int, tareas: BackgroundTasks,
             "estado_ingesta": await ingesta_predio.estado_ingesta(session, id_parcela)}
 
 
+def _armar_datos_sitio(parcela: dict, sitio: dict):
+    """Lo que el ranking y el motor de rotacion esperan de un predio: el clima de CR2MET (una celda de 5 km) llevado a
+    la altura de la parcela, sus normales y el suelo declarado. Devuelve (datos_sitio, clima, correccion, altitud,
+    textura)."""
+    altitud = sitio["altitud_dem_m"] if sitio["altitud_dem_m"] is not None else parcela["altitud_msnm"]
+    correccion = catalogo_especies.delta_temperatura_por_altitud(altitud, sitio["altitud_celda_m"])
+    clima = catalogo_especies.corregir_temperatura(sitio["clima"], correccion)
+    normales = catalogo_especies.normales_mensuales(clima)
+    textura = catalogo_especies.clase_textura(sitio["arcilla_pct"], sitio["arena_pct"])
+    datos_sitio = {"normales": normales, "ph": sitio["ph"], "ghi_mensual": sitio["ghi_mensual"], "awc_mm": sitio["awc_mm"],
+                   "altitud_m": altitud, "textura": textura, "suelo": parcela["suelo"],
+                   "textura_posibles": catalogo_especies.clases_textura_posibles(sitio["arcilla_pct"], sitio["arena_pct"])}
+    datos_sitio["et0_factor_mensual"] = sitio.get("et0_factor_mensual")
+    return datos_sitio, clima, correccion, altitud, textura
+
+
 @app.get("/api/parcelas/{id_parcela}/candidatas_siembra")
 async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
                               limite: int = Query(20, ge=1, le=200),
@@ -601,21 +618,13 @@ async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
         tareas.add_task(ingesta_predio.ingerir_predio, id_parcela, jobs)
     estado = await ingesta_predio.estado_ingesta(session, id_parcela)
     sitio = await leer_sitio(session, id_parcela)
-    # El clima de CR2MET es el de una celda de 5 km: se lleva a la altura de la parcela.
-    altitud = sitio["altitud_dem_m"] if sitio["altitud_dem_m"] is not None else parcela["altitud_msnm"]
-    correccion = catalogo_especies.delta_temperatura_por_altitud(altitud, sitio["altitud_celda_m"])
-    clima = catalogo_especies.corregir_temperatura(sitio["clima"], correccion)
-    normales = catalogo_especies.normales_mensuales(clima)
+    datos_sitio, clima, correccion, altitud, textura = _armar_datos_sitio(parcela, sitio)
+    normales = datos_sitio["normales"]
     if normales["tmedia"] is None:
         raise HTTPException(status.HTTP_409_CONFLICT, {
             "mensaje": "Todavía no hay un año de clima para este predio", "estado_ingesta": estado})
 
     filtro = {c.strip() for c in categorias.split(",") if c.strip()} if categorias else None
-    textura = catalogo_especies.clase_textura(sitio["arcilla_pct"], sitio["arena_pct"])
-    datos_sitio = {"normales": normales, "ph": sitio["ph"], "ghi_mensual": sitio["ghi_mensual"], "awc_mm": sitio["awc_mm"],
-                   "altitud_m": altitud, "textura": textura, "suelo": parcela["suelo"],
-                   "textura_posibles": catalogo_especies.clases_textura_posibles(sitio["arcilla_pct"], sitio["arena_pct"])}
-    datos_sitio["et0_factor_mensual"] = sitio.get("et0_factor_mensual")
     ranking, serie = await multianual.ranking_multianual(
         datos_sitio, multianual.RepositorioCacheado(RepositorioPostgres(session), _ALMACEN_CATALOGO),
         await leer_historia(session, id_parcela), clima, parcela["lat"], categorias=filtro, riego=riego,
@@ -657,6 +666,46 @@ async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
         "suelo_sin_declarar": catalogo_especies.suelo_sin_declarar(datos_sitio),
         "candidatas": lista,
     }
+
+
+_ROTACION_POR_USUARIO = LimiteIntentos(20, 60 * 60)   # cada consulta son unos segundos de calculo
+
+
+@app.get("/api/parcelas/{id_parcela}/rotacion/comparar")
+async def comparar_rotaciones(id_parcela: int,
+                              riego: bool = False,
+                              escenario: Literal["observado", "moderado", "fuerte"] = "observado",
+                              largo_max: int = Query(5, ge=3, le=5),
+                              limite: int = Query(5, ge=1, le=8),
+                              session: AsyncSession = Depends(obtener_sesion),
+                              usuario: dict = Depends(usuario_actual)):
+    """Compara estrategias de rotacion para la parcela desde la proxima temporada: repetir el cultivo actual contra las
+    mejores rotaciones de 3 a `largo_max` temporadas, con el mismo modelo de agua y de riesgo del ranking de especies
+    (ver services/plan_rotacion.py). Las solanaceas nunca van una tras otra, tambien contra lo ya sembrado. `escenario`
+    y `riego` como en candidatas_siembra. Salen al menos 3 estrategias si hay especies viables, aunque `limite` sea
+    menor. El puntaje ordena opciones; no predice rendimiento. 409 si no hay clima o historia suficiente."""
+    _frenar(_ROTACION_POR_USUARIO, f"usuario:{usuario['id']}")
+    parcela = await _parcela_autorizada(id_parcela, usuario, session)
+    sitio = await leer_sitio(session, id_parcela)
+    datos_sitio, _, correccion, _, _ = _armar_datos_sitio(parcela, sitio)
+    if datos_sitio["normales"]["tmedia"] is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, {
+            "mensaje": "Todavía no hay un año de clima para este predio",
+            "estado_ingesta": await ingesta_predio.estado_ingesta(session, id_parcela)})
+    filas = (await session.execute(text("""
+        SELECT especie FROM predio_cultivos WHERE id_parcela = :p
+        ORDER BY fecha_siembra DESC NULLS LAST, id DESC LIMIT :n
+    """), {"p": id_parcela, "n": plan_rotacion.MAX_PREVIOS})).mappings().all()
+    previos = [f["especie"] for f in reversed(filas)]          # del mas antiguo al mas reciente
+    repo = multianual.RepositorioCacheado(RepositorioPostgres(session), _ALMACEN_CATALOGO)
+    plan = await plan_rotacion.plan_rotacion(
+        datos_sitio, repo, await leer_historia(session, id_parcela), parcela["lat"], previos, riego=riego,
+        delta_temp=correccion, calentamiento_c_por_decada=ESCENARIOS_CALENTAMIENTO[escenario],
+        largo_max=largo_max, limite=limite)
+    if plan["estado"] != "ok":
+        raise HTTPException(status.HTTP_409_CONFLICT, {"mensaje": "Todavía no hay historia de clima suficiente "
+                            "para evaluar rotaciones", "estado": plan["estado"], "vacios": plan["vacios"]})
+    return {"parcela": id_parcela, "escenario": escenario, "riego": riego, "cultivos_previos": previos, **plan}
 
 
 # ---------------------------------------------------------------- cultivo sembrado: fases y condiciones

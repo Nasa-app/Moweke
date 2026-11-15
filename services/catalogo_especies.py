@@ -58,6 +58,7 @@ class RepositorioEspecies(Protocol):
     async def requisitos(self, especie: str, variedad_local: str | None) -> dict | None: ...
     async def umbrales_fenologicos(self, especie: str, variedad_local: str | None) -> list[dict]: ...
     async def rasgos_rotacion(self, especie: str) -> dict | None: ...
+    async def especies_con_rasgos_rotacion(self) -> list[str]: ...
     async def reglas_dano(self, especie: str, variedad_local: str | None) -> list[dict]: ...
     async def listar_especies(self) -> list[tuple[str, str | None]]: ...
     async def requisitos_genericos(self) -> list[dict]: ...
@@ -170,7 +171,7 @@ def simular_idoneidad(preparada: dict, clima: pd.DataFrame, lat: float, cap_mm: 
         razones.append(f"perdida simulada alta ({resultado['perdida'] * 100:.0f}%) sembrando el {siembra.date()}")
     return {"apta": len(razones) == 0, "razones": razones, "metodo": "simulacion_real",
             "siembra_simulada": str(siembra.date()), "perdida_simulada": resultado["perdida"],
-            "estado_simulado": resultado["estado"],
+            "estado_simulado": resultado["estado"], "ciclo_dias": (fechas[c.etapas[-1][0]] - siembra).days,
             "modelo_agua": "fao56" if params else "balde_perfil",
             "cap_mm_usado": cap_mm if cap_mm else f"{AWC_POR_DEFECTO_MM if params else 100.0} (supuesto, sin dato real de sitio)"}
 
@@ -1205,6 +1206,9 @@ class RepositorioEnMemoria:
 
     async def rasgos_rotacion(self, especie):
         return next((r for r in self.rasgos_rows if r["especie"] == especie), None)
+
+    async def especies_con_rasgos_rotacion(self):
+        return sorted({r["especie"] for r in self.rasgos_rows})
 
     async def reglas_dano(self, especie, variedad_local):
         return [f for f in self.reglas_rows

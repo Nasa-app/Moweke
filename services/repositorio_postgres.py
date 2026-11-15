@@ -206,6 +206,10 @@ class RepositorioPostgres:
         fila = (await self._s.execute(q)).mappings().first()
         return dict(fila) if fila else None
 
+    async def especies_con_rasgos_rotacion(self) -> list[str]:
+        q = select(rasgos_rotacion_especie.c.especie).order_by(rasgos_rotacion_especie.c.especie)
+        return [f.especie for f in (await self._s.execute(q)).all()]
+
     async def reglas_dano(self, especie: str, variedad_local: str | None) -> list[dict]:
         q = select(regla_dano_especie).where(
             regla_dano_especie.c.especie == especie,

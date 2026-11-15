@@ -275,6 +275,9 @@ class RepositorioCacheado:
     async def rasgos_rotacion(self, especie):
         return await self._leer(("rasgos", especie), lambda: self._repo.rasgos_rotacion(especie))
 
+    async def especies_con_rasgos_rotacion(self):
+        return await self._leer("especies_rotacion", self._repo.especies_con_rasgos_rotacion)
+
     async def reglas_dano(self, especie, variedad_local):
         return await self._leer(("reglas", especie, variedad_local), lambda: self._repo.reglas_dano(especie, variedad_local))
 
@@ -383,16 +386,105 @@ async def ranking_multianual(sitio: dict, repo, historia: dict[int, pd.DataFrame
     return base, resumen
 
 
+def _simulacion_anual(preparada: dict, lat: float, sitio: dict, riego: bool, df: pd.DataFrame) -> dict | None:
+    """La simulacion por fase de una especie sobre un ano de clima (repetido una vez para cerrar ciclos que cruzan el
+    fin de ano); None si el clima tiene huecos o no hay desde la fecha de siembra."""
+    ciclico = ce._clima_ciclico(df)
+    if ciclico is None:
+        return None
+    try:
+        return ce.simular_idoneidad(preparada, ciclico, lat, sitio.get("awc_mm"), riego, sitio.get("et0_factor_mensual"),
+                                    ce.PROFUNDIDAD_SUELO_M.get((sitio.get("suelo") or {}).get("profundidad")))
+    except ce.ClimaIncompleto:
+        return None
+
+
 def _simulador(preparada: dict, lat: float, sitio: dict, riego: bool):
     """f(clima de un ano) -> puntaje de la simulacion por fase (1 - perdida), 0 si no completa el ciclo, None si no corre."""
     def simular(df: pd.DataFrame):
-        ciclico = ce._clima_ciclico(df)
-        if ciclico is None:
-            return None
-        try:
-            r = ce.simular_idoneidad(preparada, ciclico, lat, sitio.get("awc_mm"), riego, sitio.get("et0_factor_mensual"),
-                                     ce.PROFUNDIDAD_SUELO_M.get((sitio.get("suelo") or {}).get("profundidad")))
-        except ce.ClimaIncompleto:
-            return None
+        r = _simulacion_anual(preparada, lat, sitio, riego, df)
         return None if r is None else round(1 - r.get("perdida_simulada", 1.0), 3)
+    return simular
+
+
+# ---------------------------------------------------------------- matrices por ano para el motor de rotacion
+async def perdidas_anuales(sitio: dict, repo, historia: dict[int, pd.DataFrame] | None, lat: float | None,
+                           especies: list[str], riego: bool = False, delta_temp: float = 0.0,
+                           calentamiento_c_por_decada: float | None = None) -> dict | None:
+    """El puntaje de cada especie pedida en cada ano, sin tocar el resultado de ranking_multianual(): lo mismo que
+    el ranking calcula, pero la matriz entera para que el motor de rotacion pueda encadenar temporadas.
+
+    Devuelve {'anios': [...], 'especies': {nombre: {'indice', 'simulada'}}, 'escenarios': {'reciente': {'puntaje',
+    'ciclo_dias'}, 'proyectado': {...}}, 'resumen': {...}}. Cada matriz es [anios, especies] en el orden de `especies`:
+    'reciente' son los ultimos ANIOS_RECIENTE anos y 'proyectado' esos mismos anos llevados a HORIZONTE_PROYECCION con
+    la tendencia (o `calentamiento_c_por_decada`). `puntaje` es NaN donde la especie no tiene fila de EcoCrop; `ciclo_dias`
+    es NaN donde no se simulo la especie o no cerro el ciclo. El indice de EcoCrop es la fila gemela por nombre cientifico
+    (como en ranking_idoneidad) y, si no la hay, la fila de la propia especie. None sin al menos ANIOS_RECIENTE +
+    MIN_ANIOS_PERIODO anos de historia."""
+    if not historia or len(historia) < ANIOS_RECIENTE + MIN_ANIOS_PERIODO:
+        return None
+    cat = (await repo.catalogo_vectorial()) if hasattr(repo, "catalogo_vectorial") else \
+        CatalogoVectorial(await repo.requisitos_genericos(), await repo.equivalencias_luz())
+    identidades = await repo.identidades()
+    corregida = {a: ce.corregir_temperatura(df, delta_temp) if delta_temp else df for a, df in historia.items()}
+    reciente, _ = periodos(corregida)
+    tendencia = tendencia_clima(corregida)
+    if calentamiento_c_por_decada is not None:
+        tendencia["temp_c_por_anio"] = calentamiento_c_por_decada / 10
+    fijos = cat.factores_fijos(sitio)
+
+    indice, ajustes = {}, {}
+    ciclos: dict[int, dict[int, float]] = {}      # indice de especie -> {ano: dias de ciclo}
+    for nombre in especies:
+        cientifico = (identidades.get(nombre) or {}).get("nombre_cientifico")
+        gemela = ce._slug(cientifico) if cientifico else None
+        i = cat.indice.get(gemela) if gemela in cat.indice else cat.indice.get(nombre)
+        indice[nombre] = {"indice": i, "simulada": False}
+        if i is None or lat is None:
+            continue
+        preparada = await ce.preparar_simulacion(nombre, None, repo)
+        if preparada is None:
+            continue
+        indice[nombre]["simulada"] = True
+        ajustes[i] = _simulador_con_ciclo(preparada, lat, sitio, riego, ciclos.setdefault(i, {}))
+
+    series = {"reciente": [corregida[a] for a in reciente],
+              "proyectado": [proyectar(corregida[a], a, tendencia) for a in reciente]}
+    columnas = [indice[n]["indice"] for n in especies]
+
+    def calcular():
+        salida = {}
+        for nombre, df in series.items():
+            for c in ciclos.values():
+                c.clear()
+            m = puntajes_por_anio(cat, sitio, df, fijos, riego, ajustes)
+            puntaje = np.full((len(df), len(columnas)), np.nan)
+            ciclo = np.full((len(df), len(columnas)), np.nan)
+            for j, i in enumerate(columnas):
+                if i is None:
+                    continue
+                puntaje[:, j] = m[:, i]
+                for k, a in enumerate(reciente):
+                    ciclo[k, j] = ciclos.get(i, {}).get(a, np.nan)
+            salida[nombre] = {"puntaje": puntaje, "ciclo_dias": ciclo}
+        return salida
+
+    escenarios = await asyncio.to_thread(calcular)    # ~1 s de calculo: en un hilo aparte
+    resumen = {k: tendencia[k] for k in ("anios", "primer_anio", "ultimo_anio", "temp_c_por_decada_observada",
+                                         "lluvia_pct_por_decada_observada")}
+    resumen.update(periodo_reciente=[reciente[0], reciente[-1]], horizonte=HORIZONTE_PROYECCION,
+                   temp_c_por_decada_usada=round(tendencia["temp_c_por_anio"] * 10, 2),
+                   escenario="observado" if calentamiento_c_por_decada is None else "supuesto")
+    return {"anios": list(reciente), "especies": indice, "escenarios": escenarios, "resumen": resumen}
+
+
+def _simulador_con_ciclo(preparada: dict, lat: float, sitio: dict, riego: bool, ciclos: dict):
+    """Como _simulador(), y deja en `ciclos` {ano: dias} el ciclo de cada ano en que la especie lo cerro."""
+    def simular(df: pd.DataFrame):
+        r = _simulacion_anual(preparada, lat, sitio, riego, df)
+        if r is None:
+            return None
+        if r.get("ciclo_dias") is not None:
+            ciclos[int(df.index[0].year)] = float(r["ciclo_dias"])
+        return round(1 - r.get("perdida_simulada", 1.0), 3)
     return simular
