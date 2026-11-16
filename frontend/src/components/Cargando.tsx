@@ -5,7 +5,7 @@ export function Cargando({ texto, detalle, compacto = false }: { texto: string; 
     return (
       <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <span className="ps-nota" style={{ fontWeight: 800 }}>{texto}</span>
-        <span className="ps-barra" aria-hidden="true" />
+        <span className="ps-carga-barra" aria-hidden="true" />
       </div>
     )
   }
@@ -14,7 +14,7 @@ export function Cargando({ texto, detalle, compacto = false }: { texto: string; 
       <span className="ps-rueda" aria-hidden="true" />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <span style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.2 }}>{texto}</span>
-        <span className="ps-barra" aria-hidden="true" />
+        <span className="ps-carga-barra" aria-hidden="true" />
         {detalle ? <span className="ps-nota">{detalle}</span> : null}
       </div>
     </div>

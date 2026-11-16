@@ -168,7 +168,7 @@ export default function Preparando() {
         </p>
       ) : null}
 
-      <div style={{ position: 'sticky', bottom: 84, marginTop: 'auto', padding: '14px 16px 28px 16px', background: 'var(--arena)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ position: 'sticky', bottom: 'calc(84px + env(safe-area-inset-bottom, 0px))', marginTop: 'auto', padding: '14px 16px 28px 16px', background: 'var(--arena)', display: 'flex', flexDirection: 'column', gap: 6 }}>
         {climaListo || !climaSinCobertura ? (
           <Link to={enOnboarding ? '/onboarding/meta' : '/terreno'} className="ps-btn">
             {enOnboarding ? t(climaListo ? 'preparando_seguir_registro' : 'preparando_seguir_mientras') : t('preparando_ir_terreno')}

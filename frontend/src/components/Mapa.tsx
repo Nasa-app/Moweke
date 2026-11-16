@@ -127,6 +127,17 @@ export function MapaDibujo({
       alCambiar.current([...actuales.current, [evento.latlng.lat, evento.latlng.lng]])
     })
     nuevo.on('zoomend', () => setCerca(nuevo.getZoom() >= ZOOM_MINIMO_PARA_MARCAR))
+    // Con ratón, un punto sigue al cursor y muestra dónde caería la próxima esquina. Con el dedo no hay cursor: no sale.
+    const fantasma = L.circleMarker([0, 0], { radius: 8, color: '#ffffff', weight: 3, fillColor: '#3f611c', fillOpacity: 0.6, interactive: false })
+    nuevo.on('mousemove', (evento: L.LeafletMouseEvent) => {
+      if (nuevo.getZoom() < ZOOM_MINIMO_PARA_MARCAR) {
+        fantasma.remove()
+        return
+      }
+      fantasma.setLatLng(evento.latlng)
+      if (!nuevo.hasLayer(fantasma)) fantasma.addTo(nuevo)
+    })
+    nuevo.on('mouseout', () => fantasma.remove())
     mapa.current = nuevo
     return () => {
       nuevo.remove()
@@ -137,9 +148,12 @@ export function MapaDibujo({
 
   useCapaBase(mapa, base)
 
+  // Solo cuando el centro o el zoom piden otra cosa (la ubicación del teléfono, otra comuna): comparar por valor evita
+  // que un arreglo nuevo con las mismas coordenadas devuelva el mapa al punto de partida tras cada esquina.
+  const [latCentro, lonCentro] = centro
   useEffect(() => {
-    mapa.current?.setView(centro, zoom)
-  }, [centro, zoom])
+    mapa.current?.setView([latCentro, lonCentro], zoom)
+  }, [latCentro, lonCentro, zoom])
 
   useEffect(() => {
     actuales.current = esquinas
@@ -164,7 +178,7 @@ export function MapaDibujo({
 
   return (
     <div style={{ position: 'relative' }}>
-      <div ref={contenedor} className="ps-mapa" role="application" aria-label={t('mapa_aria_dibujo')} />
+      <div ref={contenedor} className={`ps-mapa ${cerca ? 'ps-mapa-marcando' : ''}`} role="application" aria-label={t('mapa_aria_dibujo')} />
       <SelectorBase base={base} onCambio={cambiarBase} />
       {cerca ? null : (
         <p

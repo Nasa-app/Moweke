@@ -67,7 +67,7 @@ export default function OnbDatos() {
         </label>
       </section>
 
-      <div style={{ position: 'sticky', bottom: 84, marginTop: 'auto', padding: '14px 16px 28px 16px', background: 'var(--arena)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ position: 'sticky', bottom: 'calc(84px + env(safe-area-inset-bottom, 0px))', marginTop: 'auto', padding: '14px 16px 28px 16px', background: 'var(--arena)', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <button type="button" onClick={() => navigate(IR_AL_MAPA)} className="ps-btn" style={{ gap: 8 }}>
           <IconoUbicacion stroke="#fff" />
           {t('onb_seguir_marcar')}

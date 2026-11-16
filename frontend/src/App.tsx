@@ -6,6 +6,7 @@ import { RutaPrivada } from './components/RutaPrivada'
 import { BottomNav } from './components/BottomNav'
 import { LangSwitch } from './components/LangSwitch'
 import { EstadoConexion } from './components/EstadoConexion'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 import Portada from './pages/Portada'
 import Sesion from './pages/Sesion'
@@ -45,6 +46,7 @@ function App() {
             </div>
             <EstadoConexion />
             <BottomNav />
+            <ErrorBoundary>
             <Routes>
               <Route path="/" element={<Portada />} />
               <Route path="/sesion" element={<Sesion />} />
@@ -78,6 +80,7 @@ function App() {
               <Route path="/fuentes" element={<RutaPrivada><Fuentes /></RutaPrivada>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
+            </ErrorBoundary>
           </BrowserRouter>
         </PredioProvider>
       </AuthProvider>

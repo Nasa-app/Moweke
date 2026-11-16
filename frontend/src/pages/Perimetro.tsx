@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Screen, BarraSuperior, Titulo } from '../components/Screen'
 import { MapaDibujo } from '../components/Mapa'
@@ -42,7 +42,10 @@ export default function Perimetro() {
   const [pedirComunas] = useState(() => enOnboarding || (!leer<Punto | null>('mapa_centro', null) && comunasGuardadas().length === 0))
   const { comunas, cargando: cargandoComunas } = useComunas(pedirComunas)
   const [elegida, setVista] = useState<Vista | null>(null)
-  const vista = elegida ?? vistaInicial(enOnboarding, comunas)
+  // La vista inicial se calcula una vez (y de nuevo solo si llegan las comunas): si cambiara en cada pintado, el mapa
+  // volvería al centro de la comuna con cada esquina marcada.
+  const inicial = useMemo(() => vistaInicial(enOnboarding, comunas), [enOnboarding, comunas])
+  const vista = elegida ?? inicial
   const comunaElegida = enOnboarding ? leerBorrador().comuna : null
   const [esquinas, setEsquinas] = useState<Punto[]>([])
   const [enviando, setEnviando] = useState(false)

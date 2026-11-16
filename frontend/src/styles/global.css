@@ -43,17 +43,19 @@ button {
   justify-content: center;
   background: var(--hundido);
   min-height: 100vh;
+  min-height: 100dvh;   /* Safari: 100vh incluye el espacio bajo las barras del navegador y deja la pantalla más alta que lo visible */
 }
 .ps-screen {
   width: 100%;
   max-width: 430px;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--arena);
   color: var(--carbon);
   display: flex;
   flex-direction: column;
   position: relative;
-  padding-bottom: var(--reserva-nav);
+  padding-bottom: calc(var(--reserva-nav) + env(safe-area-inset-bottom, 0px));
 }
 .ps-pad {
   padding-left: var(--space-5);
@@ -229,11 +231,14 @@ button {
 }
 
 /* ---- navegación inferior ---- */
+/* Sin transform para centrarla: en Safari una barra fija con transform se mueve y "flota" al plegarse o desplegarse la
+   barra del navegador. Se centra con márgenes automáticos y se sube lo que ocupa la barra de inicio del iPhone. */
 .ps-nav {
   position: fixed;
-  left: 50%;
-  bottom: 12px;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   width: min(calc(100% - 24px), 406px);
   z-index: 50;
   box-sizing: border-box;
@@ -321,9 +326,10 @@ button {
 /* selector de idioma fijo arriba a la derecha: en todas las pantallas, sobre la franja libre de la barra superior */
 .ps-chrome-top {
   position: fixed;
-  top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  left: 0;
+  right: 0;
+  margin: 0 auto;
   width: min(100%, 430px);
   box-sizing: border-box;
   padding: 0 16px;
@@ -338,7 +344,7 @@ button {
 }
 .ps-chrome-top .ps-lang button {
   min-width: 44px;
-  min-height: 34px;
+  min-height: 40px;
   font-size: 14px;
 }
 
@@ -524,7 +530,7 @@ a.ps-btn-secundario:hover { color: var(--carbon); }
   border-top-color: var(--verde);
   animation: ps-girar 0.9s linear infinite;
 }
-.ps-barra {
+.ps-carga-barra {
   position: relative;
   display: block;
   height: 6px;
@@ -532,7 +538,7 @@ a.ps-btn-secundario:hover { color: var(--carbon); }
   background: var(--hundido);
   overflow: hidden;
 }
-.ps-barra::after {
+.ps-carga-barra::after {
   content: '';
   position: absolute;
   inset: 0 auto 0 0;
@@ -547,7 +553,7 @@ a.ps-btn-secundario:hover { color: var(--carbon); }
     border-top-color: var(--verde);
     border-right-color: var(--verde);
   }
-  .ps-barra::after {
+  .ps-carga-barra::after {
     animation: none;
     width: 100%;
     opacity: 0.45;
@@ -557,9 +563,10 @@ a.ps-btn-secundario:hover { color: var(--carbon); }
 /* Aviso de que se está viendo lo último guardado: sobre el menú inferior. */
 .ps-aviso-conexion {
   position: fixed;
-  left: 50%;
-  bottom: 88px;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  bottom: calc(88px + env(safe-area-inset-bottom, 0px));
   width: min(calc(100% - 24px), 406px);
   z-index: 49;
   box-sizing: border-box;
@@ -572,4 +579,15 @@ a.ps-btn-secundario:hover { color: var(--carbon); }
   line-height: 1.25;
   text-align: center;
   box-shadow: var(--sombra-2);
+}
+
+/* Mapa de dibujo: con la pantalla cerca y un ratón, la cruz indica que un clic marca una esquina. */
+.ps-mapa-marcando,
+.ps-mapa-marcando .leaflet-grab,
+.ps-mapa-marcando .leaflet-interactive {
+  cursor: crosshair;
+}
+html,
+body {
+  overscroll-behavior-y: none;
 }
