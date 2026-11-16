@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { Screen, BarraSuperior } from '../components/Screen'
 import { CompatRing } from '../components/CompatRing'
+import { Cargando } from '../components/Cargando'
 import { Chip } from '../components/Chip'
 import { SourceLink } from '../components/SourceLink'
 import { usePredio } from '../state/PredioContext'
@@ -98,7 +99,7 @@ export default function Analisis() {
               {t('analisis_supuesto_clima', { escenario: NOMBRE_ESCENARIO[escenario].toLowerCase() })}
             </span>
           ) : null}
-          {candidata === undefined && !error ? <span className="ps-nota">{t('cargando')}</span> : null}
+          {candidata === undefined && !error ? <Cargando texto={t('analisis_evaluando')} detalle={t('especies_buscando_detalle')} /> : null}
           {candidata === null ? <span className="ps-cuerpo">{t('analisis_no_esta')}</span> : null}
           {candidata ? (
             <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 18, background: 'var(--hundido)', display: 'flex', alignItems: 'center', gap: 12 }}>

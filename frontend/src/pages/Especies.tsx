@@ -4,6 +4,7 @@ import { Screen, BarraSuperior, Titulo } from '../components/Screen'
 import { CompatRing } from '../components/CompatRing'
 import { Chip } from '../components/Chip'
 import { IconoInfo, IconoSiguiente } from '../components/icons'
+import { Cargando } from '../components/Cargando'
 import { Interruptor } from '../components/Interruptor'
 import { usePredio } from '../state/PredioContext'
 import { borrar } from '../state/storage'
@@ -222,9 +223,14 @@ export default function Especies() {
         </p>
       ) : null}
       {!ranking && !sinClima && !error ? (
-        <p className="ps-pad ps-cuerpo" role="status" style={{ margin: '12px 0 0 0' }}>
-          {t('especies_buscando')}
-        </p>
+        <div className="ps-pad-16" style={{ margin: '12px 16px 0 16px' }}>
+          <Cargando texto={t('especies_buscando')} detalle={t('especies_buscando_detalle')} />
+        </div>
+      ) : null}
+      {actualizando && !error ? (
+        <div className="ps-pad-16" style={{ margin: '12px 16px 0 16px' }}>
+          <Cargando compacto texto={t('especies_actualizando')} />
+        </div>
       ) : null}
       <div aria-busy={actualizando} style={{ opacity: actualizando ? 0.45 : 1, transition: 'opacity 0.15s' }}>
       {ranking && aptas.length === 0 ? (

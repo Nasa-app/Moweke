@@ -494,3 +494,62 @@ a.ps-btn-secundario:hover { color: var(--carbon); }
     transition: none;
   }
 }
+
+/* Indicador de carga: una rueda que gira y una barra que va y viene (no hay un porcentaje real que mostrar). */
+@keyframes ps-girar {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes ps-barrido {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
+}
+.ps-cargando {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.ps-rueda {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 4px solid var(--hundido);
+  border-top-color: var(--verde);
+  animation: ps-girar 0.9s linear infinite;
+}
+.ps-barra {
+  position: relative;
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--hundido);
+  overflow: hidden;
+}
+.ps-barra::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 30%;
+  border-radius: 3px;
+  background: var(--verde);
+  animation: ps-barrido 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ps-rueda {
+    animation: none;
+    border-top-color: var(--verde);
+    border-right-color: var(--verde);
+  }
+  .ps-barra::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.45;
+  }
+}
