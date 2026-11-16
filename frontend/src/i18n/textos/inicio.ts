@@ -50,6 +50,8 @@ export const textos: Record<string, { es: string; en: string }> = {
 
   // selectores
   selector_parcela_aria: { es: 'Parcela', en: 'Plot' },
+  selector_parcela_agregar: { es: 'Agregar', en: 'Add' },
+  selector_parcela_agregar_aria: { es: 'Agregar otra parcela', en: 'Add another plot' },
   selector_parcela_n: { es: 'Parcela {n} · {ha} ha', en: 'Plot {n} · {ha} ha' },
 
   // Terreno

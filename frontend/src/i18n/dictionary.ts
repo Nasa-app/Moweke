@@ -186,7 +186,7 @@ const base: Record<string, { es: string; en: string }> = {
   // terreno / perímetro / zonas
   terreno_titulo: { es: 'Tu terreno', en: 'Your land' },
   terreno_zonas_sembrar: { es: 'Mapa de tu parcela', en: 'Map of your plot' },
-  terreno_mis_parcelas: { es: 'Mis parcelas · marcar otra', en: 'My plots · mark another' },
+  terreno_mis_parcelas: { es: 'Ver mis parcelas', en: 'See my plots' },
   terreno_cambio_20_anios: { es: 'Cómo viene cambiando · 20 años', en: 'How it has been changing · 20 years' },
   terreno_medido: { es: 'Medido en tu parcela', en: 'Measured on your plot' },
   terreno_riesgos: { es: 'Riesgos en tu parcela', en: 'Risks on your plot' },
