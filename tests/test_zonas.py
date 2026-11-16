@@ -29,3 +29,17 @@ def test_reusa_la_consulta_dentro_de_la_vigencia(monkeypatch):
     assert len(llamadas) == 1
     zonas.clima_de_zona("Quemchi", ahora=1000.0 + zonas.VIGENCIA_S + 1)
     assert len(llamadas) == 2
+
+
+def test_resumen_sitio_redondea_y_trae_lo_que_ve_tu_terreno():
+    from datetime import date
+
+    import main
+    sitio = {"periodo_clima": (date(2025, 11, 1), date(2026, 10, 31)), "ghi_mensual": [4.123456] * 12,
+             "fuente_radiacion": "NASA POWER", "ph": 5.8, "awc_mm": 90.0, "altitud_celda_m": 12.4}
+    normales = {"tmedia": [10.123] * 12, "tmin_extrema": [-1.456] * 12, "lluvia": [100.0] * 12}
+    r = main._resumen_sitio({"suelo": {"drenaje": None}}, sitio, normales, 55.6, 0.456, "franca")
+    assert r["periodo_clima"] == ["2025-11-01", "2026-10-31"]
+    assert r["temperatura_media_mensual"][0] == 10.12 and r["lluvia_anual_mm"] == 1200.0
+    assert r["altitud_m"] == 56 and r["altitud_celda_m"] == 12 and r["correccion_temperatura_c"] == 0.46
+    assert r["textura"] == "franca" and r["ph"] == 5.8

@@ -10,7 +10,7 @@ import { PreguntaSuelo } from '../components/PreguntaSuelo'
 import { IconoIncendio, IconoSiguiente, IconoUbicacion } from '../components/icons'
 import { usePredio } from '../state/PredioContext'
 import {
-  ApiError, candidatasSiembra, guardarSuelo, mensajeDeError, verParcela,
+  ApiError, guardarSuelo, sitioParcela, mensajeDeError, verParcela,
   type DatosSitio, type ParcelaDetalle, type SueloDeclarado,
 } from '../lib/api'
 import { PREGUNTAS_SUELO } from '../lib/suelo'
@@ -52,7 +52,7 @@ export default function Terreno() {
         setParcela(p)
         setSuelo(p.suelo)
       }),
-      candidatasSiembra(idParcela, { limite: 1 })
+      sitioParcela(idParcela)
         .then((r) => vigente && setSitio(r.datos_sitio))
         .catch((err) => {
           if (err instanceof ApiError && err.status === 409) {

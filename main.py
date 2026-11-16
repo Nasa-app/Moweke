@@ -608,6 +608,47 @@ def _armar_datos_sitio(parcela: dict, sitio: dict):
     return datos_sitio, clima, correccion, altitud, textura
 
 
+def _resumen_sitio(parcela: dict, sitio: dict, normales: dict, altitud, correccion: float, textura) -> dict:
+    """Lo medido del sitio tal como lo ve el agricultor (Tu terreno): normales de clima, radiacion, suelo y altitud."""
+    inicio, fin = sitio["periodo_clima"]
+    redondear = lambda serie: None if serie is None else [round(v, 2) for v in serie]
+    return {
+        "periodo_clima": [inicio.isoformat(), fin.isoformat()],
+        "temperatura_media_mensual": redondear(normales["tmedia"]),
+        "temperatura_minima_mas_baja_mensual": redondear(normales["tmin_extrema"]),
+        "lluvia_mensual_mm": redondear(normales["lluvia"]),
+        "lluvia_anual_mm": None if normales["lluvia"] is None else round(sum(normales["lluvia"]), 1),
+        "ghi_mensual_kwh_m2_dia": redondear(sitio["ghi_mensual"]),
+        "fuente_radiacion": sitio["fuente_radiacion"],
+        "ph": sitio["ph"], "agua_disponible_suelo_mm": sitio["awc_mm"],
+        "altitud_m": None if altitud is None else round(altitud),
+        "altitud_celda_m": None if sitio["altitud_celda_m"] is None else round(sitio["altitud_celda_m"]),
+        "correccion_temperatura_c": round(correccion, 2),
+        "textura": textura, "suelo": parcela["suelo"],
+    }
+
+
+@app.get("/api/parcelas/{id_parcela}/sitio")
+async def sitio_parcela(id_parcela: int, tareas: BackgroundTasks, session: AsyncSession = Depends(obtener_sesion),
+                         usuario: dict = Depends(usuario_actual)):
+    """Lo medido del sitio de la parcela (clima normal, radiacion, pH, agua del suelo, altitud), sin calcular el
+    ranking de especies: es lo que Tu terreno necesita y cambia muy de vez en cuando, asi que el cliente lo guarda.
+    Mismo contenido que `datos_sitio` de candidatas_siembra. Responde 409 mientras no haya clima del predio."""
+    parcela = await _parcela_autorizada(id_parcela, usuario, session)
+    jobs = await ingesta_predio.encolar(session, id_parcela, ingesta_predio.FUENTES_DE_SITIO)
+    if jobs:
+        tareas.add_task(ingesta_predio.ingerir_predio, id_parcela, jobs)
+    sitio = await leer_sitio(session, id_parcela)
+    datos_sitio, _clima, correccion, altitud, textura = _armar_datos_sitio(parcela, sitio)
+    normales = datos_sitio["normales"]
+    if normales["tmedia"] is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, {
+            "mensaje": "Todavía no hay un año de clima para este predio",
+            "estado_ingesta": await ingesta_predio.estado_ingesta(session, id_parcela)})
+    return {"parcela": id_parcela, "datos_sitio": _resumen_sitio(parcela, sitio, normales, altitud, correccion, textura),
+            "datos_faltantes": catalogo_especies.datos_faltantes(datos_sitio)}
+
+
 @app.get("/api/parcelas/{id_parcela}/candidatas_siembra")
 async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
                               limite: int = Query(20, ge=1, le=200),
@@ -668,24 +709,9 @@ async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
         incluir_no_aptas = True
     lista = catalogo_especies.seleccionar_candidatas(ranking, limite, incluir_no_aptas, especie)
 
-    inicio, fin = sitio["periodo_clima"]
-    redondear = lambda serie: None if serie is None else [round(v, 2) for v in serie]
     return {
         "parcela": id_parcela, "hectareas": parcela["hectareas"], "estado_ingesta": estado,
-        "datos_sitio": {
-            "periodo_clima": [inicio.isoformat(), fin.isoformat()],
-            "temperatura_media_mensual": redondear(normales["tmedia"]),
-            "temperatura_minima_mas_baja_mensual": redondear(normales["tmin_extrema"]),
-            "lluvia_mensual_mm": redondear(normales["lluvia"]),
-            "lluvia_anual_mm": None if normales["lluvia"] is None else round(sum(normales["lluvia"]), 1),
-            "ghi_mensual_kwh_m2_dia": redondear(sitio["ghi_mensual"]),
-            "fuente_radiacion": sitio["fuente_radiacion"],
-            "ph": sitio["ph"], "agua_disponible_suelo_mm": sitio["awc_mm"],
-            "altitud_m": None if altitud is None else round(altitud),
-            "altitud_celda_m": None if sitio["altitud_celda_m"] is None else round(sitio["altitud_celda_m"]),
-            "correccion_temperatura_c": round(correccion, 2),
-            "textura": textura, "suelo": parcela["suelo"],
-        },
+        "datos_sitio": _resumen_sitio(parcela, sitio, normales, altitud, correccion, textura),
         "especies_evaluadas": evaluadas, "especies_aptas": aptas,
         "criterio": "multianual" if serie else "un_ano", "serie_climatica": serie, "escenario": escenario,
         "especies_por_categoria_clima": por_categoria if serie else None,

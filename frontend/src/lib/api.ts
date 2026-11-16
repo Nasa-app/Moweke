@@ -1,6 +1,6 @@
 // Cliente del API real de mogen (ver ../../main.py). Cubre auth, parcelas (predio, mapa
 // por celdas, clima diario, especies candidatas), cultivos, fenología y el tiempo por comuna.
-import { guardar, leer } from '../state/storage'
+import { borrar, guardar, leer } from '../state/storage'
 import type { NombresCatalogo } from './nombres'
 import { tr } from '../i18n/dictionary'
 
@@ -103,6 +103,16 @@ function conMemoria<T>(clave: string, pedir: () => Promise<T>, fresco = false): 
 
 export function olvidarLecturas(): void {
   memoria.clear()
+}
+
+// Lo medido del sitio (clima normal, radiación, pH) cambia con la ingesta mensual y con lo que el agricultor declara
+// del suelo: queda en el dispositivo y se vuelve a pedir pasado este tiempo, o antes si algo lo invalida.
+const VIGENCIA_SITIO_MS = 24 * 60 * 60 * 1000
+const claveSitio = (idParcela: number) => `sitio_${idParcela}`
+
+export function olvidarSitio(idParcela: number): void {
+  borrar(claveSitio(idParcela))
+  memoria.delete(`sitio/${idParcela}`)
 }
 
 // ---------------------------------------------------------------- tipos
@@ -384,6 +394,12 @@ export interface DatosSitio {
   suelo: SueloDeclarado
 }
 
+export interface SitioParcela {
+  parcela: number
+  datos_sitio: DatosSitio
+  datos_faltantes: string[]
+}
+
 export interface CandidatasSiembra {
   parcela: number
   hectareas: number
@@ -547,6 +563,7 @@ export function verParcela(idParcela: number, fresco = false) {
 // Guarda solo lo que cambia; null borra la respuesta. Olvida las lecturas guardadas: la lista de especies cambia.
 export function guardarSuelo(idParcela: number, cambios: Partial<SueloDeclarado>) {
   olvidarLecturas()
+  olvidarSitio(idParcela)
   return peticion<{ suelo: SueloDeclarado }>(`/api/parcelas/${idParcela}/suelo`, { method: 'PUT', body: cambios })
 }
 
@@ -558,6 +575,16 @@ export function climaParcela(idParcela: number, diasAtras = 30) {
   return conMemoria(`clima/${idParcela}/${diasAtras}`, () =>
     peticion<ClimaPredio>(`/api/parcelas/${idParcela}/clima`, { query: { dias_atras: diasAtras } }),
   )
+}
+
+// Lo medido del sitio de la parcela (Tu terreno), sin el ranking de especies. Se guarda en el dispositivo: abrir la
+// pantalla otra vez no consulta de nuevo. Un 409 (todavía sin clima) no se guarda.
+export async function sitioParcela(idParcela: number, fresco = false): Promise<SitioParcela> {
+  const guardado = leer<{ momento: number; valor: SitioParcela } | null>(claveSitio(idParcela), null)
+  if (!fresco && guardado && Date.now() - guardado.momento < VIGENCIA_SITIO_MS) return guardado.valor
+  const valor = await conMemoria(`sitio/${idParcela}`, () => peticion<SitioParcela>(`/api/parcelas/${idParcela}/sitio`), fresco)
+  guardar(claveSitio(idParcela), { momento: Date.now(), valor })
+  return valor
 }
 
 // Comunas que se pueden mirar sin predio, y su tiempo. Públicos: no piden cuenta.
@@ -575,6 +602,7 @@ export function alertasClimaParcela(idParcela: number) {
 
 export function reintentarIngesta(idParcela: number) {
   olvidarLecturas()
+  olvidarSitio(idParcela)
   return peticion<{ fuentes_encoladas: string[]; estado_ingesta: EstadoIngesta }>(
     `/api/parcelas/${idParcela}/ingesta`,
     { method: 'POST' },
