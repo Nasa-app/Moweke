@@ -727,6 +727,53 @@ def _unir_variedades(resultados: list[dict], unir: bool = True) -> list[dict]:
     return salida
 
 
+# ---------------------------------------------------------------- buscador de especies
+def _sin_tildes(texto: str | None) -> str:
+    """Minusculas y sin tildes, para que "ají" encuentre "aji" y "Quínoa" a "quinoa"."""
+    import unicodedata
+    base = unicodedata.normalize("NFD", (texto or "").lower())
+    return "".join(c for c in base if unicodedata.category(c) != "Mn")
+
+
+def buscar_especies(identidades: dict[str, dict], fuentes: dict[str, str | None], con_fenologia: set[str],
+                    consulta: str, limite: int = 12) -> list[dict]:
+    """Las especies del catalogo cuyo nombre (en espanol, en ingles, comun o cientifico) contiene la consulta, de la
+    que mejor coincide a la que menos. Solo lo que se puede sembrar: las mismas exclusiones que el ranking por defecto
+    (malezas, forestales, ornamentales y las filas de EcoCrop que no son cultivos reconocidos). Cada una trae
+    `seguimiento`: si tiene calendario por etapa. Una consulta de menos de 2 letras no devuelve nada."""
+    q = _sin_tildes(consulta).strip()
+    if len(q) < 2:
+        return []
+    # La fila de EcoCrop de una especie con calendario (solanum_tuberosum de la papa) no se ofrece aparte.
+    gemelas = {_slug(identidades[c]["nombre_cientifico"]) for c in con_fenologia if (identidades.get(c) or {}).get("nombre_cientifico")}
+    puntuadas = []
+    for clave, ident in identidades.items():
+        if clave in gemelas and clave not in con_fenologia:
+            continue
+        cats = set(ident.get("categorias") or [])
+        if "weed" in cats or (cats and cats <= CATEGORIAS_NO_CULTIVO):
+            continue
+        if (fuentes.get(clave) == FUENTE_ECOCROP and clave not in con_fenologia
+                and not es_cultivo_reconocido(ident.get("nombre_cientifico"))):
+            continue
+        campos = [_sin_tildes(ident.get(k)) for k in ("nombre_es", "nombre_en", "nombre_cientifico")]
+        campos += [_sin_tildes(n) for n in (ident.get("nombres_comunes") or "").replace(";", ",").split(",")]
+        campos.append(_sin_tildes(clave.replace("_", " ")))
+        campos = [c.strip() for c in campos if c and c.strip()]
+        if not any(q in c for c in campos):
+            continue
+        # 0: un nombre empieza igual; 1: alguna palabra de un nombre empieza igual; 2: lo contiene
+        rango = 0 if any(c.startswith(q) for c in campos) else \
+            1 if any(p.startswith(q) for c in campos for p in c.split()) else 2
+        con_seguimiento = clave in con_fenologia
+        puntuadas.append((rango, not con_seguimiento, len(campos[0]), clave, {
+            "especie": clave, "nombre_es": ident.get("nombre_es"), "nombre_en": ident.get("nombre_en"),
+            "nombre_cientifico": ident.get("nombre_cientifico"), "nombres_comunes": ident.get("nombres_comunes"),
+            "seguimiento": con_seguimiento}))
+    puntuadas.sort(key=lambda t: t[:4])
+    return [t[4] for t in puntuadas[:limite]]
+
+
 async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.DataFrame | None = None,
                              lat: float | None = None, categorias: set[str] | None = None,
                              riego: bool = False, incluir_silvestres: bool = False,

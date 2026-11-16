@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Screen } from '../components/Screen'
 import { Chip } from '../components/Chip'
 import { IconoCheck } from '../components/icons'
+import { BuscadorEspecies } from '../components/BuscadorEspecies'
 import { RegistroCultivo } from '../components/RegistroCultivo'
 import { ReportesCultivo } from '../components/ReportesCultivo'
 import { useSeguimiento } from '../state/useSeguimiento'
@@ -48,6 +49,8 @@ export default function Main() {
           ))}
         </div>
       ) : null}
+
+      {idParcela ? <BuscadorEspecies idParcela={idParcela} onAgregada={setCultivoActivo} /> : null}
 
       {!activo ? (
         <p className="ps-pad ps-cuerpo" style={{ margin: '16px 0 0 0' }}>

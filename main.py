@@ -1163,6 +1163,18 @@ async def nombres_especies(response: Response, session: AsyncSession = Depends(o
     return await RepositorioPostgres(session).nombres_especies()
 
 
+@app.get("/api/especies/buscar")
+async def buscar_especies(q: str = Query(..., min_length=2, max_length=60), limite: int = Query(12, ge=1, le=30),
+                           session: AsyncSession = Depends(obtener_sesion), usuario: dict = Depends(usuario_actual)):
+    """Busca una especie por su nombre (espanol, ingles, comun o cientifico) para agregarla como cultivo. Devuelve solo
+    lo que se puede sembrar y marca cuales tienen calendario por etapa (`seguimiento`): las demas se registran
+    pero no se les calcula calendario. Cualquiera de las devueltas se puede declarar con POST /parcelas/{id}/cultivos."""
+    repo = multianual.RepositorioCacheado(RepositorioPostgres(session), _ALMACEN_CATALOGO)
+    fuentes = {r["especie"]: r.get("fuente") for r in await repo.requisitos_genericos()}
+    return {"especies": catalogo_especies.buscar_especies(
+        await repo.identidades(), fuentes, set(await repo.especies_con_fenologia()), q, limite)}
+
+
 @app.get("/api/especies/con_seguimiento")
 async def especies_con_seguimiento(session: AsyncSession = Depends(obtener_sesion),
                                     usuario: dict = Depends(usuario_actual)):

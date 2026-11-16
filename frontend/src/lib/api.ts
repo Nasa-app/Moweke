@@ -714,6 +714,20 @@ export function especiesConSeguimiento() {
   return conMemoria('especies', () => peticion<{ especies: EspecieConSeguimiento[] }>('/api/especies/con_seguimiento'))
 }
 
+// Una especie que devuelve el buscador. `seguimiento`: tiene calendario por etapa; si no, solo se registra.
+export interface EspecieBuscada {
+  especie: string
+  nombre_es: string | null
+  nombre_en: string | null
+  nombre_cientifico: string | null
+  nombres_comunes: string | null
+  seguimiento: boolean
+}
+
+export function buscarEspecies(consulta: string) {
+  return peticion<{ especies: EspecieBuscada[] }>('/api/especies/buscar', { query: { q: consulta, limite: 12 } })
+}
+
 export function declararCultivo(
   idParcela: number,
   datos: { especie: string; variedad_local?: string | null; fecha_siembra: string },
