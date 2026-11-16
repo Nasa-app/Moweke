@@ -1,34 +1,47 @@
+import { useEffect, useState } from 'react'
 import type { Punto } from './geometria'
+import { zonas, type ZonaComuna } from './api'
 import { guardar, leer } from '../state/storage'
 import { tr } from '../i18n/dictionary'
 
-// Las comunas de Chiloé y dónde abrir el mapa para marcar la parcela. El punto es el pueblo cabecera de cada
-// comuna (coordenadas del geocodificador de Open-Meteo, revisadas el 15-nov-2026), no un deslinde: sirve para
-// que el mapa abra cerca y la persona termine de buscar su parcela acercándose. Quinchao: Achao.
-export interface Comuna {
-  nombre: string
-  centro: Punto
-}
-
-export const COMUNAS: Comuna[] = [
-  { nombre: 'Ancud', centro: [-41.8707, -73.8162] },
-  { nombre: 'Castro', centro: [-42.4721, -73.7732] },
-  { nombre: 'Chonchi', centro: [-42.6239, -73.775] },
-  { nombre: 'Curaco de Vélez', centro: [-42.4389, -73.6012] },
-  { nombre: 'Dalcahue', centro: [-42.3785, -73.6501] },
-  { nombre: 'Puqueldón', centro: [-42.6, -73.6746] },
-  { nombre: 'Queilén', centro: [-42.889, -73.4742] },
-  { nombre: 'Quellón', centro: [-43.1182, -73.6166] },
-  { nombre: 'Quemchi', centro: [-42.1439, -73.4751] },
-  { nombre: 'Quinchao', centro: [-42.4709, -73.4914] },
-]
-
+// Las comunas de Chiloé y dónde abrir el mapa para marcar la parcela vienen del API (GET /api/zonas): el punto es el
+// pueblo cabecera de cada comuna, no un deslinde, y sirve para que el mapa abra cerca. La última lista recibida
+// queda en el dispositivo para abrir sin esperar.
 export const COMUNA_POR_DEFECTO = 'Quemchi'
 // Con este zoom se ve el pueblo y sus alrededores; para marcar esquinas hay que acercarse más (Mapa.tsx).
 export const ZOOM_COMUNA = 13
 
-export function centroDeComuna(nombre: string): Punto | null {
-  return COMUNAS.find((c) => c.nombre === nombre)?.centro ?? null
+const CLAVE_ZONAS = 'zonas_lista'
+
+export function comunasGuardadas(): ZonaComuna[] {
+  return leer<ZonaComuna[]>(CLAVE_ZONAS, [])
+}
+
+// `pedir` en false usa solo la lista guardada y no consulta el API (quien ya tiene dónde abrir el mapa no la necesita).
+export function useComunas(pedir = true): { comunas: ZonaComuna[]; cargando: boolean } {
+  const [comunas, setComunas] = useState<ZonaComuna[]>(comunasGuardadas)
+  const [cargando, setCargando] = useState(pedir)
+  useEffect(() => {
+    if (!pedir) return
+    let vigente = true
+    zonas()
+      .then((lista) => {
+        if (!vigente) return
+        guardar(CLAVE_ZONAS, lista)
+        setComunas(lista)
+      })
+      .catch(() => undefined)
+      .finally(() => vigente && setCargando(false))
+    return () => {
+      vigente = false
+    }
+  }, [pedir])
+  return { comunas, cargando }
+}
+
+export function centroDeComuna(comunas: ZonaComuna[], nombre: string): Punto | null {
+  const zona = comunas.find((c) => c.nombre === nombre)
+  return zona ? [zona.lat, zona.lon] : null
 }
 
 export const TERRENOS = ['Plano', 'Ladera', 'Alto'] as const
@@ -52,7 +65,7 @@ const CLAVE_BORRADOR = 'onboarding_predio'
 export function leerBorrador(): BorradorPredio {
   const guardado = leer<Partial<BorradorPredio>>(CLAVE_BORRADOR, {})
   return {
-    comuna: COMUNAS.some((c) => c.nombre === guardado.comuna) ? (guardado.comuna as string) : COMUNA_POR_DEFECTO,
+    comuna: typeof guardado.comuna === 'string' && guardado.comuna ? guardado.comuna : COMUNA_POR_DEFECTO,
     sector: typeof guardado.sector === 'string' ? guardado.sector : '',
     terreno: TERRENOS.find((t) => t === guardado.terreno) ?? '',
     acepto: guardado.acepto === true,
@@ -68,7 +81,7 @@ export function guardarComunaDeParcela(idParcela: number, comuna: string): void 
 export function comunaDeParcela(idParcela: number | null): string | null {
   if (idParcela === null) return null
   const comuna = leer<Record<string, string>>('comunas_parcelas', {})[String(idParcela)]
-  return COMUNAS.some((c) => c.nombre === comuna) ? comuna : null
+  return comuna || null
 }
 
 export function guardarBorrador(cambios: Partial<BorradorPredio>): void {

@@ -190,3 +190,13 @@ const HORIZONTES = new Set(['observado', 'pronostico', 'estimado'])
 export function nombreHorizonte(horizonte: string | null | undefined): string {
   return horizonte ? (HORIZONTES.has(horizonte) ? tr(`fmt_horizonte_${horizonte}`) : horizonte) : '—'
 }
+
+// Título y cifra de una alerta de clima del predio, en el idioma vigente. El salto lleva signo (+7° / -7°).
+export function textoAlertaClima(a: { tipo: string; valor: number; fuerte: boolean }): { titulo: string; cifra: string } {
+  const titulo = tr(a.fuerte ? 'alerta_clima_helada_fuerte' : `alerta_clima_${a.tipo}`)
+  if (a.tipo === 'lluvia_fuerte') return { titulo, cifra: tr('alerta_clima_valor_lluvia', { valor: numero(a.valor) }) }
+  if (a.tipo.endsWith('_brusco')) {
+    return { titulo, cifra: tr('alerta_clima_valor_salto', { valor: `${a.valor > 0 ? '+' : ''}${numero(a.valor)}` }) }
+  }
+  return { titulo, cifra: tr('alerta_clima_valor_temp', { valor: numero(a.valor) }) }
+}

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Screen, BarraSuperior, Titulo } from '../../components/Screen'
 import { StepDots } from '../../components/StepDots'
 import { IconoUbicacion } from '../../components/icons'
-import { COMUNAS, guardarBorrador, leerBorrador } from '../../lib/comunas'
+import { guardarBorrador, leerBorrador, useComunas } from '../../lib/comunas'
 import { usePredio } from '../../state/PredioContext'
 import { useI18n } from '../../i18n'
 
@@ -15,6 +15,7 @@ export default function OnbDatos() {
   const { t } = useI18n()
   const navigate = useNavigate()
   const { idParcela } = usePredio()
+  const { comunas } = useComunas()
   const [comuna, setComuna] = useState(() => leerBorrador().comuna)
 
   return (
@@ -35,7 +36,7 @@ export default function OnbDatos() {
           }}
           style={{ minHeight: 56, padding: '0 14px', borderRadius: 16, border: '2px solid var(--borde-control)', background: 'var(--blanco)', font: "700 18px 'Alegreya Sans', sans-serif", color: 'var(--carbon)' }}
         >
-          {COMUNAS.map((c) => (
+          {(comunas.some((c) => c.nombre === comuna) ? comunas : [{ nombre: comuna }, ...comunas]).map((c) => (
             <option key={c.nombre}>{c.nombre}</option>
           ))}
         </select>

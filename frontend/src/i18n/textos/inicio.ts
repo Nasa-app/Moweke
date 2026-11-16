@@ -165,6 +165,7 @@ export const textos: Record<string, { es: string; en: string }> = {
   alertas_horizonte_estimado: { es: 'Si el año viene como el pasado', en: 'If the year goes like last year' },
   alertas_el_dia: { es: 'El {fecha}', en: 'On {fecha}' },
   alertas_del_al: { es: 'Del {desde} al {hasta}', en: 'From {desde} to {hasta}' },
+  alertas_clima_titulo: { es: 'Cambios fuertes de clima', en: 'Strong weather changes' },
   alertas_foco_titulo: { es: 'Foco de calor', en: 'Fire hotspot' },
   alertas_focos_uno: { es: '{n} foco ese día', en: '{n} hotspot that day' },
   alertas_focos_otros: { es: '{n} focos ese día', en: '{n} hotspots that day' },

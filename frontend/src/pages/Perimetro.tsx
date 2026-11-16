@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Screen, BarraSuperior, Titulo } from '../components/Screen'
 import { MapaDibujo } from '../components/Mapa'
-import { COMUNA_POR_DEFECTO, ZOOM_COMUNA, centroDeComuna, guardarComunaDeParcela, leerBorrador } from '../lib/comunas'
+import { COMUNA_POR_DEFECTO, ZOOM_COMUNA, centroDeComuna, guardarComunaDeParcela, leerBorrador, comunasGuardadas, useComunas } from '../lib/comunas'
 import { aPoligono, hectareasDe, type Punto } from '../lib/geometria'
 import { IconoUbicacion } from '../components/icons'
-import { crearParcela, mensajeDeError } from '../lib/api'
+import { crearParcela, mensajeDeError, type ZonaComuna } from '../lib/api'
 import { numero } from '../lib/formato'
 import { usePredio } from '../state/PredioContext'
 import { guardar, leer } from '../state/storage'
@@ -23,12 +23,13 @@ interface Vista {
 }
 
 // Dónde abre el mapa. Al venir del registro, en la comuna que la persona acaba de elegir. Si no, donde quedó la
-// última parcela, y si no hay ninguna, en la comuna elegida o en la comuna piloto.
-function vistaInicial(enOnboarding: boolean): Vista {
-  const comuna = centroDeComuna(leerBorrador().comuna)
+// última parcela, y si no hay ninguna, en la comuna elegida o en la comuna piloto. El centro de una comuna llega
+// del API: mientras no esté, la vista queda en null.
+function vistaInicial(enOnboarding: boolean, comunas: ZonaComuna[]): Vista | null {
   const ultima = leer<Punto | null>('mapa_centro', null)
   if (!enOnboarding && ultima) return { centro: ultima, zoom: ZOOM_PARCELA }
-  return { centro: comuna ?? centroDeComuna(COMUNA_POR_DEFECTO)!, zoom: ZOOM_COMUNA }
+  const centro = centroDeComuna(comunas, leerBorrador().comuna) ?? centroDeComuna(comunas, COMUNA_POR_DEFECTO)
+  return centro ? { centro, zoom: ZOOM_COMUNA } : null
 }
 
 export default function Perimetro() {
@@ -37,7 +38,11 @@ export default function Perimetro() {
   const [params] = useSearchParams()
   const enOnboarding = params.get('desde') === 'onboarding'
   const { setParcelaActiva, setCultivoActivo } = usePredio()
-  const [vista, setVista] = useState<Vista>(() => vistaInicial(enOnboarding))
+  // Fuera del registro, con una parcela anterior o con la lista ya guardada, el mapa abre sin consultar las comunas.
+  const [pedirComunas] = useState(() => enOnboarding || (!leer<Punto | null>('mapa_centro', null) && comunasGuardadas().length === 0))
+  const { comunas, cargando: cargandoComunas } = useComunas(pedirComunas)
+  const [elegida, setVista] = useState<Vista | null>(null)
+  const vista = elegida ?? vistaInicial(enOnboarding, comunas)
   const comunaElegida = enOnboarding ? leerBorrador().comuna : null
   const [esquinas, setEsquinas] = useState<Punto[]>([])
   const [enviando, setEnviando] = useState(false)
@@ -93,7 +98,13 @@ export default function Perimetro() {
       </Titulo>
 
       <div className="ps-pad-16" style={{ marginTop: 14, position: 'relative' }}>
-        <MapaDibujo centro={vista.centro} zoom={vista.zoom} esquinas={esquinas} onCambio={setEsquinas} />
+        {vista ? (
+          <MapaDibujo centro={vista.centro} zoom={vista.zoom} esquinas={esquinas} onCambio={setEsquinas} />
+        ) : (
+          <p className="ps-nota" role="status" style={{ margin: 0, minHeight: 240 }}>
+            {cargandoComunas ? t('cargando') : t('api_sin_conexion')}
+          </p>
+        )}
         <button
           type="button"
           aria-label={t('perimetro_usar_ubicacion')}

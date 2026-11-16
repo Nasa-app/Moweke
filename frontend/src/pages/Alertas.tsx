@@ -4,8 +4,8 @@ import { Screen, BarraSuperior, Titulo } from '../components/Screen'
 import { Chip, type TonoChip } from '../components/Chip'
 import { IconoIncendio } from '../components/icons'
 import { useSeguimiento } from '../state/useSeguimiento'
-import { verParcela, type EventoDano, type Horizonte, type ParcelaDetalle } from '../lib/api'
-import { fechaCorta, nombreClave, nombreEfecto, nombreEspecie, nombreFase, nombreHorizonte, numero } from '../lib/formato'
+import { alertasClimaParcela, verParcela, type AlertasClima, type EventoDano, type Horizonte, type ParcelaDetalle } from '../lib/api'
+import { fechaCorta, nombreClave, nombreEfecto, nombreEspecie, nombreFase, nombreHorizonte, numero, textoAlertaClima } from '../lib/formato'
 import { useI18n } from '../i18n'
 
 const TONO: Record<Horizonte, TonoChip> = { observado: 'riesgo', pronostico: 'precaucion', estimado: 'neutro' }
@@ -31,6 +31,8 @@ export default function Alertas() {
   const { t } = useI18n()
   const { idParcela, activo, fenologia, aviso, cargando } = useSeguimiento()
   const [parcela, setParcela] = useState<ParcelaDetalle | null>(null)
+  const [clima, setClima] = useState<AlertasClima | null>(null)
+  const [climaFalla, setClimaFalla] = useState(false)
 
   useEffect(() => {
     if (!idParcela) return
@@ -38,6 +40,17 @@ export default function Alertas() {
     verParcela(idParcela)
       .then((p) => vigente && setParcela(p))
       .catch(() => vigente && setParcela(null))
+    return () => {
+      vigente = false
+    }
+  }, [idParcela])
+
+  useEffect(() => {
+    if (!idParcela) return
+    let vigente = true
+    alertasClimaParcela(idParcela)
+      .then((a) => vigente && setClima(a))
+      .catch(() => vigente && setClimaFalla(true))
     return () => {
       vigente = false
     }
@@ -85,6 +98,34 @@ export default function Alertas() {
             </span>
           </div>
         )}
+      </div>
+
+      <h2 style={{ margin: '22px 20px 0 20px', fontSize: 20, fontWeight: 800 }}>{t('alertas_clima_titulo')}</h2>
+      <div className="ps-pad-16" style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {!idParcela ? <p className="ps-nota" style={{ margin: 0 }}>{t('alertas_marca_parcela')}</p> : null}
+        {clima?.alertas.map((a) => {
+          const { titulo, cifra } = textoAlertaClima(a)
+          return (
+            <article key={`${a.tipo}-${a.primer_dia}`} className="ps-card" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                <h3 style={{ margin: 0, fontWeight: 800, fontSize: 21 }}>{titulo}</h3>
+                <Chip tono={a.fuerte ? 'riesgo' : 'precaucion'}>{nombreHorizonte(a.horizonte)}</Chip>
+              </div>
+              <span style={{ fontSize: 16, fontWeight: 700 }}>{cifra}</span>
+              <span className="ps-detalle">
+                {a.primer_dia === a.ultimo_dia ? t('alertas_el_dia', { fecha: fechaCorta(a.primer_dia) }) : t('alertas_del_al', { desde: fechaCorta(a.primer_dia), hasta: fechaCorta(a.ultimo_dia) })}
+              </span>
+            </article>
+          )
+        })}
+        {clima?.hay_datos && clima.alertas.length === 0 ? (
+          <div className="ps-card-plana" style={{ fontSize: 16, fontWeight: 700 }}>
+            {t('explorar_alertas_ninguna', { fecha: fechaCorta(clima.hasta ?? clima.hoy) })}
+          </div>
+        ) : null}
+        {clima && !clima.hay_datos ? <p className="ps-nota" style={{ margin: 0 }}>{t('explorar_alertas_sin_datos')}</p> : null}
+        {climaFalla ? <p className="ps-nota" style={{ margin: 0 }}>{t('explorar_alertas_fallo')}</p> : null}
+        {idParcela && !clima && !climaFalla ? <p className="ps-nota" style={{ margin: 0 }}>{t('cargando')}</p> : null}
       </div>
 
       <h2 style={{ margin: '22px 20px 0 20px', fontSize: 20, fontWeight: 800 }}>

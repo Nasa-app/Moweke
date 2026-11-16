@@ -70,3 +70,16 @@ def consultar_historia(lat: float, lon: float, inicio: str, fin: str, timeout: i
     df = pd.DataFrame({nombre: pd.Series(diario[col], dtype=float) for col, nombre in COLUMNAS_HISTORIA.items()})
     df.index = pd.to_datetime(diario["time"])
     return df
+
+
+def consultar_hoy(lat: float, lon: float, dias: int = 7, timeout: int = 20) -> dict:
+    """Lo que se ve de una zona sin registro: el tiempo de ahora (temperatura, humedad, viento, codigo WMO) y el
+    resumen diario de hoy y los proximos dias (minima, maxima, lluvia, codigo). Respuesta cruda de la API."""
+    params = {
+        "latitude": lat, "longitude": lon, "forecast_days": dias, "timezone": "auto", "wind_speed_unit": "kmh",
+        "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code",
+        "daily": "temperature_2m_min,precipitation_sum,weather_code",
+    }
+    r = requests.get(URL_BASE, params=params, timeout=timeout)
+    r.raise_for_status()
+    return r.json()

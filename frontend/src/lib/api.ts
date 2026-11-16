@@ -1,7 +1,5 @@
 // Cliente del API real de mogen (ver ../../main.py). Cubre auth, parcelas (predio, mapa
-// por celdas, clima diario, especies candidatas), cultivos y fenología. Lo que todavía no
-// tiene endpoint (reportes, observaciones, rotación comparada, red de semillas) usa datos
-// de ejemplo desde lib/mock.ts, marcados como tal en la UI.
+// por celdas, clima diario, especies candidatas), cultivos, fenología y el tiempo por comuna.
 import { guardar, leer } from '../state/storage'
 import type { NombresCatalogo } from './nombres'
 import { tr } from '../i18n/dictionary'
@@ -230,6 +228,46 @@ export interface ClimaPredio {
   hoy: string
   dias: DiaClima[]
   estado_ingesta: EstadoIngesta
+}
+
+export interface ZonaComuna {
+  nombre: string
+  lat: number
+  lon: number
+}
+
+// El tiempo de ahora en una comuna (pronóstico de modelo de Open-Meteo, no medición).
+export interface ClimaZona {
+  hoy: string
+  temperatura_c: number
+  humedad_relativa: number
+  viento_kmh: number
+  codigo_tiempo: number | null
+  lluvia_hoy_mm: number | null
+  // Primer día de los próximos 7 con mínima de 0 °C o menos; null si no hay.
+  primera_helada: string | null
+}
+
+export type TipoAlertaClima = 'helada' | 'calor' | 'lluvia_fuerte' | 'calentamiento_brusco' | 'enfriamiento_brusco'
+
+// Un cambio fuerte de clima que viene para el predio (no depende del cultivo). `valor` es el extremo del tramo:
+// °C para helada, calor y saltos (el salto lleva signo), mm para lluvia fuerte.
+export interface AlertaClima {
+  tipo: TipoAlertaClima
+  primer_dia: string
+  ultimo_dia: string
+  valor: number
+  horizonte: 'observado' | 'pronostico'
+  fuerte: boolean
+}
+
+export interface AlertasClima {
+  id_parcela: number
+  hoy: string
+  hay_datos: boolean
+  // Último día revisado (fin del pronóstico); solo viene cuando hay datos.
+  hasta?: string
+  alertas: AlertaClima[]
 }
 
 export interface Cultivo {
@@ -518,6 +556,19 @@ export function climaParcela(idParcela: number, diasAtras = 30) {
   return conMemoria(`clima/${idParcela}/${diasAtras}`, () =>
     peticion<ClimaPredio>(`/api/parcelas/${idParcela}/clima`, { query: { dias_atras: diasAtras } }),
   )
+}
+
+// Comunas que se pueden mirar sin predio, y su tiempo. Públicos: no piden cuenta.
+export function zonas() {
+  return conMemoria('zonas', () => peticion<ZonaComuna[]>('/api/zonas'))
+}
+
+export function climaZona(nombre: string) {
+  return conMemoria(`zona:${nombre}`, () => peticion<ClimaZona>(`/api/zonas/${encodeURIComponent(nombre)}/clima`))
+}
+
+export function alertasClimaParcela(idParcela: number) {
+  return conMemoria(`alertas_clima:${idParcela}`, () => peticion<AlertasClima>(`/api/parcelas/${idParcela}/alertas_clima`))
 }
 
 export function reintentarIngesta(idParcela: number) {

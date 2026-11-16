@@ -6,6 +6,7 @@ bloque de auth.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import os
@@ -28,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "services"))
 
 import services.catalogo_especies as catalogo_especies
+import services.alertas_clima as alertas_clima
 import services.cliente_appeears as cliente_appeears
 import services.cliente_clsoilmaps as cliente_clsoilmaps
 import services.cliente_copernicus as cliente_copernicus
@@ -36,6 +38,7 @@ import services.cliente_firms as cliente_firms
 import services.cliente_soilgrids as cliente_soilgrids
 import services.cliente_solar as cliente_solar
 import services.indicadores_locales as indicadores_locales
+import services.zonas as zonas
 from services.riego import lluvia_reciente
 import services.ingesta_predio as ingesta_predio
 import services.multianual as multianual
@@ -121,6 +124,8 @@ _PUNTO_ANONIMO = {"lon": -73.6508595, "lat": -42.1581806}
 # fabrique ella sola una senal "confirmada" (eso ademas exige agricultores distintos).
 _OBSERVACIONES_POR_USUARIO = LimiteIntentos(60, 60 * 60)
 _RIEGOS_POR_USUARIO = LimiteIntentos(60, 60 * 60)
+# El tiempo de una comuna se ve sin cuenta: se acota por IP aunque el resultado se guarda en memoria.
+_ZONAS_POR_IP = LimiteIntentos(120, 60 * 60)
 ESCENARIOS_CALENTAMIENTO = {"observado": None, "moderado": 0.3, "fuerte": 0.6}   # °C por decada hasta 2040
 _ALMACEN_CATALOGO: dict = {}   # catalogo de especies en memoria del proceso (ver multianual.RepositorioCacheado)
 # Detras de un proxy la conexion llega desde el proxy, no desde el cliente. Si
@@ -280,6 +285,26 @@ async def salud(session: AsyncSession = Depends(obtener_sesion)):
     except Exception:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Base de datos no disponible")
     return {"estado": "ok"}
+
+
+@app.get("/api/zonas")
+async def listar_zonas():
+    """Las comunas que se pueden mirar sin tener predio, con el punto donde abre el mapa (el pueblo cabecera)."""
+    return [{"nombre": n, "lat": lat, "lon": lon} for n, (lat, lon) in zonas.COMUNAS.items()]
+
+
+@app.get("/api/zonas/{nombre}/clima")
+async def clima_zona(nombre: str, request: Request):
+    """El tiempo de ahora en una comuna y la primera helada pronosticada (minima de 0 °C o menos en 7 dias), sin
+    cuenta. Es pronostico de modelo (Open-Meteo), no medicion. Solo acepta comunas de la lista: no se consultan
+    puntos que mande el cliente."""
+    if nombre not in zonas.COMUNAS:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Comuna no existe")
+    _frenar(_ZONAS_POR_IP, _ip_cliente(request))
+    try:
+        return await asyncio.to_thread(zonas.clima_de_zona, nombre)
+    except Exception:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "El pronóstico no está disponible por ahora")
 
 
 @app.post("/api/auth/registro", response_model=TokenOut)
@@ -1062,6 +1087,24 @@ async def clima_parcela(id_parcela: int, tareas: BackgroundTasks,
                       "fuente": d["fuente"], "horizonte": d["horizonte"]}
                      for fecha, d in serie.iterrows()],
             "correccion_sesgo": serie.attrs.get("correccion_sesgo"), "estado_ingesta": estado}
+
+
+@app.get("/api/parcelas/{id_parcela}/alertas_clima")
+async def alertas_clima_parcela(id_parcela: int, session: AsyncSession = Depends(obtener_sesion),
+                                 usuario: dict = Depends(usuario_actual)):
+    """Los cambios fuertes de clima que vienen para el predio (helada, calor, lluvia fuerte, saltos bruscos de la
+    maxima), de hoy al final del pronostico. No depende del cultivo y no dispara descargas: lee lo que ya hay. Sin
+    clima diario responde `alertas: []` con `hay_datos: false`, para no decir "sin alertas" cuando no se miro."""
+    await _parcela_autorizada(id_parcela, usuario, session)
+    hoy = date.today()
+    serie = await leer_clima_diario(session, id_parcela, hoy - timedelta(days=1))
+    if serie is not None:
+        serie = serie[serie["horizonte"] != "estimado"]
+    if serie is None or serie.empty:
+        return {"id_parcela": id_parcela, "hoy": hoy.isoformat(), "hay_datos": False, "alertas": []}
+    return {"id_parcela": id_parcela, "hoy": hoy.isoformat(), "hay_datos": True,
+            "hasta": serie.index.max().date().isoformat(),
+            "alertas": alertas_clima.cambios_fuertes(serie, hoy.isoformat())}
 
 
 # ---------------------------------------------------------------- fuentes nuevas (extension
