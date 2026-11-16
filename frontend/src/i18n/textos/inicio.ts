@@ -112,7 +112,9 @@ export const textos: Record<string, { es: string; en: string }> = {
   // Cultivos (Main)
   onb_listo_cultivos: { es: 'Cultivos registrados', en: 'Registered crops' },
   onb_listo_ver_seguimiento: { es: 'Ver el seguimiento y anotar labores', en: 'See the tracking and record tasks' },
+  main_etapa_reportada: { es: 'Tú lo viste', en: 'You saw it' },
   reportes_titulo: { es: 'Reportes de campo', en: 'Field reports' },
+  reportes_nota: { es: 'El brote y la flor mueven el calendario: las etapas que siguen se calculan desde la fecha que reportaste. De cada una cuenta el último reporte. Las demás etapas solo quedan anotadas.', en: 'Sprouting and flowering move the calendar: the stages that follow are calculated from the date you reported. The latest report of each counts. Other stages are only recorded.' },
   reportes_vacio: { es: 'Todavía no reportaste cómo va este cultivo. Usa "Cuéntanos cómo va".', en: 'You have not reported how this crop is doing yet. Use "Tell us how it is going".' },
   reportes_error: { es: 'No pudimos traer los reportes de este cultivo.', en: 'We could not load the reports for this crop.' },
   reportes_por_enviar: { es: 'Por enviar', en: 'To send' },

@@ -72,7 +72,7 @@ export function RegistroCultivo({ idCultivo, onCambio }: { idCultivo: number; on
           ))}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             type="date"
             aria-label={t('registro_fecha_aria')}
@@ -80,9 +80,9 @@ export function RegistroCultivo({ idCultivo, onCambio }: { idCultivo: number; on
             min={desde}
             max={hoy}
             onChange={(e) => setFecha(e.target.value)}
-            style={{ flex: 1, minHeight: 48, padding: '0 12px', borderRadius: 14, border: '2px solid var(--borde-control)', background: 'var(--blanco)', color: 'var(--carbon)', font: "700 16px 'Alegreya Sans', sans-serif" }}
+            style={{ flex: '1 1 150px', minWidth: 0, boxSizing: 'border-box', minHeight: 48, padding: '0 12px', borderRadius: 14, border: '2px solid var(--borde-control)', background: 'var(--blanco)', color: 'var(--carbon)', font: "700 16px 'Alegreya Sans', sans-serif" }}
           />
-          <button type="button" className="ps-btn" onClick={anotar} disabled={enviando || !fecha} style={{ flex: '0 0 auto', padding: '0 20px' }}>
+          <button type="button" className="ps-btn" onClick={anotar} disabled={enviando || !fecha} style={{ flex: '1 1 110px', width: 'auto', minWidth: 0, boxSizing: 'border-box', padding: '0 16px' }}>
             {t('registro_guardar')}
           </button>
         </div>

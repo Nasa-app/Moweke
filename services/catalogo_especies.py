@@ -38,7 +38,7 @@ from typing import Protocol
 
 import pandas as pd
 
-from pheno_engine import ClimaIncompleto, Cultivo, simular
+from pheno_engine import ClimaIncompleto, Cultivo, actualizar_calendario_con_confirmacion, simular
 from motor_estres import (PROFUNDIDAD_SUELO_M, ParametrosAgua, Regla, balance_agua, balance_agua_fao56, evaluar,
                           et0_hargreaves, factores_et0, fases, kc_diario, zona_raices_mm)
 from riego import recomendar_riego
@@ -867,10 +867,48 @@ def _perdida_de(eventos: list[dict]) -> float:
     return round(1 - perdida, 2)
 
 
+# Que etapa del calendario confirma cada reporte de campo. Solo las que significan lo mismo en cualquier especie:
+# "brote" es la emergencia (BBCH09) y "flor" la floracion (BBCH65). Las demas (hojas, fruto o raiz, amarilla, cosecha)
+# no tienen una etapa propia en el reloj termico de estas especies: se anotan pero no mueven el calendario.
+ETAPA_DE_REPORTE = {"brote": "emergencia", "flor": "floracion"}
+
+
+def calendario_con_reportes(clima: pd.DataFrame, fechas: dict, c: Cultivo, siembra, lat: float,
+                            reportes: list[dict]) -> tuple[dict, dict]:
+    """Reancla el calendario simulado a lo que el agricultor vio (ver pheno_engine.actualizar_calendario_con_confirmacion).
+    `reportes`: [{'fase', 'fecha'}]. De cada etapa cuenta el reporte mas reciente (asi se puede corregir uno
+    equivocado reportando de nuevo). Las etapas confirmadas toman la fecha del reporte; las anteriores, la simulada
+    o la del reporte si la simulada cae despues; las posteriores a la ultima confirmada se vuelven a calcular desde
+    esa fecha. Devuelve (fechas nuevas, {etapa: fecha confirmada}); sin reportes que apliquen, las mismas fechas."""
+    nombres = [n for n, _ in c.etapas]
+    siembra = pd.Timestamp(siembra)
+    confirmadas: dict[str, pd.Timestamp] = {}
+    for r in sorted(reportes, key=lambda r: r["fecha"]):
+        etapa = ETAPA_DE_REPORTE.get(r["fase"])
+        fecha = pd.Timestamp(r["fecha"])
+        if etapa in nombres and siembra <= fecha <= clima.index[-1]:
+            confirmadas[etapa] = fecha
+    if not confirmadas:
+        return fechas, {}
+    ultima = max(confirmadas, key=nombres.index)
+    nuevas: dict[str, pd.Timestamp] = {}
+    try:
+        posteriores = actualizar_calendario_con_confirmacion(clima, ultima, confirmadas[ultima], lat, c)
+    except (ValueError, KeyError):
+        return fechas, {}
+    for nombre in nombres[: nombres.index(ultima) + 1]:
+        if nombre in confirmadas:
+            nuevas[nombre] = confirmadas[nombre]
+        elif nombre in fechas:
+            nuevas[nombre] = min(fechas[nombre], confirmadas[ultima])
+    nuevas.update(posteriores)
+    return nuevas, {n: f for n, f in confirmadas.items()}
+
+
 async def seguimiento_cultivo(especie: str, variedad_local: str | None, repo: RepositorioEspecies,
                                clima: pd.DataFrame, siembra, lat: float, cap_mm: float | None, hoy,
                                manejo: tuple = (), et0_factores: list | None = None,
-                               prof_suelo_m: float | None = None) -> dict:
+                               prof_suelo_m: float | None = None, reportes: tuple = ()) -> dict:
     """Un cultivo ya sembrado (o con siembra planeada) contra la serie diaria del predio:
     en que fecha llega a cada etapa, en que fase esta hoy, y que condiciones y eventos de
     dano toca cada fase -- separando lo que ya se observo, lo que viene en el pronostico y
@@ -894,6 +932,7 @@ async def seguimiento_cultivo(especie: str, variedad_local: str | None, repo: Re
     numerico = clima[["tmin", "tmax", "lluvia", "rh"]].astype(float)
     horizonte = clima["horizonte"]
     fechas = simular(numerico, siembra, lat, c)
+    fechas, confirmadas = calendario_con_reportes(numerico, fechas, c, siembra, lat, list(reportes))
     params = await construir_parametros_agua(especie, repo)
     riegos = tuple(pd.Timestamp(m["fecha"]) for m in manejo if m["tipo_labor"] == "riego")
     agua = balance_del_cultivo(numerico, lat, siembra, fechas, c, params, cap_mm, False, et0_factores, prof_suelo_m,
@@ -920,7 +959,8 @@ async def seguimiento_cultivo(especie: str, variedad_local: str | None, repo: Re
                for e in resultado["eventos"]]
 
     etapas = [{"etapa": nombre, "fecha": dia(fechas[nombre]) if nombre in fechas else None,
-               "horizonte": horizonte.get(fechas[nombre]) if nombre in fechas else None}
+               "horizonte": horizonte.get(fechas[nombre]) if nombre in fechas else None,
+               "confirmada": nombre in confirmadas}
               for nombre, _ in c.etapas]
 
     tramos = [(nombre, ini, fin, False) for nombre, ini, fin in fases(siembra, fechas, c)]

@@ -1,5 +1,5 @@
 import { guardar, leer } from '../state/storage'
-import { ApiError, enviarReporte, FASES_REPORTE, type FaseReporte } from './api'
+import { ApiError, enviarReporte, FASES_REPORTE, olvidarLecturas, type FaseReporte } from './api'
 
 // Reportar guarda primero en una cola local y la sube de inmediato: con señal intermitente (el caso real del
 // campo) el reporte no se pierde, queda en el teléfono y se sube cuando hay conexión. Cada reporte lleva su cultivo.
@@ -59,6 +59,7 @@ async function subir(): Promise<number> {
       try {
         await enviarReporte(reporte.idCultivo as number, { fase: fase as FaseReporte, fecha: reporte.fecha, capturado: reporte.creado })
         quitar = true
+        olvidarLecturas()   // el reporte mueve el calendario: el seguimiento guardado ya no vale
       } catch (err) {
         const rechazado = err instanceof ApiError && err.status >= 400 && err.status < 500 && ![401, 408, 429].includes(err.status)
         if (!rechazado) break   // sin conexión, servidor caído o sesión que aún no está: se reintenta después

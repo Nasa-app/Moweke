@@ -106,6 +106,7 @@ export default function Main() {
                       </span>
                       <span style={{ fontSize: 14, fontWeight: 800, lineHeight: 1.1, color: alcanzada || siguiente ? 'var(--verde)' : undefined }}>{nombreClave(etapa.etapa)}</span>
                       <span className="ps-nota" style={{ lineHeight: 1.1 }}>{etapa.fecha ? fechaCorta(etapa.fecha) : t('main_sin_fecha')}</span>
+                      {etapa.confirmada ? <span className="ps-nota" style={{ lineHeight: 1.1, fontWeight: 800, color: 'var(--verde)' }}>{t('main_etapa_reportada')}</span> : null}
                     </li>
                   )
                 })}

@@ -542,7 +542,8 @@ export interface Fenologia {
   siembra: string
   hoy: string
   horizontes: { observado_hasta: string | null; pronostico_hasta: string | null; estimado_hasta: string | null }
-  etapas: { etapa: string; fecha: string | null; horizonte: Horizonte | null }[]
+  // `confirmada`: la fecha es la que el agricultor reportó (brote, flor), no la simulada.
+  etapas: { etapa: string; fecha: string | null; horizonte: Horizonte | null; confirmada?: boolean }[]
   fase_actual: string | null
   fases: FaseCultivo[]
   estado: string

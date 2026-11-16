@@ -30,6 +30,7 @@ export function ReportesCultivo({ idCultivo }: { idCultivo: number }) {
             ))}
           </ul>
         ) : null}
+        <span className="ps-nota">{t('reportes_nota')}</span>
       </div>
     </section>
   )

@@ -934,6 +934,11 @@ async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
     ), {"id": id_parcela})).scalar_one_or_none()
     manejo = (await session.execute(text(
         "SELECT tipo_labor, fecha FROM manejo_predio WHERE id_cultivo = :id"), {"id": id_cultivo})).mappings().all()
+    # Lo que el agricultor reporto haber visto (brote, flor): reancla el calendario a la fecha real.
+    reportes = (await session.execute(text(
+        "SELECT fase_fenologica AS fase, fecha_observada AS fecha FROM fenologia_observada "
+        "WHERE id_cultivo = :id AND fase_fenologica = ANY(:fases)"),
+        {"id": id_cultivo, "fases": list(catalogo_especies.ETAPA_DE_REPORTE)})).mappings().all()
 
     sin_clima = {"mensaje": "Todavía no hay clima diario del predio desde la fecha de siembra",
                  "estado_ingesta": estado}
@@ -943,6 +948,7 @@ async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
         resultado = await catalogo_especies.seguimiento_cultivo(
             cultivo["especie"], cultivo["variedad_local"], RepositorioPostgres(session), clima,
             cultivo["fecha_siembra"], parcela["lat"], awc, date.today(), manejo=tuple(dict(m) for m in manejo),
+            reportes=tuple(dict(r) for r in reportes),
             et0_factores=await leer_factores_et0(session, id_parcela),
             prof_suelo_m=PROFUNDIDAD_SUELO_M.get(parcela["suelo"]["profundidad"]))
     except (catalogo_especies.EspecieSinPerfil, catalogo_especies.EspecieSinPerfilFenologico):
