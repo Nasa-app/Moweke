@@ -1,10 +1,11 @@
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Screen } from '../components/Screen'
 import { IconoCheck } from '../components/icons'
 import { useI18n } from '../i18n'
 
 export default function Confirmacion() {
   const { t } = useI18n()
+  const enviado = (useLocation().state as { enviado?: boolean } | null)?.enviado === true
   return (
     <Screen>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -38,8 +39,8 @@ export default function Confirmacion() {
 
         <div style={{ marginTop: 24, padding: '0 24px', alignSelf: 'stretch', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
           <div className="ps-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <span style={{ fontSize: 24, fontWeight: 800 }}>{t('confirmacion_guardado')}</span>
-            <span className="ps-nota">{t('confirmacion_en_cola')}</span>
+            <span style={{ fontSize: 24, fontWeight: 800 }}>{t(enviado ? 'confirmacion_enviado' : 'confirmacion_guardado')}</span>
+            <span className="ps-nota">{t(enviado ? 'confirmacion_enviado_detalle' : 'confirmacion_en_cola')}</span>
           </div>
         </div>
 

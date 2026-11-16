@@ -4,6 +4,7 @@ import { Screen } from '../components/Screen'
 import { Chip } from '../components/Chip'
 import { IconoCheck } from '../components/icons'
 import { RegistroCultivo } from '../components/RegistroCultivo'
+import { ReportesCultivo } from '../components/ReportesCultivo'
 import { useSeguimiento } from '../state/useSeguimiento'
 import { nombreVariedad } from '../lib/nombres'
 import { aIso, aPorcentaje, diasEntre, fechaCorta, nombreClave, nombreEspecie, nombreFase, nombreHorizonte, numero } from '../lib/formato'
@@ -157,6 +158,7 @@ export default function Main() {
           ) : null}
 
           <RegistroCultivo key={activo.id} idCultivo={activo.id} onCambio={recargar} />
+          <ReportesCultivo key={`r${activo.id}`} idCultivo={activo.id} />
 
           <div className="ps-pad-16" style={{ marginTop: 16, display: 'flex', gap: 8 }}>
             <Link to="/reportar" className="ps-btn" style={{ flex: 1 }}>

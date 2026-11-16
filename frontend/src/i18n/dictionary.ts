@@ -153,7 +153,7 @@ const base: Record<string, { es: string; en: string }> = {
   },
   senales_zona_reportar: { es: 'Reportar lo que viste', en: 'Report what you saw' },
   confirmacion_gracias: { es: 'Gracias', en: 'Thank you' },
-  confirmacion_actualizado: { es: 'Tu calendario se actualizó.', en: 'Your calendar was updated.' },
+  confirmacion_actualizado: { es: 'Tu reporte quedó en el registro del cultivo.', en: 'Your report was added to the crop record.' },
   confirmacion_volver_hoy: { es: 'Volver a Hoy', en: 'Back to Today' },
 
   // alertas / clima

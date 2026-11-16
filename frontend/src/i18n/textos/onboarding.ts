@@ -153,6 +153,8 @@ export const textos: Record<string, { es: string; en: string }> = {
   observacion_senales: { es: '{n} señales', en: '{n} signs' },
 
   // confirmación
+  confirmacion_enviado: { es: 'Enviado', en: 'Sent' },
+  confirmacion_enviado_detalle: { es: 'Ya está en el registro de tu cultivo', en: 'It is now in your crop record' },
   confirmacion_guardado: { es: 'Guardado', en: 'Saved' },
   confirmacion_en_cola: { es: 'En tu cola, se sube cuando haya señal', en: 'In your queue, it uploads when there is signal' },
 

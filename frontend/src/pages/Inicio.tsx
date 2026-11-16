@@ -13,6 +13,7 @@ import { cieloDelDia } from '../lib/tiempo'
 import { aIso, diasEntre, fechaCorta, nombreClave, nombreEfecto, nombreEspecie, nombreFase, nombreHorizonte, numero } from '../lib/formato'
 import { fasesLunares } from '../lib/luna'
 import { VerdorParcelas } from '../components/VerdorParcelas'
+import { useReportes } from '../state/useReportes'
 import { useI18n } from '../i18n'
 import { localeVigente } from '../i18n/dictionary'
 
@@ -35,6 +36,8 @@ export default function Inicio() {
     }
   }, [idParcela])
 
+  const { reportes: reportesCultivo, pendientes: reportesPendientes } = useReportes(activo?.id ?? null)
+  const ultimoReporte = reportesPendientes[reportesPendientes.length - 1] ?? reportesCultivo?.[0] ?? null
   const [hoy] = useState(() => aIso(new Date()))
   const [diaClima, setDiaClima] = useState<DiaClima | null>(null)
 
@@ -168,6 +171,12 @@ export default function Inicio() {
               {proxima?.fecha ? t('inicio_etapa_hacia', { etapa: nombreClave(proxima.etapa).toLowerCase(), fecha: fechaCorta(proxima.fecha) }) : ''}
             </p>
             {aviso ? <p className="ps-nota" style={{ margin: '6px 0 0' }}>{aviso}</p> : null}
+            {ultimoReporte ? (
+              <p className="ps-nota" style={{ margin: '6px 0 0' }}>
+                {t('inicio_ultimo_reporte', { fase: t(`reportar_fase_${ultimoReporte.fase}`).toLowerCase(), fecha: fechaCorta(ultimoReporte.fecha) })}
+                {reportesPendientes.length ? ` · ${t('reportes_por_enviar').toLowerCase()}` : ''}
+              </p>
+            ) : null}
             {etapas.length ? (
               <ol aria-label={t('inicio_etapas_aria')} style={{ margin: '14px 0 0', padding: 0, listStyle: 'none', display: 'grid', gridTemplateColumns: `repeat(${etapas.length}, minmax(0, 1fr))`, gap: 6 }}>
                 {etapas.map((e, i) => {

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ApiError, crearSesionAnonima, olvidarLecturas, quienSoy, renovarSesion, type Usuario } from '../lib/api'
 import { borrarToken, convieneRenovar, guardarToken, leerToken } from '../lib/sesionToken'
+import { sincronizarCola } from '../lib/colaReportes'
 import { borrarTodo } from './storage'
 
 // No hay pantalla de registro ni de inicio de sesión: al abrir la app se usa la cuenta anónima de este
@@ -94,6 +95,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       vigente = false
     }
   }, [intento])
+
+  // Los reportes que quedaron en el teléfono sin señal se suben al tener sesión y cada vez que vuelve la conexión.
+  useEffect(() => {
+    if (!usuario) return
+    const subir = () => void sincronizarCola().catch(() => undefined)
+    subir()
+    window.addEventListener('online', subir)
+    return () => window.removeEventListener('online', subir)
+  }, [usuario])
 
   const reintentarSesion = useCallback(() => {
     setErrorSesion(false)

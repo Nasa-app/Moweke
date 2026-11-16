@@ -112,6 +112,11 @@ export const textos: Record<string, { es: string; en: string }> = {
   // Cultivos (Main)
   onb_listo_cultivos: { es: 'Cultivos registrados', en: 'Registered crops' },
   onb_listo_ver_seguimiento: { es: 'Ver el seguimiento y anotar labores', en: 'See the tracking and record tasks' },
+  reportes_titulo: { es: 'Reportes de campo', en: 'Field reports' },
+  reportes_vacio: { es: 'Todavía no reportaste cómo va este cultivo. Usa "Cuéntanos cómo va".', en: 'You have not reported how this crop is doing yet. Use "Tell us how it is going".' },
+  reportes_error: { es: 'No pudimos traer los reportes de este cultivo.', en: 'We could not load the reports for this crop.' },
+  reportes_por_enviar: { es: 'Por enviar', en: 'To send' },
+  inicio_ultimo_reporte: { es: 'Último reporte: {fase} · {fecha}', en: 'Latest report: {fase} · {fecha}' },
   registro_titulo: { es: 'Registro del cultivo', en: 'Crop record' },
   registro_sembrado: { es: 'Sembrado el {fecha}', en: 'Sown on {fecha}' },
   registro_anotar: { es: 'Anotar una labor', en: 'Record a task' },

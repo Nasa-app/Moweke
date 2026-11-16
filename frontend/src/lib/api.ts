@@ -722,6 +722,24 @@ export function anularLabor(idCultivo: number, tipo: TipoLabor, fecha: string) {
   return peticion<{ anulado: boolean }>(`/api/cultivos/${idCultivo}/labores/anular`, { method: 'POST', body: { tipo, fecha } })
 }
 
+export type FaseReporte = 'brote' | 'hojas' | 'flor' | 'fruto' | 'amarilla' | 'cosecha'
+export const FASES_REPORTE: readonly FaseReporte[] = ['brote', 'hojas', 'flor', 'fruto', 'amarilla', 'cosecha']
+
+export interface ReporteDeCampo {
+  fase: FaseReporte
+  fecha: string
+}
+
+// Los reportes de campo del cultivo, del más reciente al más antiguo. No usa la memoria de lecturas.
+export function reportesCultivo(idCultivo: number) {
+  return peticion<{ reportes: ReporteDeCampo[] }>(`/api/cultivos/${idCultivo}/reportes`)
+}
+
+// `capturado` es la hora del teléfono al reportar: el reporte puede llegar horas después, desde la cola.
+export function enviarReporte(idCultivo: number, reporte: ReporteDeCampo & { capturado: string }) {
+  return peticion<{ registrado: boolean }>(`/api/cultivos/${idCultivo}/reportes`, { method: 'POST', body: reporte })
+}
+
 export function declararRiego(idCultivo: number, fecha: string) {
   olvidarLecturas()
   return peticion<{ registrado: boolean }>(`/api/cultivos/${idCultivo}/riegos`, { method: 'POST', body: { fecha } })

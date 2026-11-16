@@ -12,7 +12,7 @@ import math
 import os
 import sys
 from contextlib import asynccontextmanager
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Literal
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response, status
@@ -153,6 +153,7 @@ _PUNTO_ANONIMO = {"lon": -73.6508595, "lat": -42.1581806}
 _OBSERVACIONES_POR_USUARIO = LimiteIntentos(60, 60 * 60)
 _RIEGOS_POR_USUARIO = LimiteIntentos(60, 60 * 60)
 _RENOVACIONES_POR_USUARIO = LimiteIntentos(10, 60 * 60)
+_REPORTES_POR_USUARIO = LimiteIntentos(60, 60 * 60)
 # El tiempo de una comuna se ve sin cuenta: se acota por IP aunque el resultado se guarda en memoria.
 _ZONAS_POR_IP = LimiteIntentos(120, 60 * 60)
 ESCENARIOS_CALENTAMIENTO = {"observado": None, "moderado": 0.3, "fuerte": 0.6}   # °C por decada hasta 2040
@@ -254,6 +255,17 @@ class RiegoDeclarado(BaseModel):
 # se anotan y el riego ademas alimenta el balance de agua.
 LABORES_ANOTABLES = ("riego", "fertilizacion", "pesticida", "fungicida")
 LABORES_MAX_POR_CULTIVO = 600
+
+
+# El reporte de campo: lo que el agricultor ve en su cultivo (en que etapa esta). Se guarda en fenologia_observada.
+FASES_REPORTE = ("brote", "hojas", "flor", "fruto", "amarilla", "cosecha")
+REPORTES_MAX_POR_CULTIVO = 500
+
+
+class ReporteDeCampo(BaseModel):
+    fase: Literal["brote", "hojas", "flor", "fruto", "amarilla", "cosecha"]
+    fecha: date
+    capturado: datetime | None = None   # la hora del telefono al reportar: puede ser anterior a cuando llega
 
 
 class LaborDeclarada(BaseModel):
@@ -1092,6 +1104,49 @@ async def anular_labor(id_cultivo: int, datos: LaborDeclarada, session: AsyncSes
         {"c": id_cultivo, "t": datos.tipo, "f": datos.fecha})).all()
     await session.commit()
     return {"anulado": bool(borrados)}
+
+
+@app.get("/api/cultivos/{id_cultivo}/reportes")
+async def listar_reportes(id_cultivo: int, session: AsyncSession = Depends(obtener_sesion),
+                           usuario: dict = Depends(usuario_actual)):
+    """Los reportes de campo del cultivo, del mas reciente al mas antiguo (hasta 50)."""
+    await _cultivo_autorizado(id_cultivo, usuario, session)
+    filas = (await session.execute(text(
+        "SELECT fase_fenologica AS fase, fecha_observada AS fecha FROM fenologia_observada "
+        "WHERE id_cultivo = :id AND fase_fenologica = ANY(:fases) ORDER BY fecha_observada DESC, id DESC LIMIT 50"),
+        {"id": id_cultivo, "fases": list(FASES_REPORTE)})).mappings().all()
+    return {"reportes": [{"fase": f["fase"], "fecha": f["fecha"].isoformat()} for f in filas]}
+
+
+@app.post("/api/cultivos/{id_cultivo}/reportes", status_code=status.HTTP_201_CREATED)
+async def declarar_reporte(id_cultivo: int, datos: ReporteDeCampo, respuesta: Response,
+                            session: AsyncSession = Depends(obtener_sesion),
+                            usuario: dict = Depends(usuario_actual)):
+    """Guarda un reporte de campo (la etapa en que el agricultor ve su cultivo) con la fecha en que lo vio: de la
+    siembra a hoy. El mismo reporte (misma etapa, mismo dia) responde 200 y no se duplica: el telefono puede
+    reenviar lo que dejo en cola sin saber si ya llego."""
+    _frenar(_REPORTES_POR_USUARIO, f"usuario:{usuario['id']}")
+    cultivo = await _cultivo_autorizado(id_cultivo, usuario, session)
+    hoy = date.today()
+    # Un dia de margen: el telefono puede estar en otra zona horaria que el servidor.
+    if cultivo["fecha_siembra"] is None or not cultivo["fecha_siembra"] <= datos.fecha <= hoy + timedelta(days=1):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "La fecha del reporte debe estar entre la siembra y hoy")
+    parametros = {"c": id_cultivo, "f": datos.fase, "d": datos.fecha}
+    if (await session.execute(text(
+            "SELECT 1 FROM fenologia_observada WHERE id_cultivo = :c AND fase_fenologica = :f AND fecha_observada = :d"),
+            parametros)).first():
+        respuesta.status_code = status.HTTP_200_OK
+        return {"registrado": False}
+    cantidad = (await session.execute(text(
+        "SELECT count(*) FROM fenologia_observada WHERE id_cultivo = :c"), {"c": id_cultivo})).scalar_one()
+    if cantidad >= REPORTES_MAX_POR_CULTIVO:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Este cultivo ya tiene {REPORTES_MAX_POR_CULTIVO} reportes")
+    capturado = datos.capturado.replace(tzinfo=None) if datos.capturado else None
+    await session.execute(text(
+        "INSERT INTO fenologia_observada (id_cultivo, fase_fenologica, fecha_observada, fecha_reporte_cliente) "
+        "VALUES (:c, :f, :d, :t)"), {**parametros, "t": capturado})
+    await session.commit()
+    return {"registrado": True}
 
 
 @app.get("/api/especies/nombres")
