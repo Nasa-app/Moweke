@@ -675,6 +675,37 @@ export function fenologiaCultivo(idCultivo: number) {
 
 // El agricultor avisa que regó (se toma como un riego completo) o deshace un aviso. Ambos
 // vacían la memoria: el seguimiento se vuelve a calcular con el riego.
+export type TipoLabor = 'riego' | 'fertilizacion' | 'pesticida' | 'fungicida'
+export const TIPOS_LABOR: readonly TipoLabor[] = ['riego', 'fertilizacion', 'pesticida', 'fungicida']
+
+export interface Labor {
+  tipo: TipoLabor
+  fecha: string
+}
+
+export interface RegistroCultivo {
+  cultivo: { id: number; id_parcela: number; especie: string; variedad_local: string | null; fecha_siembra: string | null }
+  labores: Labor[]
+}
+
+// El registro del cultivo: lo declarado y las labores anotadas. No usa la memoria de lecturas: se pide al abrir y
+// después de cada cambio.
+export function registroCultivo(idCultivo: number) {
+  return peticion<RegistroCultivo>(`/api/cultivos/${idCultivo}/labores`)
+}
+
+// Anotar o quitar una labor cambia el seguimiento (el riego mueve el balance de agua, el fungicida el riesgo de
+// tizón): se olvidan las lecturas guardadas.
+export function declararLabor(idCultivo: number, tipo: TipoLabor, fecha: string) {
+  olvidarLecturas()
+  return peticion<{ registrado: boolean }>(`/api/cultivos/${idCultivo}/labores`, { method: 'POST', body: { tipo, fecha } })
+}
+
+export function anularLabor(idCultivo: number, tipo: TipoLabor, fecha: string) {
+  olvidarLecturas()
+  return peticion<{ anulado: boolean }>(`/api/cultivos/${idCultivo}/labores/anular`, { method: 'POST', body: { tipo, fecha } })
+}
+
 export function declararRiego(idCultivo: number, fecha: string) {
   olvidarLecturas()
   return peticion<{ registrado: boolean }>(`/api/cultivos/${idCultivo}/riegos`, { method: 'POST', body: { fecha } })

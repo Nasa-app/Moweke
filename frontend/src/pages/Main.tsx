@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Screen } from '../components/Screen'
 import { Chip } from '../components/Chip'
 import { IconoCheck } from '../components/icons'
+import { RegistroCultivo } from '../components/RegistroCultivo'
 import { useSeguimiento } from '../state/useSeguimiento'
 import { nombreVariedad } from '../lib/nombres'
 import { aIso, aPorcentaje, diasEntre, fechaCorta, nombreClave, nombreEspecie, nombreFase, nombreHorizonte, numero } from '../lib/formato'
@@ -10,7 +11,7 @@ import { useI18n } from '../i18n'
 
 export default function Main() {
   const { t } = useI18n()
-  const { idParcela, cultivos, activo, fenologia, aviso, cargando, setCultivoActivo } = useSeguimiento()
+  const { idParcela, cultivos, activo, fenologia, aviso, cargando, setCultivoActivo, recargar } = useSeguimiento()
 
   const [hoy] = useState(() => aIso(new Date()))
   const etapas = fenologia ? [{ etapa: 'siembra', fecha: fenologia.siembra, horizonte: null }, ...fenologia.etapas] : []
@@ -154,6 +155,8 @@ export default function Main() {
               ) : null}
             </>
           ) : null}
+
+          <RegistroCultivo key={activo.id} idCultivo={activo.id} onCambio={recargar} />
 
           <div className="ps-pad-16" style={{ marginTop: 16, display: 'flex', gap: 8 }}>
             <Link to="/reportar" className="ps-btn" style={{ flex: 1 }}>

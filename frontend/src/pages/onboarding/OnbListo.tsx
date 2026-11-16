@@ -4,8 +4,8 @@ import { Screen, BarraSuperior } from '../../components/Screen'
 import { StepDots } from '../../components/StepDots'
 import { IconoCheck, IconoSiguiente } from '../../components/icons'
 import { usePredio } from '../../state/PredioContext'
-import { CATEGORIAS_COMIDA, candidatasSiembra } from '../../lib/api'
-import { nombreEspecie } from '../../lib/formato'
+import { CATEGORIAS_COMIDA, candidatasSiembra, listarCultivos, type Cultivo } from '../../lib/api'
+import { fechaCorta, nombreEspecie } from '../../lib/formato'
 import { useI18n } from '../../i18n'
 
 type Candidata = Awaited<ReturnType<typeof candidatasSiembra>>['candidatas'][number]
@@ -15,6 +15,7 @@ export default function OnbListo() {
   const { idParcela } = usePredio()
   const [aptas, setAptas] = useState<Candidata[] | null>(null)
   const [reuniendo, setReuniendo] = useState(false)
+  const [cultivos, setCultivos] = useState<Cultivo[]>([])
 
   useEffect(() => {
     if (!idParcela) return
@@ -22,6 +23,18 @@ export default function OnbListo() {
     candidatasSiembra(idParcela, { categorias: CATEGORIAS_COMIDA, limite: 3 })
       .then((r) => vigente && setAptas(r.candidatas.filter((c) => c.apta).slice(0, 3)))
       .catch(() => vigente && setReuniendo(true))
+    return () => {
+      vigente = false
+    }
+  }, [idParcela])
+
+  // Lo que se acaba de registrar, para que se vea que quedó anotado: cada cultivo lleva a su seguimiento.
+  useEffect(() => {
+    if (!idParcela) return
+    let vigente = true
+    listarCultivos(idParcela)
+      .then((r) => vigente && setCultivos(r.cultivos))
+      .catch(() => vigente && setCultivos([]))
     return () => {
       vigente = false
     }
@@ -60,6 +73,23 @@ export default function OnbListo() {
         </span>
         <IconoSiguiente />
       </Link>
+
+      {cultivos.length ? (
+        <section aria-labelledby="cultivos-registrados" className="ps-pad-16" style={{ margin: '14px 16px 0 16px' }}>
+          <h2 id="cultivos-registrados" className="ps-h2" style={{ margin: '0 4px' }}>{t('onb_listo_cultivos')}</h2>
+          <Link to="/cultivo" className="ps-card" style={{ marginTop: 8, textDecoration: 'none', color: 'var(--carbon)', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {cultivos.map((c) => (
+                <span key={c.id} style={{ fontSize: 17, fontWeight: 800 }}>
+                  {nombreEspecie(c.especie)} <span className="ps-detalle">· {t('registro_sembrado', { fecha: fechaCorta(c.fecha_siembra) })}</span>
+                </span>
+              ))}
+              <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--verde)' }}>{t('onb_listo_ver_seguimiento')}</span>
+            </span>
+            <IconoSiguiente />
+          </Link>
+        </section>
+      ) : null}
 
       <div style={{ marginTop: 'auto', padding: '20px 16px 32px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
         <Link to="/especies" className="ps-btn">

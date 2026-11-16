@@ -217,6 +217,18 @@ class RiegoDeclarado(BaseModel):
     fecha: date
 
 
+# Las labores que el agricultor anota en un cultivo (manejo_predio.tipo_labor). Fungicida y pesticida atenuan el
+# dano que calcula el motor donde hay una regla de mitigacion (hoy, el tizon de la papa); fertilizacion y riego
+# se anotan y el riego ademas alimenta el balance de agua.
+LABORES_ANOTABLES = ("riego", "fertilizacion", "pesticida", "fungicida")
+LABORES_MAX_POR_CULTIVO = 600
+
+
+class LaborDeclarada(BaseModel):
+    tipo: Literal["riego", "fertilizacion", "pesticida", "fungicida"]
+    fecha: date
+
+
 class ZonaNueva(BaseModel):
     nombre: str = Field(min_length=1, max_length=120)
     perimetro: dict
@@ -975,6 +987,65 @@ async def anular_riego(id_cultivo: int, datos: RiegoDeclarado, session: AsyncSes
     borrados = (await session.execute(text(
         "DELETE FROM manejo_predio WHERE id_cultivo = :c AND tipo_labor = 'riego' AND fecha = :f RETURNING id"),
         {"c": id_cultivo, "f": datos.fecha})).all()
+    await session.commit()
+    return {"anulado": bool(borrados)}
+
+
+@app.get("/api/cultivos/{id_cultivo}/labores")
+async def listar_labores(id_cultivo: int, session: AsyncSession = Depends(obtener_sesion),
+                          usuario: dict = Depends(usuario_actual)):
+    """El registro del cultivo: lo que se declaro (especie, variedad, siembra) y las labores anotadas, de la mas
+    reciente a la mas antigua. Incluye los riegos de la tarjeta de riego: es la misma tabla."""
+    await _cultivo_autorizado(id_cultivo, usuario, session)
+    cultivo = (await session.execute(text(
+        "SELECT id, id_parcela, especie, variedad_local, fecha_siembra FROM predio_cultivos WHERE id = :id"),
+        {"id": id_cultivo})).mappings().first()
+    filas = (await session.execute(text(
+        "SELECT tipo_labor AS tipo, fecha FROM manejo_predio WHERE id_cultivo = :id AND tipo_labor = ANY(:tipos) "
+        "ORDER BY fecha DESC, id DESC"), {"id": id_cultivo, "tipos": list(LABORES_ANOTABLES)})).mappings().all()
+    return {"cultivo": {**dict(cultivo), "fecha_siembra": cultivo["fecha_siembra"].isoformat() if cultivo["fecha_siembra"] else None},
+            "labores": [{"tipo": f["tipo"], "fecha": f["fecha"].isoformat()} for f in filas]}
+
+
+@app.post("/api/cultivos/{id_cultivo}/labores", status_code=status.HTTP_201_CREATED)
+async def declarar_labor(id_cultivo: int, datos: LaborDeclarada, respuesta: Response,
+                          session: AsyncSession = Depends(obtener_sesion),
+                          usuario: dict = Depends(usuario_actual)):
+    """Anota una labor (riego, fertilizacion, pesticida o fungicida) hecha un dia: entre la siembra (o los ultimos
+    RIEGO_DIAS_ATRAS_MAX dias) y hoy. Anotar la misma labor el mismo dia responde 200 y no duplica."""
+    _frenar(_RIEGOS_POR_USUARIO, f"usuario:{usuario['id']}")
+    cultivo = await _cultivo_autorizado(id_cultivo, usuario, session)
+    if cultivo["fecha_siembra"] is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "El cultivo no tiene fecha de siembra")
+    hoy = date.today()
+    desde = max(cultivo["fecha_siembra"], hoy - timedelta(days=RIEGO_DIAS_ATRAS_MAX))
+    if not desde <= datos.fecha <= hoy:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                             f"La fecha de la labor debe estar entre el {desde.isoformat()} y hoy")
+    parametros = {"c": id_cultivo, "t": datos.tipo, "f": datos.fecha}
+    if (await session.execute(text(
+            "SELECT 1 FROM manejo_predio WHERE id_cultivo = :c AND tipo_labor = :t AND fecha = :f"), parametros)).first():
+        respuesta.status_code = status.HTTP_200_OK
+        return {"registrado": False}
+    cantidad = (await session.execute(text(
+        "SELECT count(*) FROM manejo_predio WHERE id_cultivo = :c"), {"c": id_cultivo})).scalar_one()
+    if cantidad >= LABORES_MAX_POR_CULTIVO:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Este cultivo ya tiene {LABORES_MAX_POR_CULTIVO} labores anotadas")
+    await session.execute(text(
+        "INSERT INTO manejo_predio (id_cultivo, tipo_labor, fecha) VALUES (:c, :t, :f)"), parametros)
+    await session.commit()
+    return {"registrado": True}
+
+
+@app.post("/api/cultivos/{id_cultivo}/labores/anular")
+async def anular_labor(id_cultivo: int, datos: LaborDeclarada, session: AsyncSession = Depends(obtener_sesion),
+                        usuario: dict = Depends(usuario_actual)):
+    """Borra la labor anotada ese dia (por si se marco sin querer). No falla si no habia ninguna."""
+    _frenar(_RIEGOS_POR_USUARIO, f"usuario:{usuario['id']}")
+    await _cultivo_autorizado(id_cultivo, usuario, session)
+    borrados = (await session.execute(text(
+        "DELETE FROM manejo_predio WHERE id_cultivo = :c AND tipo_labor = :t AND fecha = :f RETURNING id"),
+        {"c": id_cultivo, "t": datos.tipo, "f": datos.fecha})).all()
     await session.commit()
     return {"anulado": bool(borrados)}
 
