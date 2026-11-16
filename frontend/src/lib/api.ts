@@ -714,6 +714,29 @@ export function especiesConSeguimiento() {
   return conMemoria('especies', () => peticion<{ especies: EspecieConSeguimiento[] }>('/api/especies/con_seguimiento'))
 }
 
+// Una estrategia de rotación que compara el servidor (services/plan_rotacion.py): 'base' es repetir el cultivo actual y
+// 'rotacion' una secuencia de temporadas desde la próxima. `puntaje` (0 a 1) ordena las opciones entre sí, no predice
+// rendimiento; `advertencias` van en español, tal como las escribe el servidor.
+export interface EstrategiaRotacion {
+  tipo: 'base' | 'rotacion'
+  secuencia: string[]
+  temporadas: number
+  puntaje: number | null
+  cumple_reglas: boolean
+  advertencias: string[]
+}
+
+export interface PlanRotacion {
+  parcela: number
+  cultivos_previos: string[]
+  estrategias: EstrategiaRotacion[]
+}
+
+// Qué sembrar después de lo ya sembrado en la parcela. Responde 409 si todavía no hay clima o historia suficiente.
+export function planRotacion(idParcela: number) {
+  return conMemoria(`rotacion/${idParcela}`, () => peticion<PlanRotacion>(`/api/parcelas/${idParcela}/rotacion/comparar`))
+}
+
 // Una especie que devuelve el buscador. `seguimiento`: tiene calendario por etapa; si no, solo se registra.
 export interface EspecieBuscada {
   especie: string
