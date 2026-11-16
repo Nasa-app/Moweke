@@ -153,6 +153,11 @@ const base: Record<string, { es: string; en: string }> = {
   },
   senales_zona_reportar: { es: 'Reportar lo que viste', en: 'Report what you saw' },
   confirmacion_gracias: { es: 'Gracias', en: 'Thank you' },
+  conexion_sin_red: { es: 'Sin conexión. Ves lo último que se guardó en este teléfono.', en: 'No connection. You are seeing what was last saved on this phone.' },
+  conexion_dato_viejo: { es: 'No se pudo actualizar. Algunos datos son de hace {edad}.', en: 'Could not update. Some data is {edad} old.' },
+  edad_menos_1h: { es: 'menos de 1 hora', en: 'less than 1 hour' },
+  edad_horas: { es: '{n} h', en: '{n} h' },
+  edad_dias: { es: '{n} días', en: '{n} days' },
   confirmacion_actualizado: { es: 'Tu reporte quedó en el registro del cultivo.', en: 'Your report was added to the crop record.' },
   confirmacion_volver_hoy: { es: 'Volver a Hoy', en: 'Back to Today' },
 

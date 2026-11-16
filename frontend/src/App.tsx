@@ -5,6 +5,7 @@ import { PredioProvider } from './state/PredioContext'
 import { RutaPrivada } from './components/RutaPrivada'
 import { BottomNav } from './components/BottomNav'
 import { LangSwitch } from './components/LangSwitch'
+import { EstadoConexion } from './components/EstadoConexion'
 
 import Portada from './pages/Portada'
 import Sesion from './pages/Sesion'
@@ -42,6 +43,7 @@ function App() {
             <div className="ps-chrome-top">
               <LangSwitch />
             </div>
+            <EstadoConexion />
             <BottomNav />
             <Routes>
               <Route path="/" element={<Portada />} />

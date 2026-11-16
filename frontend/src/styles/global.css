@@ -553,3 +553,23 @@ a.ps-btn-secundario:hover { color: var(--carbon); }
     opacity: 0.45;
   }
 }
+
+/* Aviso de que se está viendo lo último guardado: sobre el menú inferior. */
+.ps-aviso-conexion {
+  position: fixed;
+  left: 50%;
+  bottom: 88px;
+  transform: translateX(-50%);
+  width: min(calc(100% - 24px), 406px);
+  z-index: 49;
+  box-sizing: border-box;
+  padding: 8px 14px;
+  border-radius: 14px;
+  background: var(--carbon);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  box-shadow: var(--sombra-2);
+}

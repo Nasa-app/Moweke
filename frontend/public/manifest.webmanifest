@@ -1,0 +1,16 @@
+{
+  "name": "mogen",
+  "short_name": "mogen",
+  "description": "Cuándo sembrar, cuidar y cosechar en Chiloé, con datos satelitales y climáticos y lo que el agricultor reporta.",
+  "lang": "es",
+  "start_url": "/hoy",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#3f611c",
+  "icons": [
+    { "src": "/icono-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icono-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

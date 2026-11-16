@@ -2,6 +2,8 @@
 // por celdas, clima diario, especies candidatas), cultivos, fenología y el tiempo por comuna.
 import { borrar, guardar, leer } from '../state/storage'
 import { leerToken } from './sesionToken'
+import { guardarLocal, leerLocal } from './cacheLocal'
+import { esViejo, registrarFresco, registrarViejo } from './frescura'
 import type { NombresCatalogo } from './nombres'
 import { tr } from '../i18n/dictionary'
 
@@ -9,6 +11,13 @@ import { tr } from '../i18n/dictionary'
 const TIEMPO_MAX_MS = 90_000
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000'
+
+// El teléfono no tiene conexión: se avisa al instante, sin esperar el tope de tiempo.
+export class ErrorSinRed extends Error {
+  constructor() {
+    super('sin conexión')
+  }
+}
 
 export class ApiError extends Error {
   status: number
@@ -74,6 +83,7 @@ async function peticion<T>(
       body: opciones.body ? JSON.stringify(opciones.body) : undefined,
       signal: AbortSignal.timeout(TIEMPO_MAX_MS),
     })
+  if (metodo === 'GET' && typeof navigator !== 'undefined' && navigator.onLine === false) throw new ErrorSinRed()
   // Una lectura que se corta en el camino (el móvil cambia de red, el servidor reinicia) se repite una vez: leer
   // dos veces no cambia nada. Una escritura no se repite, podría anotarse dos veces.
   let res: Response
@@ -103,11 +113,33 @@ async function peticion<T>(
 const VIGENCIA_MS = 10 * 60 * 1000
 const memoria = new Map<string, { momento: number; consulta: Promise<unknown> }>()
 
+// Una lectura que llega se guarda en el teléfono. Si la siguiente falla porque no hay conexión (o el servidor está
+// caído), se devuelve lo último guardado y se anota que es viejo. Si el servidor responde con un error (409, 404,
+// 401...), se respeta: ese error es la respuesta, no se tapa con un dato anterior.
+async function conRespaldo<T>(clave: string, pedir: () => Promise<T>): Promise<T> {
+  try {
+    const valor = await pedir()
+    registrarFresco(clave)
+    void guardarLocal(clave, valor)
+    return valor
+  } catch (err) {
+    if (err instanceof ApiError && err.status < 500) throw err
+    const guardado = await leerLocal<T>(clave)
+    if (!guardado) throw err
+    registrarViejo(clave, guardado.momento)
+    return guardado.valor
+  }
+}
+
 function conMemoria<T>(clave: string, pedir: () => Promise<T>, fresco = false): Promise<T> {
   const guardada = memoria.get(clave)
   if (!fresco && guardada && Date.now() - guardada.momento < VIGENCIA_MS) return guardada.consulta as Promise<T>
-  const consulta = pedir()
+  const consulta = conRespaldo(clave, pedir)
   memoria.set(clave, { momento: Date.now(), consulta })
+  // Un dato viejo (de cuando no había conexión) no se queda en la memoria: la próxima vez se vuelve a pedir.
+  consulta.then(() => {
+    if (esViejo(clave) && memoria.get(clave)?.consulta === consulta) memoria.delete(clave)
+  }, () => undefined)
   consulta.catch(() => {
     if (memoria.get(clave)?.consulta === consulta) memoria.delete(clave)
   })
@@ -559,7 +591,7 @@ export function renovarSesion() {
 }
 
 export function quienSoy() {
-  return peticion<Usuario>('/api/auth/yo')
+  return conRespaldo('quien_soy', () => peticion<Usuario>('/api/auth/yo'))
 }
 
 // ---------------------------------------------------------------- parcelas
@@ -569,7 +601,7 @@ export function crearParcela(perimetro: Poligono) {
 }
 
 export function listarParcelas() {
-  return peticion<{ parcelas: ParcelaResumen[] }>('/api/parcelas')
+  return conRespaldo('parcelas', () => peticion<{ parcelas: ParcelaResumen[] }>('/api/parcelas'))
 }
 
 // `fresco`: salta la memoria (para seguir el avance de la ingesta).
@@ -585,7 +617,7 @@ export function guardarSuelo(idParcela: number, cambios: Partial<SueloDeclarado>
 }
 
 export function mapaParcela(idParcela: number, capa: CapaServida) {
-  return peticion<MapaPredio>(`/api/parcelas/${idParcela}/mapa`, { query: { capa } })
+  return conRespaldo(`mapa/${idParcela}/${capa}`, () => peticion<MapaPredio>(`/api/parcelas/${idParcela}/mapa`, { query: { capa } }))
 }
 
 export function climaParcela(idParcela: number, diasAtras = 30) {
@@ -599,9 +631,17 @@ export function climaParcela(idParcela: number, diasAtras = 30) {
 export async function sitioParcela(idParcela: number, fresco = false): Promise<SitioParcela> {
   const guardado = leer<{ momento: number; valor: SitioParcela } | null>(claveSitio(idParcela), null)
   if (!fresco && guardado && Date.now() - guardado.momento < VIGENCIA_SITIO_MS) return guardado.valor
-  const valor = await conMemoria(`sitio/${idParcela}`, () => peticion<SitioParcela>(`/api/parcelas/${idParcela}/sitio`), fresco)
-  guardar(claveSitio(idParcela), { momento: Date.now(), valor })
-  return valor
+  try {
+    const valor = await conMemoria(`sitio/${idParcela}`, () => peticion<SitioParcela>(`/api/parcelas/${idParcela}/sitio`), fresco)
+    guardar(claveSitio(idParcela), { momento: Date.now(), valor })
+    registrarFresco(claveSitio(idParcela))
+    return valor
+  } catch (err) {
+    // Sin conexión se muestra lo guardado aunque ya haya vencido (más de 24 h), anotando desde cuándo es.
+    if (!guardado || (err instanceof ApiError && err.status < 500)) throw err
+    registrarViejo(claveSitio(idParcela), guardado.momento)
+    return guardado.valor
+  }
 }
 
 // Comunas que se pueden mirar sin predio, y su tiempo. Públicos: no piden cuenta.
@@ -666,7 +706,7 @@ export function candidatasSiembra(
 // ---------------------------------------------------------------- cultivos
 // Catálogo público de nombres por idioma; no usa la memoria de lecturas porque se pide una vez al abrir.
 export function nombresEspecies() {
-  return peticion<NombresCatalogo>('/api/especies/nombres')
+  return conRespaldo('especies_nombres', () => peticion<NombresCatalogo>('/api/especies/nombres'))
 }
 
 export function especiesConSeguimiento() {
@@ -707,7 +747,7 @@ export interface RegistroCultivo {
 // El registro del cultivo: lo declarado y las labores anotadas. No usa la memoria de lecturas: se pide al abrir y
 // después de cada cambio.
 export function registroCultivo(idCultivo: number) {
-  return peticion<RegistroCultivo>(`/api/cultivos/${idCultivo}/labores`)
+  return conRespaldo(`labores/${idCultivo}`, () => peticion<RegistroCultivo>(`/api/cultivos/${idCultivo}/labores`))
 }
 
 // Anotar o quitar una labor cambia el seguimiento (el riego mueve el balance de agua, el fungicida el riesgo de
@@ -732,7 +772,7 @@ export interface ReporteDeCampo {
 
 // Los reportes de campo del cultivo, del más reciente al más antiguo. No usa la memoria de lecturas.
 export function reportesCultivo(idCultivo: number) {
-  return peticion<{ reportes: ReporteDeCampo[] }>(`/api/cultivos/${idCultivo}/reportes`)
+  return conRespaldo(`reportes/${idCultivo}`, () => peticion<{ reportes: ReporteDeCampo[] }>(`/api/cultivos/${idCultivo}/reportes`))
 }
 
 // `capturado` es la hora del teléfono al reportar: el reporte puede llegar horas después, desde la cola.

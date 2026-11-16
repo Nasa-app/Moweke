@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { ApiError, crearSesionAnonima, olvidarLecturas, quienSoy, renovarSesion, type Usuario } from '../lib/api'
 import { borrarToken, convieneRenovar, guardarToken, leerToken } from '../lib/sesionToken'
 import { sincronizarCola } from '../lib/colaReportes'
+import { borrarCacheLocal } from '../lib/cacheLocal'
+import { olvidarViejos } from '../lib/frescura'
 import { borrarTodo } from './storage'
 
 // No hay pantalla de registro ni de inicio de sesión: al abrir la app se usa la cuenta anónima de este
@@ -24,6 +26,12 @@ interface ResultadoSesion {
   usuario: Usuario
   // Se descartó una cuenta anterior: lo que estaba en memoria (parcela activa, cultivo) era de ella.
   cuentaNueva: boolean
+}
+
+// Nada de lo guardado para mostrar sin conexión debe pasar a la cuenta siguiente.
+function borrarDatosGuardados(): void {
+  olvidarViejos()
+  void borrarCacheLocal()
 }
 
 // Con el año de vigencia a punto de cumplirse se pide un token nuevo: la cuenta no muere por usarla mucho tiempo.
@@ -53,6 +61,7 @@ async function establecerSesion(): Promise<ResultadoSesion> {
       if (!(err instanceof ApiError) || err.status !== 401) throw err
       borrarToken()
       borrarTodo()
+      borrarDatosGuardados()
     }
   }
   return conCandado(async () => {
@@ -115,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     olvidarLecturas()
     borrarToken()
     borrarTodo()
+    borrarDatosGuardados()
     window.location.assign('/')
   }, [])
 

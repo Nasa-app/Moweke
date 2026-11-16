@@ -200,3 +200,11 @@ export function textoAlertaClima(a: { tipo: string; valor: number; fuerte: boole
   }
   return { titulo, cifra: tr('alerta_clima_valor_temp', { valor: numero(a.valor) }) }
 }
+
+// Hace cuánto se guardó un dato, dicho en horas o días ("menos de 1 hora", "5 h", "2 días").
+export function edadDelDato(momento: number, ahora = Date.now()): string {
+  const horas = Math.floor((ahora - momento) / 3_600_000)
+  if (horas < 1) return tr('edad_menos_1h')
+  if (horas < 48) return tr('edad_horas', { n: horas })
+  return tr('edad_dias', { n: Math.floor(horas / 24) })
+}
