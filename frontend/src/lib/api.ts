@@ -1,6 +1,7 @@
 // Cliente del API real de mogen (ver ../../main.py). Cubre auth, parcelas (predio, mapa
 // por celdas, clima diario, especies candidatas), cultivos, fenología y el tiempo por comuna.
 import { borrar, guardar, leer } from '../state/storage'
+import { leerToken } from './sesionToken'
 import type { NombresCatalogo } from './nombres'
 import { tr } from '../i18n/dictionary'
 
@@ -48,10 +49,6 @@ function delServidor(texto: string): string {
   return clave ? tr(clave) : texto
 }
 
-function tokenActual(): string | null {
-  return localStorage.getItem('mowege_token')
-}
-
 async function peticion<T>(
   ruta: string,
   opciones: { method?: string; body?: unknown; query?: Record<string, string | number | boolean | undefined> } = {},
@@ -62,7 +59,7 @@ async function peticion<T>(
       if (valor !== undefined) url.searchParams.set(clave, String(valor))
     }
   }
-  const token = tokenActual()
+  const token = leerToken()
   const res = await fetch(url.toString(), {
     method: opciones.method ?? 'GET',
     headers: {
@@ -539,6 +536,10 @@ export function crearSesionAnonima() {
 
 export function loginAgricultor(datos: { telefono: string; password: string }) {
   return peticion<{ access_token: string }>('/api/auth/login', { method: 'POST', body: datos })
+}
+
+export function renovarSesion() {
+  return peticion<{ access_token: string }>('/api/auth/renovar', { method: 'POST' })
 }
 
 export function quienSoy() {

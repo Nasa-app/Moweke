@@ -153,3 +153,43 @@ def test_cors_permite_todos_los_metodos_que_el_frontend_usa():
     usados = {metodo for ruta in main.app.routes if getattr(ruta, "path", "").startswith("/api/")
               for metodo in ruta.methods if metodo != "HEAD"}
     assert usados <= permitidos, f"rutas con metodos que el CORS bloquea: {usados - permitidos}"
+
+
+# ---------------------------------------------------------------- renovacion del token
+def renovar(fila, id_usuario=41, rol="agricultor"):
+    sesion = SesionFalsa([Resultado(fila)])
+    return correr(main.renovar_sesion(sesion, {"id": id_usuario, "nombre": "Anónimo", "rol": rol}))
+
+
+@pytest.fixture()
+def renovaciones(monkeypatch):
+    monkeypatch.setattr(main, "_RENOVACIONES_POR_USUARIO", main.LimiteIntentos(1000, 60))
+
+
+def test_una_cuenta_anonima_recibe_un_token_nuevo_de_un_ano(renovaciones):
+    token = renovar({"telefono": None, "email": None})
+    datos = auth.decodificar_token(token.access_token)
+    assert datos["sub"] == "41" and datos["rol"] == "agricultor"
+    assert 360 <= (datetime.fromtimestamp(datos["exp"], timezone.utc) - datetime.now(timezone.utc)).days <= 365
+
+
+def test_una_cuenta_con_telefono_o_email_no_se_renueva(renovaciones):
+    for fila in ({"telefono": "+56911111111", "email": None}, {"telefono": None, "email": "a@b.cl"}, None):
+        with pytest.raises(HTTPException) as error:
+            renovar(fila)
+        assert error.value.status_code == 403
+
+
+def test_un_admin_no_se_renueva(renovaciones):
+    with pytest.raises(HTTPException) as error:
+        renovar({"telefono": None, "email": None}, rol="admin")
+    assert error.value.status_code == 403
+
+
+def test_la_renovacion_se_acota_por_usuario(monkeypatch):
+    monkeypatch.setattr(main, "_RENOVACIONES_POR_USUARIO", main.LimiteIntentos(1, 60))
+    renovar({"telefono": None, "email": None})
+    with pytest.raises(HTTPException) as error:
+        renovar({"telefono": None, "email": None})
+    assert error.value.status_code == 429
+    renovar({"telefono": None, "email": None}, id_usuario=42)   # otra cuenta no se ve afectada

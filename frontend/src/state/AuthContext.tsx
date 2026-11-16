@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ApiError, crearSesionAnonima, olvidarLecturas, quienSoy, type Usuario } from '../lib/api'
+import { ApiError, crearSesionAnonima, olvidarLecturas, quienSoy, renovarSesion, type Usuario } from '../lib/api'
+import { borrarToken, convieneRenovar, guardarToken, leerToken } from '../lib/sesionToken'
 import { borrarTodo } from './storage'
 
 // No hay pantalla de registro ni de inicio de sesión: al abrir la app se usa la cuenta anónima de este
@@ -24,21 +25,43 @@ interface ResultadoSesion {
   cuentaNueva: boolean
 }
 
+// Con el año de vigencia a punto de cumplirse se pide un token nuevo: la cuenta no muere por usarla mucho tiempo.
+// Si falla no pasa nada, se reintenta la próxima vez que se abra la app.
+function renovarSiConviene(token: string): void {
+  if (!convieneRenovar(token)) return
+  renovarSesion()
+    .then(({ access_token }) => guardarToken(access_token))
+    .catch(() => undefined)
+}
+
+// Dos pestañas abiertas a la vez (o un navegador que reabre la app) crearían dos cuentas y una quedaría sin dueño:
+// con el candado, la segunda espera y usa la que hizo la primera.
+function conCandado<T>(tarea: () => Promise<T>): Promise<T> {
+  return navigator.locks ? navigator.locks.request('mogen-sesion', tarea) : tarea()
+}
+
 async function establecerSesion(): Promise<ResultadoSesion> {
-  const token = localStorage.getItem('mowege_token')
+  const token = leerToken()
   if (token) {
     try {
-      return { usuario: await quienSoy(), cuentaNueva: false }
+      const usuario = await quienSoy()
+      renovarSiConviene(token)
+      return { usuario, cuentaNueva: false }
     } catch (err) {
       // Sin conexión o el servidor caído: se conserva el token. Crear otra cuenta dejaría sin dueño los predios.
       if (!(err instanceof ApiError) || err.status !== 401) throw err
+      borrarToken()
       borrarTodo()
     }
   }
-  const { access_token } = await crearSesionAnonima()
-  olvidarLecturas()
-  localStorage.setItem('mowege_token', access_token)
-  return { usuario: await quienSoy(), cuentaNueva: token !== null }
+  return conCandado(async () => {
+    if (!leerToken()) {
+      const { access_token } = await crearSesionAnonima()
+      olvidarLecturas()
+      guardarToken(access_token)
+    }
+    return { usuario: await quienSoy(), cuentaNueva: token !== null }
+  })
 }
 
 // Una sola petición a la vez: React en desarrollo ejecuta el efecto dos veces y eso crearía dos cuentas.
@@ -80,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const cerrarSesion = useCallback(() => {
     olvidarLecturas()
+    borrarToken()
     borrarTodo()
     window.location.assign('/')
   }, [])

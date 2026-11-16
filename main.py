@@ -124,6 +124,7 @@ _PUNTO_ANONIMO = {"lon": -73.6508595, "lat": -42.1581806}
 # fabrique ella sola una senal "confirmada" (eso ademas exige agricultores distintos).
 _OBSERVACIONES_POR_USUARIO = LimiteIntentos(60, 60 * 60)
 _RIEGOS_POR_USUARIO = LimiteIntentos(60, 60 * 60)
+_RENOVACIONES_POR_USUARIO = LimiteIntentos(10, 60 * 60)
 # El tiempo de una comuna se ve sin cuenta: se acota por IP aunque el resultado se guarda en memoria.
 _ZONAS_POR_IP = LimiteIntentos(120, 60 * 60)
 ESCENARIOS_CALENTAMIENTO = {"observado": None, "moderado": 0.3, "fuerte": 0.6}   # °C por decada hasta 2040
@@ -365,6 +366,19 @@ async def login_admin(datos: LoginAdmin, request: Request, session: AsyncSession
     if not fila or not fila["password_hash"] or not verificar_password(datos.password, fila["password_hash"]):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Email o contraseña incorrectos")
     return TokenOut(access_token=crear_token(fila["id"], fila["rol"]))
+
+
+@app.post("/api/auth/renovar", response_model=TokenOut)
+async def renovar_sesion(session: AsyncSession = Depends(obtener_sesion), usuario: dict = Depends(usuario_actual)):
+    """Un token nuevo de un ano para una cuenta anonima, a cambio de uno que todavia vale. Como el token ES la
+    cuenta, sin esto la cuenta moriria al cumplirse el ano aunque la persona la use todos los dias. Solo las
+    cuentas anonimas (sin telefono ni email): las demas conservan su vigencia corta y no se prolongan."""
+    _frenar(_RENOVACIONES_POR_USUARIO, str(usuario["id"]))
+    fila = (await session.execute(text("SELECT telefono, email FROM usuarios WHERE id = :id"),
+                                  {"id": usuario["id"]})).mappings().first()
+    if usuario["rol"] != "agricultor" or fila is None or fila["telefono"] or fila["email"]:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Solo las cuentas anónimas se renuevan")
+    return TokenOut(access_token=crear_token(usuario["id"], "agricultor", EXPIRACION_ANONIMO_MINUTOS))
 
 
 @app.get("/api/auth/yo")
