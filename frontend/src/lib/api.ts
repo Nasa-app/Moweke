@@ -179,6 +179,8 @@ export interface CercaniaCauce {
 }
 
 export type CapaMapa = 'ndvi' | 'altitud' | 'pendiente' | 'hand'
+// Capas que el API sirve pero la pantalla de Zonas no ofrece: la imagen de verdor de NASA HLS (30 m) que ve Hoy.
+export type CapaServida = CapaMapa | 'ndvi_hls'
 
 export interface CeldaMapa {
   type: 'Feature'
@@ -197,7 +199,7 @@ export interface CeldaMapa {
 export interface MapaPredio {
   type: 'FeatureCollection'
   features: CeldaMapa[]
-  capa: CapaMapa
+  capa: CapaServida
   unidad: string
   fuente: string
   resolucion_de_la_fuente_m: number
@@ -548,7 +550,7 @@ export function guardarSuelo(idParcela: number, cambios: Partial<SueloDeclarado>
   return peticion<{ suelo: SueloDeclarado }>(`/api/parcelas/${idParcela}/suelo`, { method: 'PUT', body: cambios })
 }
 
-export function mapaParcela(idParcela: number, capa: CapaMapa) {
+export function mapaParcela(idParcela: number, capa: CapaServida) {
   return peticion<MapaPredio>(`/api/parcelas/${idParcela}/mapa`, { query: { capa } })
 }
 

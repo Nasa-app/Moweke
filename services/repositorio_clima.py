@@ -436,18 +436,28 @@ VISIBLE_MIN = 0.8  # fraccion del poligono que debe verse para que un NDVI cuent
 
 async def leer_ndvi(session: AsyncSession, id_parcela: int, desde: date) -> list[dict]:
     """Observaciones de NDVI del poligono desde `desde`: [{'fecha' (centro del intervalo),
-    'ndvi', 'visible'}], solo los intervalos en que se vio al menos VISIBLE_MIN del predio."""
+    'ndvi', 'visible', 'fuente'}], solo los intervalos en que se vio al menos VISIBLE_MIN del predio.
+    Sentinel-2 (10 m) manda; NASA HLS (30 m) completa los intervalos donde Sentinel-2 no tiene un dato
+    valido, y es la unica fuente donde no hay credenciales de Copernicus."""
     filas = (await session.execute(text("""
         SELECT periodo_inicio, periodo_fin,
                max(valor) FILTER (WHERE capa = 'sentinel2_ndvi_5d') AS ndvi,
-               max(valor) FILTER (WHERE capa = 'sentinel2_visible_5d') AS visible
+               max(valor) FILTER (WHERE capa = 'sentinel2_visible_5d') AS visible,
+               max(valor) FILTER (WHERE capa = 'hls_ndvi_5d') AS ndvi_hls,
+               max(valor) FILTER (WHERE capa = 'hls_visible_5d') AS visible_hls
         FROM cache_consulta_grilla
-        WHERE id_parcela = :id AND capa IN ('sentinel2_ndvi_5d', 'sentinel2_visible_5d') AND periodo_inicio >= :desde
+        WHERE id_parcela = :id AND periodo_inicio >= :desde
+          AND capa IN ('sentinel2_ndvi_5d', 'sentinel2_visible_5d', 'hls_ndvi_5d', 'hls_visible_5d')
         GROUP BY periodo_inicio, periodo_fin ORDER BY periodo_inicio
     """), {"id": id_parcela, "desde": desde})).mappings().all()
-    return [{"fecha": f["periodo_inicio"] + (f["periodo_fin"] - f["periodo_inicio"]) / 2,
-             "ndvi": f["ndvi"], "visible": f["visible"]}
-            for f in filas if f["ndvi"] is not None and (f["visible"] or 0) >= VISIBLE_MIN]
+    observaciones = []
+    for f in filas:
+        for ndvi, visible, fuente in ((f["ndvi"], f["visible"], "Sentinel-2"), (f["ndvi_hls"], f["visible_hls"], "HLS (NASA)")):
+            if ndvi is not None and (visible or 0) >= VISIBLE_MIN:
+                observaciones.append({"fecha": f["periodo_inicio"] + (f["periodo_fin"] - f["periodo_inicio"]) / 2,
+                                      "ndvi": ndvi, "visible": visible, "fuente": fuente})
+                break
+    return observaciones
 
 
 # ---------------------------------------------------------------- mapa del predio (grilla)
@@ -466,6 +476,8 @@ CELDAS_COMUNES_MIN = 0.8   # fraccion de celdas que debe verse en una misma pasa
 CAPAS_MAPA = {
     "ndvi": {"capa_bd": "ndvi", "dinamica": True, "fuente_ingesta": "sentinel2_celdas", "resolucion_m": 10,
              "unidad": "NDVI (0 a 1; mas alto = vegetacion mas vigorosa)", "fuente": "Sentinel-2 L2A (Copernicus)"},
+    "ndvi_hls": {"capa_bd": "ndvi_hls", "dinamica": True, "fuente_ingesta": "hls_celdas", "resolucion_m": 30,
+                 "unidad": "NDVI (0 a 1; mas alto = vegetacion mas vigorosa)", "fuente": "HLS v2.0 (NASA: Landsat 8/9 y Sentinel-2)"},
     "altitud": {"capa_bd": "altitud_m", "dinamica": False, "fuente_ingesta": "relieve", "resolucion_m": 30,
                 "unidad": "metros sobre el nivel del mar", "fuente": "Copernicus DEM GLO-30 (modelo de superficie)"},
     "pendiente": {"capa_bd": "pendiente_pct", "dinamica": False, "fuente_ingesta": "relieve", "resolucion_m": 30,

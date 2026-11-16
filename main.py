@@ -863,8 +863,8 @@ async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
     if not optica["viable"]:
         curva = {"disponible": False, "ventanas_con_pasada_pct": optica.get("ventanas_con_pasada_pct"),
                  "motivo": "sin_medir" if optica["viable"] is None else "zona_con_pocas_pasadas_despejadas"}
-    elif estado["sentinel2_ndvi"]["estado"] == "sin_configurar":
-        curva = {"disponible": False, "motivo": "faltan_credenciales_de_copernicus"}
+    elif estado["sentinel2_ndvi"]["estado"] == "sin_configurar" and estado["hls_ndvi"]["estado"] == "sin_configurar":
+        curva = {"disponible": False, "motivo": "faltan_credenciales_del_satelite"}
     else:
         siembra = cultivo["fecha_siembra"]
         observaciones = await leer_ndvi(session, id_parcela, siembra - timedelta(days=40))
@@ -873,7 +873,8 @@ async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
                  **catalogo_especies.curva_optica(
                      observaciones, siembra, date.fromisoformat(primera["fecha"]) if primera["fecha"] else None),
                  "ultimas_observaciones": [{"fecha": o["fecha"].isoformat(), "ndvi": round(o["ndvi"], 3),
-                                            "visible": round(o["visible"], 2)} for o in observaciones[-8:]]}
+                                            "visible": round(o["visible"], 2), "fuente": o["fuente"]}
+                                           for o in observaciones[-8:]]}
     return {"id_cultivo": id_cultivo, "id_parcela": id_parcela, "especie": cultivo["especie"],
             "variedad_local": cultivo["variedad_local"], **resultado, "curva_satelital": curva,
             "eventos_externos": externos, "incendios_revisados": incendios["revisado"],

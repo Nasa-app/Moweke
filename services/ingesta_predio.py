@@ -26,6 +26,10 @@ dato tiene mas de HORAS_VIGENCIA_DIARIA.
   sentinel2_ndvi    NDVI del poligono cada 5 dias, con la fraccion del predio que se vio.
                     Necesita COPERNICUS_CLIENT_ID/SECRET, y solo corre donde sentinel2_nubes
                     midio cielo suficientemente despejado ('no_aplica' en el resto)
+  hls_ndvi          NDVI del poligono a 30 m de NASA (HLS), en los mismos intervalos. Necesita
+                    EARTHDATA_TOKEN; mismo criterio de 'no_aplica' que sentinel2_ndvi
+  hls_celdas        la ultima escena HLS con buen cielo, pixel a pixel, como NDVI por celda de la grilla
+                    (cache_celda, capa 'ndvi_hls'): la imagen del predio en Hoy. Necesita EARTHDATA_TOKEN.
   sentinel2_celdas  el mismo NDVI pero por celda de la grilla del predio (cache_celda):
                     es lo que dibuja el mapa. Corre en cualquier zona -- en una nublada el
                     mapa muestra datos mas viejos, y lo dice
@@ -65,12 +69,12 @@ from rasterio.transform import xy
 from rasterio.warp import transform as reproyectar
 
 from services import (cliente_clsoilmaps, cliente_copernicus, cliente_cr2met, cliente_dem, cliente_firms,
-                      cliente_hand, cliente_openmeteo, cliente_power, cliente_soilgrids, cliente_solar, db)
+                      cliente_hand, cliente_hls, cliente_openmeteo, cliente_power, cliente_soilgrids, cliente_solar, db)
 from services.motor_estres import calibrar_et0_mensual
 from services.repositorio_clima import (CAPAS_ET0_FACTOR_MENSUAL, CAPAS_GHI_MENSUAL, CAPAS_GHI_POWER,
                                         CAPAS_DISPONIBILIDAD_OPTICA,
                                         FRACCION_MIN_CELDA, NUBOSIDAD_ESCENA_MAX_PCT, RADIO_INCENDIO_KM,
-                                        VENTANA_OPTICA_DIAS, corregir_contra_cr2met, guardar_celdas,
+                                        VENTANA_OPTICA_DIAS, VISIBLE_MIN, corregir_contra_cr2met, guardar_celdas,
                                         guardar_consultas_grilla, guardar_historia, leer_disponibilidad_optica,
                                         leer_grilla, ventana_clima)
 
@@ -95,10 +99,12 @@ PRODUCTOS = {
     "inundacion": "asf_hand_glo30_v1",
     "sentinel2_ndvi": "L2A_ndvi_5d",
     "sentinel2_celdas": "L2A_ndvi_5d_por_celda",
+    "hls_ndvi": "nasa_hls_v2.0_ndvi_5d",
+    "hls_celdas": "nasa_hls_v2.0_ndvi_ultima_escena_por_celda",
     "clsoilmaps": "awc_total_0_200cm",
 }
 FUENTES = tuple(PRODUCTOS)
-FUENTES_DIARIAS = frozenset({"power", "open_meteo", "firms", "sentinel2_ndvi", "sentinel2_celdas"})
+FUENTES_DIARIAS = frozenset({"power", "open_meteo", "firms", "sentinel2_ndvi", "sentinel2_celdas", "hls_ndvi", "hls_celdas"})
 DIAS_FIRMS = 5  # tope real de la API para productos _NRT
 # Un sensor cuyo ultimo dato es mas viejo que esto se da por caido: su "cero focos" no
 # vale como "sin incendios" (asi fallo en silencio VIIRS_SNPP_NRT desde el 2-nov-2026).
@@ -106,7 +112,7 @@ DIAS_SENSOR_VIGENTE = 3
 FUENTES_DE_SITIO = tuple(f for f in FUENTES if f not in FUENTES_DIARIAS)
 HORAS_VIGENCIA_DIARIA = 12
 # Sentinel-2 pasa cada ~5 dias: refrescar su NDVI dos veces al dia solo gastaria cuota.
-HORAS_VIGENCIA = {"sentinel2_ndvi": 72, "sentinel2_celdas": 72}
+HORAS_VIGENCIA = {"sentinel2_ndvi": 72, "sentinel2_celdas": 72, "hls_ndvi": 72, "hls_celdas": 72}
 # Medido: con 4 consultas a la vez sobre 49 celdas Copernicus respondio 429 (tope de
 # unidades de proceso por minuto). Dos a la vez queda bajo el tope.
 CONSULTAS_SIMULTANEAS_CELDAS = 2
@@ -488,6 +494,90 @@ async def _sentinel2_ndvi(session: AsyncSession, id_parcela: int, lat: float, lo
     return None if any(f["valor"] for f in filas if f["capa"] == "sentinel2_visible_5d") else "sin_cobertura"
 
 
+def resumir_hls(lecturas: list[dict]) -> list[dict]:
+    """Lecturas de cliente_hls.ndvi_de_escenas() -> un NDVI por intervalo de INTERVALO_NDVI_DIAS, alineado
+    a la misma fecha fija que el de Sentinel-2 (asi leer_ndvi junta las dos fuentes por intervalo). Si dos
+    escenas caen en el mismo intervalo, el NDVI se pondera por pixeles sin nube; la fraccion vista es la
+    de la mejor escena (la otra puede ver los mismos pixeles). [{'inicio', 'ndvi', 'visible'}]."""
+    por_intervalo: dict[date, list[dict]] = {}
+    for lectura in lecturas:
+        dia = date.fromisoformat(lectura["fecha"])
+        inicio = _EPOCA_NDVI + timedelta(days=((dia - _EPOCA_NDVI).days // INTERVALO_NDVI_DIAS) * INTERVALO_NDVI_DIAS)
+        por_intervalo.setdefault(inicio, []).append(lectura)
+    salida = []
+    for inicio, grupo in sorted(por_intervalo.items()):
+        validos = sum(l["validos"] for l in grupo)
+        visible = max((l["validos"] / l["pixeles"] for l in grupo if l["pixeles"]), default=0.0)
+        salida.append({"inicio": inicio, "visible": visible,
+                       "ndvi": sum(l["suma_ndvi"] for l in grupo) / validos if validos else None})
+    return salida
+
+
+async def _hls_ndvi(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
+    """NDVI del poligono a 30 m desde HLS de NASA (Landsat 8/9 y Sentinel-2 armonizados), en los mismos
+    intervalos de 5 dias que sentinel2_ndvi. Es la fuente NASA del verdor, y la unica cuando no hay
+    credenciales de Copernicus."""
+    p = (await session.execute(text(
+        "SELECT ST_XMin(geometria) AS a, ST_YMin(geometria) AS b, ST_XMax(geometria) AS c, ST_YMax(geometria) AS d, "
+        "ST_AsGeoJSON(geometria) AS perimetro FROM parcela WHERE id = :id"), {"id": id_parcela})).mappings().first()
+    ultimo = (await session.execute(text(
+        "SELECT max(periodo_inicio) FROM cache_consulta_grilla WHERE id_parcela = :id AND capa = 'hls_visible_5d'"
+    ), {"id": id_parcela})).scalar_one()
+    hoy = date.today()
+    desde = hoy - timedelta(days=DIAS_NDVI_INICIAL) if ultimo is None else ultimo - timedelta(days=DIAS_NDVI_REVISION)
+    escenas = await asyncio.to_thread(cliente_hls.buscar_escenas, [p["a"], p["b"], p["c"], p["d"]],
+                                      desde.isoformat(), hoy.isoformat())
+    if not escenas:
+        return "sin_cobertura"
+    lecturas = await asyncio.to_thread(cliente_hls.ndvi_de_escenas, os.environ["EARTHDATA_TOKEN"], escenas,
+                                       json.loads(p["perimetro"]))
+    filas = []
+    for r in resumir_hls(lecturas):
+        cobertura = "sin_dato" if r["visible"] == 0 else "completa" if r["visible"] >= 0.99 else "parcial_nubes"
+        comun = dict(id_parcela=id_parcela, periodo_inicio=r["inicio"],
+                     periodo_fin=r["inicio"] + timedelta(days=INTERVALO_NDVI_DIAS - 1), resolucion_nativa="30m",
+                     version_producto="nasa-hls-v2.0", cobertura=cobertura)
+        filas.append({**comun, "capa": "hls_visible_5d", "valor": round(r["visible"], 4)})
+        filas.append({**comun, "capa": "hls_ndvi_5d", "valor": None if r["ndvi"] is None else float(r["ndvi"])})
+    await guardar_consultas_grilla(session, filas)
+    return None if any(f["valor"] for f in filas if f["capa"] == "hls_visible_5d") else "sin_cobertura"
+
+
+DIAS_HLS_CELDAS = 30      # cuanto hacia atras se busca una escena para dibujar el predio
+ESCENAS_HLS_CELDAS_MAX = 4   # cuantas escenas (de la mas reciente) se leen antes de rendirse por nubes
+
+
+async def _hls_celdas(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
+    """La imagen del predio: el NDVI de NASA HLS (30 m) de cada celda de la grilla, de la escena mas reciente
+    en que se ve al menos VISIBLE_MIN del predio. Una sola escena, para que las diferencias entre celdas sean
+    del terreno y no de la fecha. Se guarda en la capa 'ndvi_hls' con el periodo centrado en la fecha de la escena."""
+    p = (await session.execute(text(
+        "SELECT ST_XMin(geometria) AS a, ST_YMin(geometria) AS b, ST_XMax(geometria) AS c, ST_YMax(geometria) AS d, "
+        "ST_AsGeoJSON(geometria) AS perimetro FROM parcela WHERE id = :id"), {"id": id_parcela})).mappings().first()
+    hoy = date.today()
+    escenas = await asyncio.to_thread(cliente_hls.buscar_escenas, [p["a"], p["b"], p["c"], p["d"]],
+                                      (hoy - timedelta(days=DIAS_HLS_CELDAS)).isoformat(), hoy.isoformat())
+    if not escenas:
+        return "sin_cobertura"
+    perimetro = json.loads(p["perimetro"])
+    grilla = [c for c in await leer_grilla(session, id_parcela) if c["fraccion"] >= FRACCION_MIN_CELDA]
+    for escena in reversed(escenas[-ESCENAS_HLS_CELDAS_MAX:]):
+        try:
+            pixeles = await asyncio.to_thread(cliente_hls.ndvi_pixeles, os.environ["EARTHDATA_TOKEN"], escena, perimetro)
+        except (cliente_hls.ErrorHLS, OSError):
+            continue
+        if cliente_hls.visible_de(pixeles) < VISIBLE_MIN:
+            continue
+        dia = date.fromisoformat(escena["fecha"])
+        por_celda = await asyncio.to_thread(cliente_hls.ndvi_por_celda, pixeles, grilla)
+        filas = [dict(id_parcela=id_parcela, celda_i=i, celda_j=j, capa="ndvi_hls", periodo_inicio=dia - timedelta(days=2),
+                      periodo_fin=dia + timedelta(days=2), valor=round(valor, 4), visible=round(visible, 3))
+                 for (i, j), (valor, visible) in por_celda.items() if valor is not None]
+        await guardar_celdas(session, filas)
+        return None if filas else "sin_cobertura"
+    return "sin_cobertura"
+
+
 async def _sentinel2_celdas(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
     """NDVI de cada celda de la grilla, promediando solo los pixeles que caen dentro del
     perimetro. Una consulta por celda, de a CONSULTAS_SIMULTANEAS_CELDAS a la vez. Cada
@@ -636,7 +726,9 @@ _INGESTAS = {"explorador_solar": _solar, "soilgrids": _soilgrids, "cr2met": _cr2
              "clima_historico": _clima_historico, "power": _power, "open_meteo": _open_meteo, "firms": _firms,
              "sentinel2_nubes": _sentinel2_nubes, "relieve": _relieve, "inundacion": _inundacion,
              "sentinel2_ndvi": _sentinel2_ndvi,
-             "sentinel2_celdas": _sentinel2_celdas, "clsoilmaps": _clsoilmaps}
+             "sentinel2_celdas": _sentinel2_celdas, "hls_ndvi": _hls_ndvi,
+             "hls_celdas": _hls_celdas,
+             "clsoilmaps": _clsoilmaps}
 
 
 def _sin_configurar(fuente: str) -> bool:
@@ -646,6 +738,8 @@ def _sin_configurar(fuente: str) -> bool:
         return not os.environ.get("FIRMS_MAP_KEY")
     if fuente in ("sentinel2_ndvi", "sentinel2_celdas"):
         return not (os.environ.get("COPERNICUS_CLIENT_ID") and os.environ.get("COPERNICUS_CLIENT_SECRET"))
+    if fuente in ("hls_ndvi", "hls_celdas"):
+        return not os.environ.get("EARTHDATA_TOKEN")
     return False
 
 
@@ -677,7 +771,7 @@ async def estado_ingesta(session: AsyncSession, id_parcela: int) -> dict:
         if _sin_configurar(fuente):
             out[fuente] = {"estado": "sin_configurar", "detalle": None, "reintentable": False, "con_error": False}
             continue
-        if fuente == "sentinel2_ndvi" and not optica["viable"]:
+        if fuente in ("sentinel2_ndvi", "hls_ndvi", "hls_celdas") and not optica["viable"]:
             # Zona con pocas pasadas despejadas, o todavia sin medir: no se gasta cuota.
             out[fuente] = {"estado": "no_aplica", "detalle": None, "reintentable": False, "con_error": False}
             continue

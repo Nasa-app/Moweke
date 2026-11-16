@@ -17,7 +17,7 @@ const GRUPOS = [
   { clave: 'sol', fuentes: ['explorador_solar'], origenes: ['NASA', 'Chile'] },
   { clave: 'relieve', fuentes: ['relieve'], origenes: ['Copernicus'] },
   { clave: 'cauces', fuentes: ['inundacion'], origenes: ['NASA'] },
-  { clave: 'satelite', fuentes: ['sentinel2_nubes', 'sentinel2_ndvi', 'sentinel2_celdas'], origenes: ['Copernicus'] },
+  { clave: 'satelite', fuentes: ['sentinel2_nubes', 'sentinel2_ndvi', 'hls_ndvi', 'sentinel2_celdas'], origenes: ['Copernicus', 'NASA'] },
   { clave: 'focos', fuentes: ['firms'], origenes: ['NASA'] },
 ] as const
 

@@ -12,6 +12,7 @@ import { climaParcela, verParcela, type DiaClima, type DiaConFocos, type EventoD
 import { cieloDelDia } from '../lib/tiempo'
 import { aIso, diasEntre, fechaCorta, nombreClave, nombreEfecto, nombreEspecie, nombreFase, nombreHorizonte, numero } from '../lib/formato'
 import { fasesLunares } from '../lib/luna'
+import { VerdorParcelas } from '../components/VerdorParcelas'
 import { useI18n } from '../i18n'
 import { localeVigente } from '../i18n/dictionary'
 
@@ -231,6 +232,8 @@ export default function Inicio() {
           </Link>
         </div>
       ) : null}
+
+      <VerdorParcelas />
 
       <MoonStrip />
     </Screen>

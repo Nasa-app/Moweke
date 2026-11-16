@@ -3,6 +3,7 @@ import { Link, Navigate } from 'react-router-dom'
 import { Screen, BarraSuperior, Titulo } from '../components/Screen'
 import { MapaCeldas } from '../components/Mapa'
 import { mapaParcela, mensajeDeError, verParcela, type CapaMapa, type CeldaMapa, type MapaPredio, type Poligono } from '../lib/api'
+import { COLORES_NDVI, DOMINIO_NDVI, colorEnEscala } from '../lib/escalas'
 import { fechaCorta, numero } from '../lib/formato'
 import { usePredio } from '../state/PredioContext'
 import { useI18n } from '../i18n'
@@ -18,8 +19,8 @@ const CAPAS: Record<CapaMapa, {
   formato: (valor: number) => string
 }> = {
   ndvi: {
-    colores: ['#d9cbb0', '#d9a85b', '#829e30', '#3f611c'],
-    dominio: () => [0.1, 0.9],
+    colores: COLORES_NDVI,
+    dominio: () => DOMINIO_NDVI,
     formato: (v) => numero(v, 2),
   },
   altitud: {
@@ -40,17 +41,6 @@ const CAPAS: Record<CapaMapa, {
 }
 const ORDEN: CapaMapa[] = ['ndvi', 'altitud', 'pendiente', 'hand']
 const SEGUNDOS_ENTRE_CONSULTAS = 5
-
-function mezclar(desde: string, hasta: string, t: number): string {
-  const canal = (hex: string, i: number) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16)
-  return `rgb(${[0, 1, 2].map((i) => Math.round(canal(desde, i) + (canal(hasta, i) - canal(desde, i)) * t)).join(', ')})`
-}
-
-function colorEnEscala(colores: string[], [minimo, maximo]: [number, number], valor: number): string {
-  const posicion = Math.min(1, Math.max(0, (valor - minimo) / (maximo - minimo))) * (colores.length - 1)
-  const tramo = Math.min(colores.length - 2, Math.floor(posicion))
-  return mezclar(colores[tramo], colores[tramo + 1], posicion - tramo)
-}
 
 export default function Zonas() {
   const { t } = useI18n()
@@ -98,8 +88,8 @@ export default function Zonas() {
   const config = CAPAS[capa]
   const actual = mapa?.capa === capa ? mapa : null
   const dominio = useMemo<[number, number] | null>(
-    () => (actual?.resumen ? CAPAS[actual.capa].dominio(actual.resumen) : null),
-    [actual],
+    () => (actual?.resumen ? CAPAS[capa].dominio(actual.resumen) : null),
+    [actual, capa],
   )
   const colorDe = useMemo(
     () => (valor: number) => (dominio ? colorEnEscala(CAPAS[capa].colores, dominio, valor) : '#ffffff'),
