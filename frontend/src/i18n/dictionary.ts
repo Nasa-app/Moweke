@@ -39,6 +39,7 @@ const base: Record<string, { es: string; en: string }> = {
 
   // portada / sesión
   // portada: galería tutorial
+  hoy_siguiente_paso: { es: 'Tu siguiente paso', en: 'Your next step' },
   tutorial_aria: { es: 'Cómo funciona mogen', en: 'How mogen works' },
   tutorial_ir: { es: 'Ir a la pantalla', en: 'Go to screen' },
   tutorial_1_titulo: { es: 'Marca tu parcela', en: 'Mark your plot' },

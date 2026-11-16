@@ -13,6 +13,8 @@ import { cieloDelDia } from '../lib/tiempo'
 import { aIso, diasEntre, fechaCorta, nombreClave, nombreEfecto, nombreEspecie, nombreFase, nombreHorizonte, numero } from '../lib/formato'
 import { fasesLunares } from '../lib/luna'
 import { VerdorParcelas } from '../components/VerdorParcelas'
+import { PasosSiguientes } from '../components/PasosSiguientes'
+import { ComoFunciona } from '../components/ComoFunciona'
 import { useReportes } from '../state/useReportes'
 import { useI18n } from '../i18n'
 import { localeVigente } from '../i18n/dictionary'
@@ -209,6 +211,8 @@ export default function Inicio() {
         {cargando ? <p className="ps-nota">{t('cargando')}</p> : null}
       </div>
 
+      {idParcela === null || cultivos !== null ? <PasosSiguientes tieneParcela={idParcela !== null} tieneCultivos={(cultivos?.length ?? 0) > 0} /> : null}
+
       {porVenir.length ? (
         <Link to="/alertas" className="ps-card" style={{ margin: '14px 16px 0 16px', textDecoration: 'none', color: 'var(--carbon)', display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 0 0 2px var(--semaforo-amarillo), var(--sombra-1)' }}>
           <span style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -243,6 +247,8 @@ export default function Inicio() {
       ) : null}
 
       <VerdorParcelas />
+
+      <ComoFunciona />
 
       <MoonStrip />
     </Screen>
