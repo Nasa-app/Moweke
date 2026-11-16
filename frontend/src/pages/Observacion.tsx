@@ -63,7 +63,7 @@ export default function Observacion() {
       return
     }
     encolarReporte({ fecha, idCultivo: idCultivoActivo, fase: null, colorHojas: color, senales: recibidos.map(String) })
-    navigate('/reportar/confirmacion')
+    navigate('/reportar/confirmacion', { state: { enviado: true, tipo: 'senal' } })
   }
 
   return (

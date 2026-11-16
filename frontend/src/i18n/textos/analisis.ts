@@ -232,6 +232,8 @@ export const textos: Record<string, { es: string; en: string }> = {
   preparando_reuniendo_clima: { es: 'Reuniendo el clima…', en: 'Gathering the weather…' },
   preparando_nota_onboarding: { es: 'Sigue con lo que quieres hacer ahora.', en: 'Go on with what you want to do now.' },
   preparando_nota_terreno: { es: 'Aquí ves tu parcela y lo medido en ella.', en: 'Here you see your plot and what was measured on it.' },
+  preparando_seguir_mientras: { es: 'Seguir mientras llega el clima', en: 'Continue while the weather arrives' },
+  preparando_nota_mientras: { es: 'El clima sigue llegando en segundo plano. Lo que lo necesita se completa solo cuando esté listo.', en: 'The weather keeps arriving in the background. What needs it completes by itself once it is ready.' },
   preparando_nota_espera: { es: 'Podrás seguir cuando llegue el clima.', en: 'You can continue once the weather data arrives.' },
   preparando_ver_mapa: { es: 'Ver el mapa de mi parcela', en: 'See the map of my plot' },
   preparando_mapa_nota: { es: 'Verdor, altura y pendiente de cada parte. Es opcional.', en: 'Greenness, height and slope of each part. Optional.' },

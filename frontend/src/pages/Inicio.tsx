@@ -202,7 +202,7 @@ export default function Inicio() {
           <>
             <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, lineHeight: 1.1 }}>{t('inicio_sin_cultivos_titulo')}</h2>
             <p style={{ margin: '4px 0 0', fontSize: 16, fontWeight: 700, color: 'var(--texto-tenue)' }}>
-              <Link to="/onboarding/cultivos">{t('inicio_agrega_sembraste')}</Link> {t('inicio_sin_cultivos_o')} <Link to="/especies">{t('inicio_sin_cultivos_mira')}</Link>.
+              <Link to="/cultivo">{t('inicio_agrega_sembraste')}</Link> {t('inicio_sin_cultivos_o')} <Link to="/especies">{t('inicio_sin_cultivos_mira')}</Link>.
             </p>
           </>
         ) : null}

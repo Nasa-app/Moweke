@@ -136,7 +136,7 @@ export default function Alertas() {
         {cargando ? <p className="ps-nota" style={{ margin: 0 }}>{t('cargando')}</p> : null}
         {!activo && !cargando ? (
           <p className="ps-cuerpo" style={{ margin: 0 }}>
-            {t('alertas_sin_cultivos')} <Link to="/onboarding/cultivos">{t('inicio_agrega_sembraste')}</Link>.
+            {t('alertas_sin_cultivos')} <Link to="/cultivo">{t('inicio_agrega_sembraste')}</Link>.
           </p>
         ) : null}
         {aviso ? <p className="ps-cuerpo" style={{ margin: 0 }}>{aviso}</p> : null}

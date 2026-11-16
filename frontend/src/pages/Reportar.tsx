@@ -32,7 +32,7 @@ export default function Reportar() {
         <BarraSuperior volverA="/cultivo" />
         <Titulo sub={t('reportar_sin_cultivo_sub')}>{t('reportar_sin_cultivo_titulo')}</Titulo>
         <div style={{ marginTop: 'auto', padding: '16px 16px 32px 16px' }}>
-          <Link to="/onboarding/cultivos" className="ps-btn">
+          <Link to="/cultivo" className="ps-btn">
             {t('reportar_agregar_siembra')}
           </Link>
         </div>

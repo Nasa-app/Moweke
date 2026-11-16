@@ -5,7 +5,9 @@ import { useI18n } from '../i18n'
 
 export default function Confirmacion() {
   const { t } = useI18n()
-  const enviado = (useLocation().state as { enviado?: boolean } | null)?.enviado === true
+  const estado = useLocation().state as { enviado?: boolean; tipo?: 'senal' } | null
+  const senal = estado?.tipo === 'senal'   // un aviso de señal local (aves, floración), no un reporte del cultivo
+  const enviado = senal || estado?.enviado === true
   return (
     <Screen>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -35,12 +37,12 @@ export default function Confirmacion() {
         <h1 style={{ margin: '24px 24px 0 24px', fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 32, lineHeight: 1.1, textAlign: 'center' }}>
           {t('confirmacion_gracias')}
         </h1>
-        <p style={{ margin: '8px 24px 0 24px', fontSize: 18, lineHeight: 1.35, textAlign: 'center' }}>{t('confirmacion_actualizado')}</p>
+        <p style={{ margin: '8px 24px 0 24px', fontSize: 18, lineHeight: 1.35, textAlign: 'center' }}>{t(senal ? 'confirmacion_senal' : enviado ? 'confirmacion_actualizado' : 'confirmacion_en_telefono')}</p>
 
         <div style={{ marginTop: 24, padding: '0 24px', alignSelf: 'stretch', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
           <div className="ps-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
             <span style={{ fontSize: 24, fontWeight: 800 }}>{t(enviado ? 'confirmacion_enviado' : 'confirmacion_guardado')}</span>
-            <span className="ps-nota">{t(enviado ? 'confirmacion_enviado_detalle' : 'confirmacion_en_cola')}</span>
+            <span className="ps-nota">{t(senal ? 'confirmacion_senal_detalle' : enviado ? 'confirmacion_enviado_detalle' : 'confirmacion_en_cola')}</span>
           </div>
         </div>
 
@@ -48,9 +50,11 @@ export default function Confirmacion() {
           <Link to="/hoy" className="ps-btn">
             {t('confirmacion_volver_hoy')}
           </Link>
-          <Link to="/reportar" className="ps-btn-texto">
-            {t('deshacer')}
-          </Link>
+          {senal ? null : (
+            <Link to="/reportar" className="ps-btn-texto">
+              {t('confirmacion_corregir')}
+            </Link>
+          )}
         </div>
       </div>
     </Screen>

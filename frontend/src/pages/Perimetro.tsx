@@ -37,7 +37,7 @@ export default function Perimetro() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const enOnboarding = params.get('desde') === 'onboarding'
-  const { setParcelaActiva, setCultivoActivo } = usePredio()
+  const { idParcela, setParcelaActiva, setCultivoActivo } = usePredio()
   // Fuera del registro, con una parcela anterior o con la lista ya guardada, el mapa abre sin consultar las comunas.
   const [pedirComunas] = useState(() => enOnboarding || (!leer<Punto | null>('mapa_centro', null) && comunasGuardadas().length === 0))
   const { comunas, cargando: cargandoComunas } = useComunas(pedirComunas)
@@ -86,7 +86,7 @@ export default function Perimetro() {
 
   return (
     <Screen>
-      <BarraSuperior volverA={enOnboarding ? '/onboarding/predio' : '/terreno'} />
+      <BarraSuperior volverA={enOnboarding ? '/onboarding/predio' : idParcela ? '/terreno' : '/hoy'} />
       <Titulo
         sub={
           comunaElegida

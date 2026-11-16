@@ -123,7 +123,7 @@ export default function Historial() {
         </ol>
       ) : null}
 
-      <Link to="/onboarding/cultivos" className="ps-pad-16" style={{ margin: '12px 16px 0 16px', minHeight: 56, borderRadius: 22, border: '3px dashed var(--borde-control)', color: 'var(--carbon)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "800 18px 'Alegreya Sans', sans-serif", textDecoration: 'none' }}>
+      <Link to="/cultivo" className="ps-pad-16" style={{ margin: '12px 16px 0 16px', minHeight: 56, borderRadius: 22, border: '3px dashed var(--borde-control)', color: 'var(--carbon)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "800 18px 'Alegreya Sans', sans-serif", textDecoration: 'none' }}>
         {t('historial_agregar_temporada')}
       </Link>
 

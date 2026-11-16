@@ -112,7 +112,7 @@ export default function Preparando() {
 
   return (
     <Screen>
-      <BarraSuperior volverA={enOnboarding ? '/onboarding/predio' : '/terreno'} />
+      <BarraSuperior fijo volverA={enOnboarding ? '/onboarding/predio' : '/terreno'} />
       <Titulo
         sub={
           parcela
@@ -169,9 +169,9 @@ export default function Preparando() {
       ) : null}
 
       <div style={{ position: 'sticky', bottom: 84, marginTop: 'auto', padding: '14px 16px 28px 16px', background: 'var(--arena)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {climaListo ? (
+        {climaListo || !climaSinCobertura ? (
           <Link to={enOnboarding ? '/onboarding/meta' : '/terreno'} className="ps-btn">
-            {enOnboarding ? t('preparando_seguir_registro') : t('preparando_ir_terreno')}
+            {enOnboarding ? t(climaListo ? 'preparando_seguir_registro' : 'preparando_seguir_mientras') : t('preparando_ir_terreno')}
           </Link>
         ) : (
           <button type="button" disabled className="ps-btn">
@@ -179,7 +179,7 @@ export default function Preparando() {
           </button>
         )}
         <p className="ps-nota" style={{ margin: '0 0 8px 0', textAlign: 'center' }}>
-          {climaListo ? (enOnboarding ? t('preparando_nota_onboarding') : t('preparando_nota_terreno')) : t('preparando_nota_espera')}
+          {climaListo ? (enOnboarding ? t('preparando_nota_onboarding') : t('preparando_nota_terreno')) : climaSinCobertura ? t('preparando_nota_espera') : t('preparando_nota_mientras')}
         </p>
         <Link to="/terreno/zonas" className="ps-btn-secundario" style={{ minHeight: 52, display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>
           {t('preparando_ver_mapa')}

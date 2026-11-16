@@ -62,7 +62,7 @@ export default function Main() {
             </>
           ) : (
             <>
-              {t('inicio_sin_cultivos_titulo')}. <Link to="/onboarding/cultivos">{t('inicio_agrega_sembraste')}</Link>.
+              {t('inicio_sin_cultivos_titulo')}. <a href="#buscador-especies">{t('inicio_agrega_sembraste')}</a>.
             </>
           )}
         </p>

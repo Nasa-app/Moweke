@@ -153,6 +153,10 @@ export const textos: Record<string, { es: string; en: string }> = {
   observacion_senales: { es: '{n} señales', en: '{n} signs' },
 
   // confirmación
+  confirmacion_en_telefono: { es: 'Tu reporte quedó guardado en tu teléfono y se enviará solo.', en: 'Your report is saved on your phone and will be sent automatically.' },
+  confirmacion_corregir: { es: 'Corregir el reporte', en: 'Correct the report' },
+  confirmacion_senal: { es: 'Tu aviso ayuda a confirmar lo que se ve en la zona.', en: 'Your notice helps confirm what is seen in the area.' },
+  confirmacion_senal_detalle: { es: 'Ya está registrado en tu zona', en: 'It is now recorded for your area' },
   confirmacion_enviado: { es: 'Enviado', en: 'Sent' },
   confirmacion_enviado_detalle: { es: 'Ya está en el registro de tu cultivo', en: 'It is now in your crop record' },
   confirmacion_guardado: { es: 'Guardado', en: 'Saved' },

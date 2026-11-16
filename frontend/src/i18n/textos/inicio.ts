@@ -245,6 +245,7 @@ export const textos: Record<string, { es: string; en: string }> = {
   perfil_agricultor: { es: 'Agricultor', en: 'Farmer' },
   perfil_parcela_n: { es: 'Parcela {n}', en: 'Plot {n}' },
   perfil_sin_parcela: { es: 'Sin parcela marcada', en: 'No plot marked' },
+  perfil_confirmar_cerrar: { es: 'Si cierras sesión en este teléfono ya no podrás volver a ver tus parcelas ni tus cultivos. ¿Quieres cerrar sesión?', en: 'If you sign out on this phone you will no longer be able to see your plots or crops. Do you want to sign out?' },
   perfil_confirmar_borrado: { es: 'Borrar mis datos. Esta acción no se puede deshacer. ¿Confirmas?', en: 'Delete my data. This cannot be undone. Are you sure?' },
 
   // Tarjeta de riego

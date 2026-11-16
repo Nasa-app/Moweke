@@ -1,10 +1,12 @@
 import { Link } from 'react-router-dom'
 import { Screen } from '../components/Screen'
+import { usePredio } from '../state/PredioContext'
 import { GaleriaTutorial } from '../components/GaleriaTutorial'
 import { useI18n } from '../i18n'
 
 export default function Portada() {
   const { t } = useI18n()
+  const { idParcela } = usePredio()   // con una parcela marcada ya se usó la app: se sigue en Hoy
   return (
     <Screen sinMenu>
       <div style={{ padding: '60px 0 0 0', display: 'flex', justifyContent: 'center' }}>
@@ -18,11 +20,8 @@ export default function Portada() {
         <GaleriaTutorial />
       </div>
       <div style={{ marginTop: 'auto', padding: '20px 32px 32px 32px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <Link to="/explorar" className="ps-btn">
-          {t('empezar')}
-        </Link>
-        <Link to="/sesion" className="ps-btn-texto">
-          {t('ya_tengo_cuenta')}
+        <Link to={idParcela ? '/hoy' : '/explorar'} className="ps-btn">
+          {t(idParcela ? 'continuar' : 'empezar')}
         </Link>
       </div>
     </Screen>

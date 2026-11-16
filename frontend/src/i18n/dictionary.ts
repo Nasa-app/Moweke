@@ -20,6 +20,7 @@ const base: Record<string, { es: string; en: string }> = {
   volver: { es: 'Volver', en: 'Back' },
   seguir: { es: 'Seguir', en: 'Next' },
   empezar: { es: 'Empezar', en: 'Get started' },
+  continuar: { es: 'Continuar', en: 'Continue' },
   ya_tengo_cuenta: { es: 'Ya tengo cuenta', en: 'I already have an account' },
   guardar: { es: 'Guardar', en: 'Save' },
   enviar: { es: 'Enviar', en: 'Send' },

@@ -17,6 +17,13 @@ export default function Perfil() {
     navigate('/')
   }
 
+  // Sin cuenta con contraseña, cerrar sesión es abandonar la cuenta de este teléfono: no hay cómo volver a entrar.
+  function manejarCierre() {
+    if (!confirm(t('perfil_confirmar_cerrar'))) return
+    cerrarSesion()
+    navigate('/')
+  }
+
   const mosaicos = [
     { a: '/terreno/parcelas', icono: IconoUbicacion, titulo: t('perfil_mi_parcela'), chip: idParcela ? t('perfil_marcada') : t('perfil_sin_marcar'), tonoChip: idParcela ? 'ps-chip-favorable' : 'ps-chip-precaucion' },
     { a: '/historial', icono: IconoReloj, titulo: t('perfil_anio_pasado'), chip: t('perfil_agregar'), tonoChip: 'ps-chip-neutro' },
@@ -61,10 +68,7 @@ export default function Perfil() {
         </button>
         <button
           type="button"
-          onClick={() => {
-            cerrarSesion()
-            navigate('/')
-          }}
+          onClick={manejarCierre}
           className="ps-btn-texto"
         >
           {t('perfil_cerrar_sesion')}

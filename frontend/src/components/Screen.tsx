@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import type { MouseEvent, ReactNode } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { IconoVolver } from './icons'
 import { useI18n } from '../i18n'
 
@@ -11,18 +11,32 @@ export function Screen({ children, sinMenu }: { children: ReactNode; sinMenu?: b
   )
 }
 
+// "Volver" lleva a la pantalla de la que se vino, no a una fija: casi todas se alcanzan desde varios lados. `volverA` es
+// el respaldo cuando no hay historial dentro de la app (un enlace directo, la app instalada). `fijo` fuerza `volverA`
+// donde volver atrás repetiría algo que ya se hizo (marcar la parcela otra vez).
 export function BarraSuperior({
   volverA,
   derecha,
+  fijo = false,
 }: {
   volverA?: string
   derecha?: ReactNode
+  fijo?: boolean
 }) {
   const { t } = useI18n()
+  const navigate = useNavigate()
+  function volver(e: MouseEvent) {
+    if (fijo || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0
+    if (idx > 0) {
+      e.preventDefault()
+      navigate(-1)
+    }
+  }
   return (
     <div className="ps-topbar" style={{ justifyContent: derecha ? 'space-between' : undefined }}>
       {volverA ? (
-        <Link to={volverA} className="ps-back">
+        <Link to={volverA} onClick={volver} className="ps-back">
           <IconoVolver tamano={18} />
           {t('volver')}
         </Link>
