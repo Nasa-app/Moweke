@@ -730,12 +730,15 @@ def _unir_variedades(resultados: list[dict], unir: bool = True) -> list[dict]:
 async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.DataFrame | None = None,
                              lat: float | None = None, categorias: set[str] | None = None,
                              riego: bool = False, incluir_silvestres: bool = False,
-                             unir_variedades: bool = True) -> list[dict]:
+                             unir_variedades: bool = True, solo: set[str] | None = None) -> list[dict]:
     """Todo el catalogo contra un predio, ordenado de mas a menos idoneo. Una consulta
     por tabla (no por especie). sitio: lo que espera puntuar_especie() mas 'awc_mm'.
 
     categorias: si se pasa, solo especies con alguna de esas categorias; si no, se dejan
     fuera las que son unicamente CATEGORIAS_NO_CULTIVO.
+
+    solo: si se pasa, se evaluan unicamente esas claves de especie (para consultar una puntual sin simular las
+    demas); el resultado de cada una es el mismo que en el ranking completo. Pensado para `unir_variedades=False`.
 
     Las que EcoCrop marca como maleza ('weed') no se recomiendan aunque tengan otra categoria
     de uso (avena silvestre, quelite, chufa salian en "Comida" porque tambien son 'cereals' o
@@ -771,6 +774,8 @@ async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.Da
             gemelo[_slug(cientifico)] = curada
     con_gemelo = set(gemelo.values())
     ciclico = _clima_ciclico(clima) if lat is not None else None
+    binomios_solo = {_binomio(identidades[n]["nombre_cientifico"]) for n in (solo or ())
+                     if (identidades.get(n) or {}).get("nombre_cientifico")}
 
     out = []
     for req in requisitos:
@@ -779,6 +784,9 @@ async def ranking_idoneidad(sitio: dict, repo: RepositorioEspecies, clima: pd.Da
             continue  # se evalua al pasar por su fila de EcoCrop
         nombre = gemelo.get(clave, clave)
         identidad = identidades.get(nombre) or identidades.get(clave) or {}
+        if solo is not None and nombre not in solo and not (
+                identidad.get("nombre_cientifico") and _binomio(identidad["nombre_cientifico"]) in binomios_solo):
+            continue   # las variedades de una especie pedida se evaluan: `variedades` lista a todas las del grupo
         cats = set(identidad.get("categorias") or [])
         if "weed" in cats and not incluir_silvestres and "weed" not in (categorias or ()):
             continue

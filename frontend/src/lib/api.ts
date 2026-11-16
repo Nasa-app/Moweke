@@ -5,6 +5,9 @@ import { leerToken } from './sesionToken'
 import type { NombresCatalogo } from './nombres'
 import { tr } from '../i18n/dictionary'
 
+// Una consulta que tarda más que esto se da por perdida: mejor un aviso claro que una pantalla esperando sin fin.
+const TIEMPO_MAX_MS = 90_000
+
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000'
 
 export class ApiError extends Error {
@@ -60,14 +63,27 @@ async function peticion<T>(
     }
   }
   const token = leerToken()
-  const res = await fetch(url.toString(), {
-    method: opciones.method ?? 'GET',
-    headers: {
-      ...(opciones.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: opciones.body ? JSON.stringify(opciones.body) : undefined,
-  })
+  const metodo = opciones.method ?? 'GET'
+  const pedir = () =>
+    fetch(url.toString(), {
+      method: metodo,
+      headers: {
+        ...(opciones.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: opciones.body ? JSON.stringify(opciones.body) : undefined,
+      signal: AbortSignal.timeout(TIEMPO_MAX_MS),
+    })
+  // Una lectura que se corta en el camino (el móvil cambia de red, el servidor reinicia) se repite una vez: leer
+  // dos veces no cambia nada. Una escritura no se repite, podría anotarse dos veces.
+  let res: Response
+  try {
+    res = await pedir()
+  } catch (error) {
+    if (metodo !== 'GET') throw error
+    await new Promise((resolver) => setTimeout(resolver, 1500))
+    res = await pedir()
+  }
   if (!res.ok) {
     let detail: unknown = null
     try {

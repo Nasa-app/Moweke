@@ -11,6 +11,7 @@ import json
 import math
 import os
 import sys
+from contextlib import asynccontextmanager
 from datetime import date, timedelta
 from typing import Literal
 
@@ -45,6 +46,8 @@ import services.multianual as multianual
 import services.plan_rotacion as plan_rotacion
 from services.auth import (EXPIRACION_ANONIMO_MINUTOS, crear_token, decodificar_token, hash_password,
                           verificar_password)
+from services import db as base_de_datos
+from services.calculos_compartidos import CalculosCompartidos
 from services.db import obtener_sesion
 from services.limite_intentos import LimiteIntentos
 from services.repositorio_clima import (CAPAS_MAPA, guardar_consulta_grilla, lado_celda_para, leer_clima_diario,
@@ -87,8 +90,33 @@ _CHILE = {"lat_min": -56.0, "lat_max": -17.4, "lon_min": -76.0, "lon_max": -66.0
 # La documentacion interactiva lista todos los endpoints, incluidos los de admin: solo se
 # publica si API_DOCS=1 (desarrollo). En produccion queda apagada.
 _DOCS = os.environ.get("API_DOCS") == "1"
+
+
+async def _precargar_catalogo() -> None:
+    """Lee el catalogo de especies a la memoria al arrancar: la primera lista de "Que sembrar" despues de cada
+    despliegue tardaba el doble porque lo cargaba entonces. Si la base no responde no pasa nada: se carga al
+    primer pedido, como antes."""
+    if base_de_datos.SessionLocal is None:
+        return
+    try:
+        async with base_de_datos.SessionLocal() as sesion:
+            repo = multianual.RepositorioCacheado(RepositorioPostgres(sesion), _ALMACEN_CATALOGO)
+            await repo.catalogo_vectorial()
+            await repo.identidades()
+            await repo.especies_con_fenologia()
+    except Exception:
+        pass
+
+
+@asynccontextmanager
+async def _ciclo_de_vida(_app: FastAPI):
+    tarea = asyncio.create_task(_precargar_catalogo())
+    yield
+    tarea.cancel()
+
+
 app = FastAPI(title="mogen", docs_url="/docs" if _DOCS else None, redoc_url=None,
-              openapi_url="/openapi.json" if _DOCS else None)
+              openapi_url="/openapi.json" if _DOCS else None, lifespan=_ciclo_de_vida)
 
 # El frontend (Vite, otro origen) llama a esta API desde el navegador con el token en la
 # cabecera Authorization: sin CORS el navegador bloquea cada llamada. Los origenes
@@ -128,6 +156,10 @@ _RENOVACIONES_POR_USUARIO = LimiteIntentos(10, 60 * 60)
 # El tiempo de una comuna se ve sin cuenta: se acota por IP aunque el resultado se guarda en memoria.
 _ZONAS_POR_IP = LimiteIntentos(120, 60 * 60)
 ESCENARIOS_CALENTAMIENTO = {"observado": None, "moderado": 0.3, "fuerte": 0.6}   # °C por decada hasta 2040
+# El ranking de una parcela tarda segundos y varias pantallas lo piden con los mismos datos: se calcula una vez y se
+# comparte unos minutos. La clave lleva todo lo que lo cambia (suelo declarado, clima, filtros), asi que un cambio
+# del agricultor o una ingesta nueva lo recalcula solo.
+_RANKINGS = CalculosCompartidos(vigencia_s=15 * 60, maximo=64)
 _ALMACEN_CATALOGO: dict = {}   # catalogo de especies en memoria del proceso (ver multianual.RepositorioCacheado)
 # Detras de un proxy la conexion llega desde el proxy, no desde el cliente. Si
 # CABECERA_IP_CLIENTE nombra la cabecera donde el proxy pone la IP real (en Railway,
@@ -719,12 +751,24 @@ async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
             "mensaje": "Todavía no hay un año de clima para este predio", "estado_ingesta": estado})
 
     filtro = {c.strip() for c in categorias.split(",") if c.strip()} if categorias else None
-    ranking, serie = await multianual.ranking_multianual(
-        datos_sitio, multianual.RepositorioCacheado(RepositorioPostgres(session), _ALMACEN_CATALOGO),
-        await leer_historia(session, id_parcela), clima, parcela["lat"], categorias=filtro, riego=riego,
-        delta_temp=correccion, calentamiento_c_por_decada=ESCENARIOS_CALENTAMIENTO[escenario],
-        incluir_silvestres=bool(especie),   # pedir una especie puntual la devuelve aunque sea maleza
-        unir_variedades=not especie)        # y se puede pedir una variedad puntual, no solo la que gana
+    pedidas = {e.strip() for e in especie.split(",") if e.strip()} if especie else None
+    historia = await leer_historia(session, id_parcela)
+    clave = (id_parcela, riego, escenario, frozenset(filtro) if filtro else None,
+             frozenset(pedidas) if pedidas else None, tuple(sorted((parcela["suelo"] or {}).items())),
+             sitio["periodo_clima"], len(historia or {}), sitio["ph"], sitio["awc_mm"], altitud)
+
+    async def calcular():
+        # Con su propia sesion: el calculo lo comparten otras solicitudes y no debe caer con la de quien lo lanzo.
+        async with base_de_datos.SessionLocal() as sesion_propia:
+            return await multianual.ranking_multianual(
+                datos_sitio, multianual.RepositorioCacheado(RepositorioPostgres(sesion_propia), _ALMACEN_CATALOGO),
+                historia, clima, parcela["lat"], categorias=filtro, riego=riego,
+                delta_temp=correccion, calentamiento_c_por_decada=ESCENARIOS_CALENTAMIENTO[escenario],
+                incluir_silvestres=bool(especie),   # pedir una especie puntual la devuelve aunque sea maleza
+                unir_variedades=not especie,        # y se puede pedir una variedad puntual, no solo la que gana
+                solo=pedidas)                       # sin simular las demas especies del catalogo
+
+    ranking, serie = await _RANKINGS.obtener(clave, calcular)
     evaluadas = len(ranking)
     aptas = sum(1 for r in ranking if r["apta"])
     por_categoria = {c: sum(1 for r in ranking if (r.get("clima") or {}).get("categoria") == c)

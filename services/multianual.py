@@ -323,7 +323,7 @@ async def ranking_multianual(sitio: dict, repo, historia: dict[int, pd.DataFrame
                              delta_temp: float = 0.0, simular_curadas: bool = True,
                              calentamiento_c_por_decada: float | None = None,
                              incluir_silvestres: bool = False,
-                             unir_variedades: bool = True) -> tuple[list[dict], dict | None]:
+                             unir_variedades: bool = True, solo: set[str] | None = None) -> tuple[list[dict], dict | None]:
     """El ranking de ranking_idoneidad() con el criterio multianual: cada especie se puntua en cada ano de la serie
     historica de la parcela y `apta` pasa a ser su ano dificil reciente (el peor decil) >= PUNTAJE_MINIMO_APTA.
     `puntaje` queda como la compatibilidad tipica reciente y se agrega `puntaje_ano_dificil` y, en `clima`, los tres
@@ -331,7 +331,7 @@ async def ranking_multianual(sitio: dict, repo, historia: dict[int, pd.DataFrame
     anos de historia devuelve el ranking de un ano y resumen None. `calentamiento_c_por_decada`: un escenario que
     reemplaza la tendencia observada de la temperatura (un supuesto, no un pronostico); None usa la observada."""
     base = await ce.ranking_idoneidad(sitio, repo, clima=clima, lat=lat, categorias=categorias, riego=riego,
-                                      incluir_silvestres=incluir_silvestres, unir_variedades=unir_variedades)
+                                      incluir_silvestres=incluir_silvestres, unir_variedades=unir_variedades, solo=solo)
     if not historia or len(historia) < ANIOS_RECIENTE + MIN_ANIOS_PERIODO:
         return base, None
 
