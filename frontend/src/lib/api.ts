@@ -545,6 +545,8 @@ export interface Fenologia {
   // `confirmada`: la fecha es la que el agricultor reportó (brote, flor), no la simulada.
   etapas: { etapa: string; fecha: string | null; horizonte: Horizonte | null; confirmada?: boolean }[]
   fase_actual: string | null
+  // Etapas derivadas de FAO-56 (días pasados a grados-día), no de una ficha de terreno: guía aproximada.
+  calendario_aproximado: boolean
   fases: FaseCultivo[]
   estado: string
   riego: Riego
@@ -561,6 +563,7 @@ export interface EspecieConSeguimiento {
   especie: string
   etapas: string[]
   nivel_madurez: string
+  calendario_aproximado: boolean
   siembra_mes: number | null
   siembra_dia: number | null
 }

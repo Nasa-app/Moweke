@@ -81,6 +81,7 @@ export default function Main() {
             </p>
           ) : null}
           {cargando ? <p className="ps-pad ps-nota" style={{ margin: '10px 0 0 0' }}>{t('cargando')}</p> : null}
+          {fenologia?.calendario_aproximado ? <p className="ps-pad ps-nota" role="note" style={{ margin: '10px 0 0 0' }}>{t('main_calendario_aproximado')}</p> : null}
 
           {fenologia ? (
             <>

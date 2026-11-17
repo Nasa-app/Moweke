@@ -186,6 +186,7 @@ export const textos: Record<string, { es: string; en: string }> = {
   labor_fungicida: { es: 'Fungicida', en: 'Fungicide' },
   main_agregar: { es: 'Agregar', en: 'Add' },
   main_perdido: { es: 'Cultivo perdido', en: 'Crop lost' },
+  main_calendario_aproximado: { es: 'Calendario aproximado: las etapas salen de una guía general de la FAO, no de datos de tu zona. Las fechas pueden correrse varias semanas.', en: 'Approximate calendar: the stages come from a general FAO guide, not from data for your area. Dates can shift by several weeks.' },
   main_sin_fecha: { es: 'Sin fecha', en: 'No date' },
   main_horizontes: {
     es: 'Observado hasta el {obs} · pronóstico hasta el {pron} · después, estimado con el año pasado.',

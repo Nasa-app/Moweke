@@ -884,6 +884,8 @@ async def declarar_cultivo(id_parcela: int, datos: CultivoNuevo, tareas: Backgro
     return {"id": id_cultivo, "id_parcela": id_parcela, "especie": datos.especie,
             "variedad_local": datos.variedad_local, "fecha_siembra": datos.fecha_siembra.isoformat(),
             "nivel_madurez": nivel, "fenologia_disponible": nivel in _NIVELES_CON_FENOLOGIA,
+            "calendario_aproximado": await catalogo_especies.calendario_aproximado(
+                datos.especie, datos.variedad_local, repo),
             "etapas": [u["etapa"] for u in etapas]}
 
 
@@ -1186,6 +1188,7 @@ async def especies_con_seguimiento(session: AsyncSession = Depends(obtener_sesio
         rasgos = await repo.rasgos_rotacion(especie) or {}
         especies.append({"especie": especie, "etapas": [u["etapa"] for u in etapas],
                          "nivel_madurez": await catalogo_especies.nivel_madurez(especie, None, repo),
+                         "calendario_aproximado": await catalogo_especies.calendario_aproximado(especie, None, repo),
                          "siembra_mes": rasgos.get("siembra_mes"), "siembra_dia": rasgos.get("siembra_dia")})
     return {"especies": especies}
 

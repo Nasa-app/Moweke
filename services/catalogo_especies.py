@@ -17,7 +17,7 @@ que se puede construir, no solo que etiqueta mostrar:
                                   explicito -- no hay reparto de GDD por etapa todavia.
   perfil_fenologico_regional  -> hay umbral_fenologico_config (aunque sea placeholder).
                                   construir_cultivo() ya puede simular, con confianza baja.
-  perfil_calibrado            -> umbral_fenologico_config.fuente != 'placeholder_sin_validar'.
+  perfil_calibrado            -> umbral_fenologico_config.fuente no es placeholder ni derivada de FAO-56.
 
 Este modulo no asume un motor de base de datos particular -- recibe un `repo` (cualquier
 objeto con los cuatro metodos async de RepositorioEspecies) para poder probarse sin
@@ -97,10 +97,26 @@ def balance_del_cultivo(clima: pd.DataFrame, lat: float, siembra, fechas: dict, 
                               prof_suelo_m=prof_suelo_m, riego=riego, lat=lat, riegos=riegos)
 
 
+# Fuente de las etapas derivadas de la tabla 11 de FAO-56 (database/derivar_etapas_fao.py): dias por etapa
+# pasados a grados-dia con el clima de una region de referencia, no medidos en terreno.
+FUENTE_ETAPAS_DERIVADAS = "FAO56_t11_derivado_sin_validar"
+
+
+def _fuente_sin_validar(fuente: str) -> bool:
+    return fuente == "placeholder_sin_validar" or fuente == FUENTE_ETAPAS_DERIVADAS
+
+
+async def calendario_aproximado(especie: str, variedad_local: str | None, repo: RepositorioEspecies) -> bool:
+    """True si las etapas de la especie salen de la derivacion FAO-56 y no de una ficha de terreno: el
+    calendario es una guia aproximada y el frontend debe decirlo."""
+    umbrales = await repo.umbrales_fenologicos(especie, variedad_local)
+    return any(u["fuente"] == FUENTE_ETAPAS_DERIVADAS for u in umbrales)
+
+
 async def nivel_madurez(especie: str, variedad_local: str | None, repo: RepositorioEspecies) -> str:
     umbrales = await repo.umbrales_fenologicos(especie, variedad_local)
     if umbrales:
-        sin_validar = any(u["fuente"] == "placeholder_sin_validar" for u in umbrales)
+        sin_validar = any(_fuente_sin_validar(u["fuente"]) for u in umbrales)
         return "perfil_fenologico_regional" if sin_validar else "perfil_calibrado"
     if await repo.requisitos(especie, variedad_local):
         return "perfil_generico"
@@ -1057,6 +1073,7 @@ async def seguimiento_cultivo(especie: str, variedad_local: str | None, repo: Re
         "horizontes": {"observado_hasta": ultimo("observado"), "pronostico_hasta": ultimo("pronostico"),
                        "estimado_hasta": ultimo("estimado")},
         "etapas": etapas, "fase_actual": fase_actual, "fases": fases_out,
+        "calendario_aproximado": await calendario_aproximado(especie, variedad_local, repo),
         "estado": estado_cultivo, "riego": riego_hoy,
         "perdida_observada": _perdida_de(observados),
         "perdida_con_pronostico": _perdida_de(con_pronostico),

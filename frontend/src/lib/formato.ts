@@ -10,7 +10,7 @@ const mesCorto = (indice: number) => tr(`fmt_mes_corto_${indice}`)
 
 // Claves que el API entrega (fases, amenazas, categorías de clima y suelo) y que tienen nombre en fmt_palabra_<clave>.
 const CLAVES_PALABRAS = new Set([
-  'emergencia', 'tuberizacion', 'bulbificacion', 'floracion', 'madurez', 'siembra', 'helada', 'calor', 'sequia',
+  'inicial', 'desarrollo', 'media', 'emergencia', 'tuberizacion', 'bulbificacion', 'floracion', 'madurez', 'siembra', 'helada', 'calor', 'sequia',
   'anegamiento', 'tizon', 'ceniza', 'temperatura', 'humedad', 'ph', 'radiacion', 'altitud', 'textura', 'drenaje',
   'salinidad', 'profundidad', 'fertilidad',
 ])
