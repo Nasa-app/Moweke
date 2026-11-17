@@ -173,6 +173,7 @@ export default function Inicio() {
               {proxima?.fecha ? t('inicio_etapa_hacia', { etapa: nombreClave(proxima.etapa).toLowerCase(), fecha: fechaCorta(proxima.fecha) }) : ''}
             </p>
             {aviso ? <p className="ps-nota" style={{ margin: '6px 0 0' }}>{aviso}</p> : null}
+            {fenologia?.calendario_aproximado ? <p className="ps-nota" role="note" style={{ margin: '6px 0 0' }}>{t('main_calendario_aproximado')}</p> : null}
             {ultimoReporte ? (
               <p className="ps-nota" style={{ margin: '6px 0 0' }}>
                 {t('inicio_ultimo_reporte', { fase: t(`reportar_fase_${ultimoReporte.fase}`).toLowerCase(), fecha: fechaCorta(ultimoReporte.fecha) })}
