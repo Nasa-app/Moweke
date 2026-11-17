@@ -259,7 +259,7 @@ CREATE TABLE parametros_agua_cultivo (
   zr_m FLOAT NOT NULL CHECK (zr_m > 0),
   p_agotamiento FLOAT NOT NULL CHECK (p_agotamiento > 0 AND p_agotamiento < 1),
   kc_ini FLOAT NOT NULL, kc_med FLOAT NOT NULL, kc_fin FLOAT NOT NULL,
-  ky FLOAT NOT NULL CHECK (ky > 0),
+  ky FLOAT CHECK (ky > 0),         -- NULL = sin Ky publicado: hay riego, no perdida por sequia
   fuente VARCHAR NOT NULL,
   nota TEXT
 );

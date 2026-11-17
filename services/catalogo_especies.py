@@ -79,7 +79,9 @@ async def construir_parametros_agua(especie: str, repo: RepositorioEspecies) -> 
     fila = await repo.parametros_agua(especie)
     if not fila:
         return None
-    return ParametrosAgua(fila["zr_m"], fila["p_agotamiento"], fila["kc_ini"], fila["kc_med"], fila["kc_fin"], fila["ky"])
+    # ky NULL (FAO-56 no lo publica para ese cultivo) -> NaN: el motor calcula el riego pero no la perdida por sequia.
+    ky = fila["ky"] if fila["ky"] is not None else float("nan")
+    return ParametrosAgua(fila["zr_m"], fila["p_agotamiento"], fila["kc_ini"], fila["kc_med"], fila["kc_fin"], ky)
 
 
 def balance_del_cultivo(clima: pd.DataFrame, lat: float, siembra, fechas: dict, c: Cultivo, params: ParametrosAgua | None,

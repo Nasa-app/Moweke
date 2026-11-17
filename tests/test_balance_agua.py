@@ -1,4 +1,6 @@
 """Balance de agua FAO-56 por cultivo (services/motor_estres.py)."""
+import asyncio
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -157,3 +159,21 @@ def test_el_balance_viejo_sigue_aplicando_las_reglas_de_sequia():
 def test_un_ky_mayor_da_mas_perdida():
     bajo, alto = _evaluar(0.3, ky=0.5)[0]["perdida"], _evaluar(0.3, ky=1.2)[0]["perdida"]
     assert bajo < alto
+
+
+# ---------------------------------------------------------------- ky opcional (FAO-56 no lo publica para todos)
+def test_sin_ky_hay_balance_de_agua_pero_no_perdida_por_sequia():
+    r, agua, _, _ = _evaluar(0.0, ky=float("nan"))
+    assert agua["agua"].min() < 1.0                                    # el balance corre: hay agotamiento
+    assert not [e for e in r["eventos"] if e["peligro"] == "sequia"]
+
+
+def test_ky_nulo_de_la_base_llega_al_motor_como_nan():
+    import math
+
+    import catalogo_especies as ce
+    fila = {"especie": "x", "zr_m": 0.5, "p_agotamiento": 0.4, "kc_ini": 0.5, "kc_med": 1.1, "kc_fin": 0.8, "ky": None}
+    repo = ce.RepositorioEnMemoria(requisitos_rows=[], umbrales_rows=[], rasgos_rows=[], reglas_rows=[],
+                                   parametros_agua_rows=[fila])
+    params = asyncio.run(ce.construir_parametros_agua("x", repo))
+    assert math.isnan(params.ky) and params.zr_m == 0.5
