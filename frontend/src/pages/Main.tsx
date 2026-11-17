@@ -86,7 +86,7 @@ export default function Main() {
           {fenologia ? (
             <>
               <ol aria-label={t('cultivo_fases')} className="ps-pad-16" style={{ margin: '16px 0 0 0', listStyle: 'none', display: 'grid', gridTemplateColumns: `repeat(${etapas.length}, minmax(0, 1fr))`, gap: 4 }}>
-                {etapas.map((etapa) => {
+                {etapas.map((etapa, i) => {
                   const alcanzada = etapa.fecha !== null && etapa.fecha <= hoy
                   const siguiente = etapa === proxima
                   return (
@@ -108,7 +108,7 @@ export default function Main() {
                       >
                         {alcanzada ? <IconoCheck tamano={22} stroke="#fff" /> : null}
                       </span>
-                      <span style={{ fontSize: 14, fontWeight: 800, lineHeight: 1.1, color: alcanzada || siguiente ? 'var(--verde)' : undefined }}>{nombreClave(etapa.etapa)}</span>
+                      <span style={{ fontSize: 14, fontWeight: 800, lineHeight: 1.1, color: alcanzada || siguiente ? 'var(--verde)' : undefined }}>{`${i + 1} · ${nombreClave(etapa.etapa)}`}</span>
                       <span className="ps-nota" style={{ lineHeight: 1.1 }}>{etapa.fecha ? fechaCorta(etapa.fecha) : t('main_sin_fecha')}</span>
                       {etapa.confirmada ? <span className="ps-nota" style={{ lineHeight: 1.1, fontWeight: 800, color: 'var(--verde)' }}>{t('main_etapa_reportada')}</span> : null}
                     </li>
