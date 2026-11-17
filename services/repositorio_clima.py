@@ -97,6 +97,7 @@ COBERTURA_CR2MET_MIN = 0.9   # fraccion de dias de la ventana con CR2MET para ll
 
 PROFUNDIDAD_AGUA_SUELO_MM = 2000     # CLSoilMaps suma 0-200 cm: la estimacion usa la misma profundidad
 AGUA_SUELO_ESTIMADA_LIMITES_MM = (50.0, 600.0)
+MATERIA_ORGANICA_MAX_PCT = 8.0       # tope de validez de Saxton y Rawls: por encima se extrapola
 FUENTE_AGUA_CLSOILMAPS = "clsoilmaps"
 FUENTE_AGUA_TEXTURA = "estimado_textura"
 
@@ -107,12 +108,13 @@ def estimar_agua_disponible_mm(arcilla_pct: float | None, arena_pct: float | Non
     Ecuaciones de pedotransferencia de Saxton y Rawls (2006): contenido de agua a capacidad de campo (33 kPa) menos
     el del punto de marchitez (1500 kPa), con arcilla, arena y materia organica (carbono x 1,724) de SoilGrids, y
     multiplicado por 2000 mm de perfil. Limites de esa fuente: SoilGrids da la capa superficial y aqui se extiende
-    a todo el perfil, y no hay pedregosidad ni salinidad. Es una estimacion gruesa (mas baja que CLSoilMaps en
+    a todo el perfil, la materia organica se acota a 8 % (las ecuaciones no valen mas alla: con 12 % de Oregon sale 321 mm
+    y con 8 %, 314; sin tope, un suelo de turba de Chiloe daria 600 mm contra 437 medidos), y no hay pedregosidad ni salinidad. Es una estimacion gruesa (mas baja que CLSoilMaps en
     Chiloe: unos 280 mm para un franco contra 437 medidos), y por eso se informa como estimada. None si falta un dato."""
     if arcilla_pct is None or arena_pct is None or carbono_organico_g_kg is None:
         return None
     s, c = arena_pct / 100.0, arcilla_pct / 100.0
-    mo = carbono_organico_g_kg * 1.724 / 10.0
+    mo = min(carbono_organico_g_kg * 1.724 / 10.0, MATERIA_ORGANICA_MAX_PCT)
     t1500 = -0.024 * s + 0.487 * c + 0.006 * mo + 0.005 * s * mo - 0.013 * c * mo + 0.068 * s * c + 0.031
     t1500 += 0.14 * t1500 - 0.02
     t33 = -0.251 * s + 0.195 * c + 0.011 * mo + 0.006 * s * mo - 0.027 * c * mo + 0.452 * s * c + 0.299

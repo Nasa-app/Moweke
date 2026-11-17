@@ -172,3 +172,10 @@ def test_leer_sitio_prefiere_clsoilmaps_y_estima_solo_si_falta():
     assert (chile["awc_mm"], chile["fuente_agua_suelo"]) == (437.0, "clsoilmaps")
     assert fuera["fuente_agua_suelo"] == "estimado_textura" and 250 < fuera["awc_mm"] < 310
     assert sin["awc_mm"] is None and sin["fuente_agua_suelo"] is None
+
+
+def test_la_materia_organica_se_acota_a_8_por_ciento():
+    import services.repositorio_clima as rc
+    tope = rc.MATERIA_ORGANICA_MAX_PCT / 1.724 * 10
+    assert rc.estimar_agua_disponible_mm(37.1, 17.4, 189) == rc.estimar_agua_disponible_mm(37.1, 17.4, tope)
+    assert rc.estimar_agua_disponible_mm(37.1, 17.4, 70) == pytest.approx(314, abs=1)
