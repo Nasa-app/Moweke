@@ -14,11 +14,11 @@ ACTUALIZACION (credenciales OAuth reales obtenidas): se agrego `obtener_token_oa
 (client_credentials, VERIFICADO contra una cuenta real) y `ndvi_estadistico()`/
 `backscatter_estadistico()`, que usan la Statistical API de Sentinel Hub en vez de bajar
 y procesar bandas crudas -- la API calcula NDVI/backscatter YA enmascarado por nubes
-(via SCL) del lado del servidor, para el poligono exacto de la parcela. Esto reemplaza
+(via SCL) del lado del servidor, para el poligono exacto del predio. Esto reemplaza
 el plan original de `descargar_producto()` + banda-matematica local -- no hace falta
 procesar rasters nosotros mismos para esto.
 
-VERIFICADO EN VIVO sobre la parcela de prueba de Chiloe (poligono real, no solo un punto):
+VERIFICADO EN VIVO sobre el predio de prueba de Chiloe (poligono real, no solo un punto):
 el periodo 25-oct a 4-nov salio 100% enmascarado por nubes en Sentinel-2 (NDVI, confirma
 el problema cronico de nubosidad de Chiloe) pero el MISMO periodo en Sentinel-1 (VV) dio
 cobertura completa, cero pixeles sin dato -- la prueba concreta de que el radar resuelve
@@ -27,7 +27,7 @@ exactamente el hueco que la nubosidad deja en el optico.
 `obtener_token()`/`descargar_producto()` (mas abajo) quedan igual que antes -- escritos
 contra la documentacion de la OData API para descarga de producto crudo (.SAFE completo),
 sin verificar todavia porque ya no son el camino principal: la Statistical API cubre el
-caso de uso real (NDVI/backscatter agregado por parcela) sin necesitar el archivo entero.
+caso de uso real (NDVI/backscatter agregado por predio) sin necesitar el archivo entero.
 """
 from __future__ import annotations
 
@@ -129,7 +129,7 @@ def _estadistica_agregada(token: str, coleccion: str, evalscript: str, bbox: lis
 def ndvi_estadistico(token: str, bbox: list[float] | None, fecha_inicio: str, fecha_fin: str,
                       intervalo_dias: int = 10, timeout: int = 60, geometria: dict | None = None,
                       lado_px: int | None = None) -> list[dict]:
-    """bbox: [lon_min, lat_min, lon_max, lat_max] -- el poligono de la parcela, no un punto.
+    """bbox: [lon_min, lat_min, lon_max, lat_max] -- el poligono del predio, no un punto.
     VERIFICADO: devuelve NDVI medio por intervalo, con los pixeles nublados (SCL) ya
     excluidos del promedio -- 'noDataCount' en cada intervalo dice cuantos pixeles del
     poligono quedaron fuera por nubes (65536/65536 = intervalo entero inservible, visto

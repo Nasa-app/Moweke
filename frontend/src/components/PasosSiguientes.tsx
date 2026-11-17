@@ -3,8 +3,8 @@ import { DibujoParcela, DibujoRotacion, DibujoSembrar } from './DibujosTutorial'
 import { IconoSiguiente } from './icons'
 import { useI18n } from '../i18n'
 
-// Lo que toca hacer ahora, con los dibujos y los textos del tutorial de la portada (que se ve una sola vez): sin parcela,
-// marcarla; con parcela y sin cultivos, ver qué sembrar; con cultivos, planificar la rotación.
+// Lo que toca hacer ahora, con los dibujos y los textos del tutorial de la portada (que se ve una sola vez): sin predio,
+// marcarlo; con predio y sin cultivos, ver qué sembrar; con cultivos, planificar la rotación.
 export function PasosSiguientes({ tieneParcela, tieneCultivos }: { tieneParcela: boolean; tieneCultivos: boolean }) {
   const { t } = useI18n()
   const paso = !tieneParcela

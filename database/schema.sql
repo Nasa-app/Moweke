@@ -46,14 +46,14 @@ CREATE INDEX idx_ecoregion_wwf_geometria ON ecoregion_wwf USING GIST (geometria)
 -- fuente ni tiene equivalencia publicada con bioma_wwf; queda en NULL hasta decidirla.
 
 -- La tierra física, estable a través de temporadas. El motor de rotación compara
--- secuencias de cultivos sobre la MISMA parcela — por eso el terreno y el ciclo
+-- secuencias de cultivos sobre el MISMO predio — por eso el terreno y el ciclo
 -- de cultivo actual no pueden ser la misma fila.
 CREATE TABLE parcela (
   id SERIAL PRIMARY KEY,
   id_usuario INT NOT NULL REFERENCES usuarios(id),
   id_perfil_climatico INT REFERENCES perfil_climatico_regional(id),
   -- Ecorregion que contiene el centroide (o la mas cercana a menos de 5 km): se asigna al
-  -- crear la parcela. NULL si el punto queda fuera de las ecorregiones cargadas.
+  -- crear el predio. NULL si el punto queda fuera de las ecorregiones cargadas.
   id_ecoregion INT REFERENCES ecoregion_wwf(id),
   geometria GEOMETRY(Polygon, 4326) NOT NULL,
   -- 'dibujado': el agricultor marco el deslinde. 'aproximado': cuadrado generado desde un
@@ -74,7 +74,7 @@ CREATE TABLE parcela (
 );
 CREATE INDEX idx_parcela_geometria ON parcela USING GIST (geometria);
 
--- Clima diario historico de la parcela (35 anos, un renglon por ano). Ver
+-- Clima diario historico del predio (35 anos, un renglon por ano). Ver
 -- database/migracion_clima_historico_y_agua.sql.
 CREATE TABLE clima_historico_parcela (
   id_parcela INT NOT NULL REFERENCES parcela(id) ON DELETE CASCADE,
@@ -86,7 +86,7 @@ CREATE TABLE clima_historico_parcela (
   PRIMARY KEY (id_parcela, anio)
 );
 
--- Un ciclo de cultivo dentro de una parcela. Varias filas por parcela a través
+-- Un ciclo de cultivo dentro de un predio. Varias filas por predio a través
 -- del tiempo son la "secuencia de rotación" que compara rotation_engine.
 CREATE TABLE predio_cultivos (
   id SERIAL PRIMARY KEY,
@@ -414,7 +414,7 @@ CREATE VIEW vista_publica_respuesta AS
 -- crece (agregamos VNP13A1, GRACE, GAEZ a mitad de este proyecto). Validar
 -- valores conocidos en la capa de aplicación, no en la base de datos.
 -- Una fila por intento. Cuelga de un perfil climatico regional (extraccion historica
--- de una region) o de una parcela (services/ingesta_predio.py) -- nunca de ninguno.
+-- de una region) o de un predio (services/ingesta_predio.py) -- nunca de ninguno.
 CREATE TABLE job_extraccion (
   id SERIAL PRIMARY KEY,
   id_perfil_climatico INT REFERENCES perfil_climatico_regional(id),
@@ -429,8 +429,8 @@ CREATE TABLE job_extraccion (
 );
 CREATE INDEX idx_job_extraccion_parcela ON job_extraccion (id_parcela, proveedor);
 
--- Capas de parcela: HLS, SRTM, SMAP, POWER, ECOSTRESS — todo lo que se consulta
--- por polígono o centroide de una parcela específica.
+-- Capas de predio: HLS, SRTM, SMAP, POWER, ECOSTRESS — todo lo que se consulta
+-- por polígono o centroide de un predio específico.
 CREATE TABLE cache_consulta_grilla (
   id SERIAL PRIMARY KEY,
   id_parcela INT NOT NULL REFERENCES parcela(id),
@@ -462,9 +462,9 @@ CREATE TABLE cache_celda (
 );
 CREATE INDEX idx_cache_celda_parcela ON cache_celda (id_parcela, capa, periodo_inicio);
 
--- Calibración de microclima por parcela: delta de temperatura (no offset de días) que
+-- Calibración de microclima por predio: delta de temperatura (no offset de días) que
 -- hace coincidir la suma térmica de la grilla con la fecha real de un indicador local
--- observado en esa parcela. Ver services/pheno_engine.delta_microclima.
+-- observado en ese predio. Ver services/pheno_engine.delta_microclima.
 CREATE TABLE calibracion_microclima_parcela (
   id SERIAL PRIMARY KEY,
   id_parcela INT NOT NULL REFERENCES parcela(id),
@@ -475,8 +475,8 @@ CREATE TABLE calibracion_microclima_parcela (
 );
 
 -- Capas regionales: GRACE (~300km) y cualquier otra señal que por diseño
--- nunca varía entre parcelas de la misma región. Separada de la tabla anterior
--- para no repetir el mismo valor fila por fila en cada parcela.
+-- nunca varía entre predios de la misma región. Separada de la tabla anterior
+-- para no repetir el mismo valor fila por fila en cada predio.
 CREATE TABLE cache_consulta_regional (
   id SERIAL PRIMARY KEY,
   id_perfil_climatico INT NOT NULL REFERENCES perfil_climatico_regional(id),

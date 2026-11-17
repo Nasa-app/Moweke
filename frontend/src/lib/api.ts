@@ -1,4 +1,4 @@
-// Cliente del API real de mogen (ver ../../main.py). Cubre auth, parcelas (predio, mapa
+// Cliente del API real de mogen (ver ../../main.py). Cubre auth, predios (mapa
 // por celdas, clima diario, especies candidatas), cultivos, fenología y el tiempo por comuna.
 import { borrar, guardar, leer } from '../state/storage'
 import { leerToken } from './sesionToken'
@@ -46,6 +46,7 @@ const MENSAJES_SERVIDOR: Record<string, string> = {
   'Demasiados intentos. Espera unos minutos e intenta otra vez.': 'servidor_demasiados_intentos',
   'Base de datos no disponible': 'servidor_sin_base',
   'Parcela no existe': 'servidor_parcela_no_existe',
+  'Predio no existe': 'servidor_parcela_no_existe',
   'El perímetro se cruza a sí mismo; dibújalo de nuevo sin cruzar líneas': 'servidor_perimetro_cruzado',
   'La especie no está en el catálogo': 'servidor_especie_no_catalogo',
   'Cultivo no existe': 'servidor_cultivo_no_existe',
@@ -106,7 +107,7 @@ async function peticion<T>(
   return (await res.json()) as T
 }
 
-// Memoria corta de lecturas: varias pantallas piden lo mismo (la parcela, el seguimiento
+// Memoria corta de lecturas: varias pantallas piden lo mismo (el predio, el seguimiento
 // del cultivo, el ranking) y cada consulta tarda segundos. Una lectura repetida dentro de
 // la vigencia comparte la misma promesa; cualquier escritura la vacía.
 const VIGENCIA_MS = 10 * 60 * 1000
@@ -599,7 +600,7 @@ export function quienSoy() {
   return conRespaldo('quien_soy', () => peticion<Usuario>('/api/auth/yo'))
 }
 
-// ---------------------------------------------------------------- parcelas
+// ---------------------------------------------------------------- predios
 export function crearParcela(perimetro: Poligono) {
   olvidarLecturas()
   return peticion<Parcela>('/api/parcelas', { method: 'POST', body: { perimetro } })
@@ -631,7 +632,7 @@ export function climaParcela(idParcela: number, diasAtras = 30) {
   )
 }
 
-// Lo medido del sitio de la parcela (Tu terreno), sin el ranking de especies. Se guarda en el dispositivo: abrir la
+// Lo medido del sitio del predio (Tu terreno), sin el ranking de especies. Se guarda en el dispositivo: abrir la
 // pantalla otra vez no consulta de nuevo. Un 409 (todavía sin clima) no se guarda.
 export async function sitioParcela(idParcela: number, fresco = false): Promise<SitioParcela> {
   const guardado = leer<{ momento: number; valor: SitioParcela } | null>(claveSitio(idParcela), null)
@@ -675,7 +676,7 @@ export function reintentarIngesta(idParcela: number) {
 export const leerRiego = () => leer<boolean>('riego', false)
 export const guardarRiego = (riega: boolean) => guardar('riego', riega)
 
-// Cómo sube la temperatura hasta 2040 al evaluar el futuro: lo observado en la parcela o un supuesto. Un supuesto
+// Cómo sube la temperatura hasta 2040 al evaluar el futuro: lo observado en el predio o un supuesto. Un supuesto
 // NO se guarda en el dispositivo: cada pantalla arranca en 'observado' y, si se elige otro, lo pasa por la
 // dirección (?escenario=) a la pantalla que sigue. Guardado, cambiaba en silencio los resultados de Análisis,
 // Rotación y el registro inicial.
@@ -736,7 +737,7 @@ export interface PlanRotacion {
   estrategias: EstrategiaRotacion[]
 }
 
-// Qué sembrar después de lo ya sembrado en la parcela. Responde 409 si todavía no hay clima o historia suficiente.
+// Qué sembrar después de lo ya sembrado en el predio. Responde 409 si todavía no hay clima o historia suficiente.
 export function planRotacion(idParcela: number) {
   return conMemoria(`rotacion/${idParcela}`, () => peticion<PlanRotacion>(`/api/parcelas/${idParcela}/rotacion/comparar`))
 }

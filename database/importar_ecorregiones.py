@@ -28,7 +28,7 @@ biogeografico. `bioma_tipo`, la clasificacion propia de cuatro valores del proye
 se llena aca: no hay una equivalencia publicada entre los biomas de WWF y esos cuatro.
 
 El SQL generado es idempotente (ON CONFLICT por eco_id) y termina asignando la
-ecorregion a las parcelas que todavia no la tienen.
+ecorregion a los predios que todavia no la tienen.
 """
 from __future__ import annotations
 
@@ -107,7 +107,7 @@ def main(destino_sql: str) -> None:
             + ",\n".join(filas) + "\n"
             "ON CONFLICT (eco_id) DO UPDATE SET eco_name = EXCLUDED.eco_name, bioma_wwf = EXCLUDED.bioma_wwf,\n"
             "  reino = EXCLUDED.reino, fuente = EXCLUDED.fuente, geometria = EXCLUDED.geometria;\n\n"
-            "-- Parcelas que todavia no tienen ecorregion: la que contiene su centroide o, si\n"
+            "-- Predios que todavia no tienen ecorregion: la que contiene su centroide o, si\n"
             "-- cae en un borde simplificado (costa), la mas cercana a menos de 5 km.\n"
             "UPDATE parcela p SET id_ecoregion = (\n"
             "  SELECT e.id FROM ecoregion_wwf e\n"

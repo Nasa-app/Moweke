@@ -1,7 +1,7 @@
 """
 Tarea programada -- refresca el clima de los predios sin que nadie tenga que consultar.
 
-Recorre todas las parcelas y vuelve a correr, por cada una, solo las fuentes que hagan
+Recorre todos los predios y vuelve a correr, por cada uno, solo las fuentes que hagan
 falta (services/ingesta_predio.encolar decide cuales: nunca corridas, vencidas,
 interrumpidas o con error):
 
@@ -80,11 +80,11 @@ async def refrescar(intentos: int = 3, espera_s: float = 120, pausa_s: float = 1
                 corridas, con_error = await _refrescar_predio(id_parcela, fuentes, reintento=intento > 1)
             except Exception:
                 # Un predio que revienta (base caida a mitad de camino) no detiene a los demas.
-                log.exception("parcela %s: la pasada %s fallo entera", id_parcela, intento)
+                log.exception("predio %s: la pasada %s fallo entera", id_parcela, intento)
                 corridas, con_error = [], ["(pasada interrumpida)"]
             resumen["fuentes_corridas"] += len(corridas)
             if corridas or con_error:
-                log.info("parcela %s (%s): corridas %s, con error %s", id_parcela,
+                log.info("predio %s (%s): corridas %s, con error %s", id_parcela,
                          "cultivo activo" if activo else "sin cultivo activo", corridas or "ninguna",
                          con_error or "ninguna")
             if con_error:

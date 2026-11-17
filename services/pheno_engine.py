@@ -167,7 +167,7 @@ def delta_microclima(clima_grilla, ano, fecha_obs, ind, rango=(-6.0, 6.0)):
     en que la comunidad observo el indicador. El indicador actua como termometro biologico.
 
     Reemplaza al "sesgo_parcela_dias" del modelo conceptual: un delta de temperatura se
-    traslada correctamente al evaluar cualquier otro cultivo en la misma parcela, porque
+    traslada correctamente al evaluar cualquier otro cultivo en el mismo predio, porque
     entra directo al calculo de GDD. Un offset fijo de dias no se traslada entre cultivos
     con sensibilidad termica distinta."""
     f = pd.Timestamp(fecha_obs)

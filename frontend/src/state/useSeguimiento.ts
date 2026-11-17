@@ -3,7 +3,7 @@ import { fenologiaCultivo, listarCultivos, mensajeDeError, type Cultivo, type Fe
 import { usePredio } from './PredioContext'
 import { tr } from '../i18n/dictionary'
 
-// Los cultivos de la parcela activa y el seguimiento por etapa del cultivo activo, para
+// Los cultivos del predio activo y el seguimiento por etapa del cultivo activo, para
 // las pantallas que hablan del mismo cultivo (Hoy, Cultivos, Alertas). `aviso` trae el
 // motivo cuando no hay seguimiento: especie sin perfil fenológico o clima todavía sin llegar.
 export function useSeguimiento() {

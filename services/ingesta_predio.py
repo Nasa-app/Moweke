@@ -1,6 +1,6 @@
 """
 Ingesta de un predio v0.1 -- las cuatro fuentes que alimentan la idoneidad
-(catalogo_especies.ranking_idoneidad), corridas solas al crear la parcela en vez de
+(catalogo_especies.ranking_idoneidad), corridas solas al crear el predio en vez de
 dispararse a mano por los endpoints /api/admin/.../ingesta/*.
 
   explorador_solar  GHI anual y mensual 2004-2016 (radiacion) + elevacion del punto
@@ -42,7 +42,7 @@ mes recien terminado solo queda completo hacia el dia 10 (ver estado_ingesta).
 AppEEARS, Copernicus y FIRMS quedan fuera a proposito: no entran a ninguno de los dos
 calculos.
 
-Quien dispara esto: el propio agricultor al crear una parcela o consultar (encolar +
+Quien dispara esto: el propio agricultor al crear un predio o consultar (encolar +
 tarea en segundo plano de la API), y services/tarea_refresco_clima.py desde un cron.
 
 Cada fuente deja una fila en job_extraccion por intento (pendiente -> en_proceso ->
@@ -225,8 +225,8 @@ async def _daymet(session: AsyncSession, id_parcela: int, lat: float, lon: float
 async def _elevacion_celda(session: AsyncSession, id_parcela: int, lat: float, lon: float, mes: date) -> None:
     """Altura media de la celda de 5 km de CR2MET que da el clima del predio. El NetCDF no la trae
     (CR2 usa la topografia solo por dentro), asi que se calcula con el DEM de Copernicus sobre la
-    huella de la celda. Con ella, la temperatura se corrige a la altura de la parcela. No debe
-    tumbar la ingesta del clima: si falla, se avisa en el log y la parcela queda sin correccion."""
+    huella de la celda. Con ella, la temperatura se corrige a la altura del predio. No debe
+    tumbar la ingesta del clima: si falla, se avisa en el log y el predio queda sin correccion."""
     try:
         async with _candado_cr2met:
             archivo = await asyncio.to_thread(cliente_cr2met.descargar_mes, "txn", mes.year, mes.month, CACHE_CR2MET)
@@ -234,7 +234,7 @@ async def _elevacion_celda(session: AsyncSession, id_parcela: int, lat: float, l
         medio = cliente_cr2met.LADO_CELDA_GRADOS / 2
         altura = await asyncio.to_thread(cliente_dem.elevacion_media, lon_c - medio, lat_c - medio, lon_c + medio, lat_c + medio)
     except Exception:
-        log.warning("parcela %s: no se pudo calcular la altura de la celda de CR2MET", id_parcela, exc_info=True)
+        log.warning("predio %s: no se pudo calcular la altura de la celda de CR2MET", id_parcela, exc_info=True)
         return
     await guardar_consultas_grilla(session, [
         _fila(id_parcela, "cr2met_elevacion_celda_m", _PERIODO_DEM[0], _PERIODO_DEM[1], altura,
@@ -246,7 +246,7 @@ ATRASO_ERA5_DIAS = 8          # el archivo de reanalisis llega con unos dias de 
 
 
 async def _clima_historico(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
-    """El clima diario de 1991 al ultimo ano completo: ERA5 (Open-Meteo), corregido contra el CR2MET de la parcela
+    """El clima diario de 1991 al ultimo ano completo: ERA5 (Open-Meteo), corregido contra el CR2MET del predio
     como ya se corrige POWER (desplazamiento mensual de temperatura y un cociente de lluvia), y la calibracion
     mensual de la ET0 de Hargreaves contra la Penman-Monteith de ERA5. Guarda un renglon por ano completo. Corre
     despues de CR2MET, que aporta el traslape para corregir. Donde no hay CR2MET y el punto cae en la cobertura de
@@ -372,7 +372,7 @@ async def _power_radiacion_mensual(session: AsyncSession, id_parcela: int, lat: 
         climatologia = await asyncio.to_thread(cliente_power.consultar_climatologia, *_celda(lat, lon), 60)
         mensual = cliente_power.ghi_mensual_kwh(climatologia)
     except Exception:
-        log.warning("parcela %s: no se pudo pedir la climatologia de radiacion de POWER", id_parcela, exc_info=True)
+        log.warning("predio %s: no se pudo pedir la climatologia de radiacion de POWER", id_parcela, exc_info=True)
         return
     inicio, fin = (date.fromisoformat(d) for d in cliente_power.PERIODO_CLIMATOLOGIA)
     await guardar_consultas_grilla(session, [
@@ -884,5 +884,5 @@ async def ingerir_predio(id_parcela: int, jobs: dict[str, int]) -> None:
                 await _marcar(session, id_job, "completo", detalle)
             except Exception as error:
                 await session.rollback()
-                log.exception("ingesta %s fallo para la parcela %s", fuente, id_parcela)
+                log.exception("ingesta %s fallo para el predio %s", fuente, id_parcela)
                 await _marcar(session, id_job, "error", f"{type(error).__name__}: {error}"[:500])

@@ -10,7 +10,7 @@ const dias = (n: number) => tr(n === 1 ? 'inicio_dia_uno' : 'inicio_dia_otros', 
 const haceDias = (n: number) => (n <= 0 ? tr('inicio_hace_hoy') : n === 1 ? tr('inicio_hace_ayer') : tr('inicio_hace_n', { n }))
 
 // Cuándo regar según el balance de agua del cultivo. Es una estimación con el clima y el suelo de
-// la parcela, no una medición: la tarjeta lo dice y deja anotar un riego para que el cálculo parta de ahí.
+// el predio, no una medición: la tarjeta lo dice y deja anotar un riego para que el cálculo parta de ahí.
 export function TarjetaRiego({ riego, idCultivo, hoy, onCambio }: {
   riego: Riego
   idCultivo: number

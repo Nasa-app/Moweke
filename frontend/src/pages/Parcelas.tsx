@@ -10,7 +10,7 @@ import { usePredio } from '../state/PredioContext'
 import { useI18n } from '../i18n'
 import { tr } from '../i18n/dictionary'
 
-// Las parcelas que la persona ya marcó. Una sola está activa: es la que miran Hoy, Cultivos, Terreno y Qué sembrar.
+// Los predios que la persona ya marcó. Uno solo está activo: es el que miran Hoy, Cultivos, Terreno y Qué sembrar.
 export default function Parcelas() {
   const { t } = useI18n()
   const navigate = useNavigate()

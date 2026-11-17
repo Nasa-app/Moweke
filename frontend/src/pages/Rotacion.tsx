@@ -10,8 +10,8 @@ import { useI18n } from '../i18n'
 
 const OPCIONES_MAX = 3
 
-// Qué sembrar después, a partir de lo que ya hay en la parcela: el cultivo actual es el último sembrado. Sin parcela se
-// pide marcarla; sin cultivos, agregarlos. Las opciones salen del planificador de rotación del servidor, que respeta los
+// Qué sembrar después, a partir de lo que ya hay en el predio: el cultivo actual es el último sembrado. Sin predio se
+// pide marcarlo; sin cultivos, agregarlos. Las opciones salen del planificador de rotación del servidor, que respeta los
 // intervalos entre cultivos y que las solanáceas no vayan una tras otra.
 function Secuencia({ especies }: { especies: string[] }) {
   return (

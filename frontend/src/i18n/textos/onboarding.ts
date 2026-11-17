@@ -15,11 +15,11 @@ export const textos: Record<string, { es: string; en: string }> = {
   explorar_helada_ninguna: { es: 'Sin heladas esta semana', en: 'No frost this week' },
   explorar_pronostico: { es: 'Pronóstico', en: 'Forecast' },
   explorar_sin_datos: { es: 'No pudimos traer el tiempo de {comuna}. Prueba de nuevo en un rato.', en: 'We could not get the weather for {comuna}. Try again in a while.' },
-  explorar_alertas_titulo: { es: 'Alertas de tu parcela', en: 'Alerts for your plot' },
+  explorar_alertas_titulo: { es: 'Alertas de tu predio', en: 'Alerts for your plot' },
   explorar_alertas_ver: { es: 'Ver todas', en: 'See all' },
   explorar_alertas_ninguna: { es: 'Sin cambios fuertes de clima hasta el {fecha}.', en: 'No strong weather changes until {fecha}.' },
-  explorar_alertas_sin_datos: { es: 'Todavía no hay clima de tu parcela para avisarte.', en: 'There is no weather for your plot yet to warn you.' },
-  explorar_alertas_fallo: { es: 'No pudimos revisar el clima de tu parcela.', en: 'We could not check the weather for your plot.' },
+  explorar_alertas_sin_datos: { es: 'Todavía no hay clima de tu predio para avisarte.', en: 'There is no weather for your plot yet to warn you.' },
+  explorar_alertas_fallo: { es: 'No pudimos revisar el clima de tu predio.', en: 'We could not check the weather for your plot.' },
   alerta_clima_helada: { es: 'Helada', en: 'Frost' },
   alerta_clima_calor: { es: 'Calor fuerte', en: 'Strong heat' },
   alerta_clima_lluvia_fuerte: { es: 'Lluvia fuerte', en: 'Heavy rain' },
@@ -32,14 +32,14 @@ export const textos: Record<string, { es: string; en: string }> = {
   explorar_fuente_1: { es: 'Pronóstico de modelo, no medición:', en: 'Model forecast, not a measurement:' },
 
   // onboarding: datos
-  onb_datos_titulo: { es: '¿Dónde está tu parcela?', en: 'Where is your plot?' },
+  onb_datos_titulo: { es: '¿Dónde está tu predio?', en: 'Where is your plot?' },
   onb_datos_sub: {
-    es: 'Elige tu comuna. Después marcarás tu parcela sobre el mapa, tocando cada esquina.',
+    es: 'Elige tu comuna. Después marcarás tu predio sobre el mapa, tocando cada esquina.',
     en: 'Choose your municipality. Then you will mark your plot on the map by tapping each corner.',
   },
-  onb_datos_sigue_titulo: { es: 'Lo que sigue: marcar tu parcela', en: 'Next: mark your plot' },
+  onb_datos_sigue_titulo: { es: 'Lo que sigue: marcar tu predio', en: 'Next: mark your plot' },
   onb_datos_sigue_texto: {
-    es: 'Verás el mapa de {comuna}. Acércalo hasta tu parcela y toca cada esquina para dibujar su contorno. Toma un par de minutos.',
+    es: 'Verás el mapa de {comuna}. Acércalo hasta tu predio y toca cada esquina para dibujar su contorno. Toma un par de minutos.',
     en: 'You will see the map of {comuna}. Zoom in to your plot and tap each corner to draw its outline. It takes a couple of minutes.',
   },
 
@@ -53,7 +53,7 @@ export const textos: Record<string, { es: string; en: string }> = {
   onb_antes_avena: { es: 'Avena', en: 'Oats' },
   onb_antes_nada: { es: 'Nada', en: 'Nothing' },
   onb_antes_otro: { es: 'Otro', en: 'Other' },
-  onb_antes_parcela: { es: 'Sobre tu parcela (opcional)', en: 'About your plot (optional)' },
+  onb_antes_parcela: { es: 'Sobre tu predio (opcional)', en: 'About your plot (optional)' },
   onb_antes_sector: { es: 'Sector o localidad', en: 'Area or village' },
   onb_antes_sector_ejemplo: { es: 'Por ejemplo, Aucar', en: 'For example, Aucar' },
   onb_terreno_plano: { es: 'Plano', en: 'Flat' },
@@ -66,7 +66,7 @@ export const textos: Record<string, { es: string; en: string }> = {
     en: 'We alert you stage by stage for these crops. For the others, see what suits your land in the land analysis.',
   },
   onb_cultivos_primero_parcela: {
-    es: 'Primero marca tu parcela: el seguimiento usa su clima.',
+    es: 'Primero marca tu predio: el seguimiento usa su clima.',
     en: 'First mark your plot: the tracking uses its weather.',
   },
   onb_cultivos_leyenda: { es: 'Cultivos de esta temporada', en: "This season's crops" },
@@ -86,42 +86,42 @@ export const textos: Record<string, { es: string; en: string }> = {
   },
 
   // onboarding: listo
-  onb_listo_falta_titulo: { es: 'Falta marcar tu parcela', en: 'Your plot is not marked yet' },
+  onb_listo_falta_titulo: { es: 'Falta marcar tu predio', en: 'Your plot is not marked yet' },
   onb_listo_falta_detalle: { es: 'Sin ella no hay clima ni suelo que analizar', en: 'Without it there is no weather or soil to analyse' },
   onb_listo_mejor_titulo: { es: 'Lo que mejor se da', en: 'What grows best' },
   onb_listo_ninguna_titulo: { es: 'Ninguna especie resultó apta', en: 'No species turned out suitable' },
   onb_listo_ninguna_detalle: { es: 'Revisa el detalle de tu terreno', en: 'Check the details of your land' },
-  onb_listo_reuniendo_titulo: { es: 'Reuniendo los datos de tu parcela', en: "Gathering your plot's data" },
+  onb_listo_reuniendo_titulo: { es: 'Reuniendo los datos de tu predio', en: "Gathering your plot's data" },
   onb_listo_reuniendo_detalle: { es: 'Toca para ver el avance', en: 'Tap to see the progress' },
   onb_listo_analizando_titulo: { es: 'Analizando tu terreno…', en: 'Analysing your land…' },
-  onb_listo_analizando_detalle: { es: 'Buscando qué se da bien en tu parcela', en: 'Looking for what grows well on your plot' },
+  onb_listo_analizando_detalle: { es: 'Buscando qué se da bien en tu predio', en: 'Looking for what grows well on your plot' },
 
   // perímetro
   perimetro_sub_comuna: {
-    es: 'El mapa muestra {comuna}. Acércalo hasta tu parcela y toca cada esquina para dibujar su contorno. Puedes arrastrar una esquina para corregirla.',
+    es: 'El mapa muestra {comuna}. Acércalo hasta tu predio y toca cada esquina para dibujar su contorno. Puedes arrastrar una esquina para corregirla.',
     en: 'The map shows {comuna}. Zoom in to your plot and tap each corner to draw its outline. You can drag a corner to fix it.',
   },
   perimetro_sub: {
-    es: 'Mueve el mapa hasta tu parcela y toca cada esquina. Puedes arrastrar una esquina para corregirla.',
+    es: 'Mueve el mapa hasta tu predio y toca cada esquina. Puedes arrastrar una esquina para corregirla.',
     en: 'Move the map to your plot and tap each corner. You can drag a corner to fix it.',
   },
   perimetro_sin_gps: {
-    es: 'Este dispositivo no entrega ubicación. Mueve el mapa hasta tu parcela.',
+    es: 'Este dispositivo no entrega ubicación. Mueve el mapa hasta tu predio.',
     en: "This device can't give us your location. Move the map to your plot.",
   },
   perimetro_gps_fallo: {
-    es: 'No se pudo obtener tu ubicación. Mueve el mapa hasta tu parcela.',
+    es: 'No se pudo obtener tu ubicación. Mueve el mapa hasta tu predio.',
     en: "We couldn't get your location. Move the map to your plot.",
   },
   perimetro_error_guardar: {
-    es: 'No se pudo guardar la parcela. Revisa las esquinas que marcaste e intenta otra vez.',
+    es: 'No se pudo guardar el predio. Revisa las esquinas que marcaste e intenta otra vez.',
     en: 'We could not save the plot. Check the corners you marked and try again.',
   },
   perimetro_esquina_una: { es: '1 esquina', en: '1 corner' },
   perimetro_esquinas: { es: '{n} esquinas', en: '{n} corners' },
   perimetro_borrar: { es: 'Borrar', en: 'Clear' },
   perimetro_medida: {
-    es: 'Mueve las esquinas: la parcela debe medir entre {min} y {max} hectáreas.',
+    es: 'Mueve las esquinas: el predio debe medir entre {min} y {max} hectáreas.',
     en: 'Move the corners: the plot must be between {min} and {max} hectares.',
   },
 

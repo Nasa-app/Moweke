@@ -1,9 +1,9 @@
 """
 Idoneidad multianual
 ====================
-La lista de especies de una parcela se calculaba con UN ano de clima: el veredicto de "apta" cambiaba de 10 a
+La lista de especies de un predio se calculaba con UN ano de clima: el veredicto de "apta" cambiaba de 10 a
 36 % de las especies con una anomalia de 1 C (medido), y ademas no distinguia lo que ya se cultiva en la zona de lo
-que el clima en cambio vuelve posible. Este modulo evalua cada ano de la serie historica de la parcela y resume:
+que el clima en cambio vuelve posible. Este modulo evalua cada ano de la serie historica del predio y resume:
 
   historico   los anos mas viejos (1991 a 2010 con la serie actual)
   reciente    los ultimos ANIOS_RECIENTE anos completos (2011 a 2025)
@@ -14,8 +14,8 @@ decil: el puntaje que se supera en 9 de cada 10 anos). Una especie es apta si su
 minimo. La categoria de clima compara los periodos: 'tradicional' (funciona y seguira funcionando), 'emergente'
 (antes no y a futuro si, con un salto de verdad) o 'en_riesgo' (funcionaba y la tendencia la saca).
 
-La proyeccion NO es un modelo de clima: es la tendencia lineal robusta (Theil-Sen) de 35 anos de la propia
-parcela, acotada (nunca se proyecta un enfriamiento), aplicada a los anos recientes. Dice que pasa si lo observado sigue igual, no que va a pasar.
+La proyeccion NO es un modelo de clima: es la tendencia lineal robusta (Theil-Sen) de 35 anos del propio
+predio, acotada (nunca se proyecta un enfriamiento), aplicada a los anos recientes. Dice que pasa si lo observado sigue igual, no que va a pasar.
 El puntaje es de idoneidad de sitio, no un rendimiento.
 
 El puntaje de cada especie por ano sale de calcular_matriz(), una version vectorizada de
@@ -325,7 +325,7 @@ async def ranking_multianual(sitio: dict, repo, historia: dict[int, pd.DataFrame
                              incluir_silvestres: bool = False,
                              unir_variedades: bool = True, solo: set[str] | None = None) -> tuple[list[dict], dict | None]:
     """El ranking de ranking_idoneidad() con el criterio multianual: cada especie se puntua en cada ano de la serie
-    historica de la parcela y `apta` pasa a ser su ano dificil reciente (el peor decil) >= PUNTAJE_MINIMO_APTA.
+    historica del predio y `apta` pasa a ser su ano dificil reciente (el peor decil) >= PUNTAJE_MINIMO_APTA.
     `puntaje` queda como la compatibilidad tipica reciente y se agrega `puntaje_ano_dificil` y, en `clima`, los tres
     periodos y la categoria. Devuelve (ranking, resumen de la serie); sin al menos ANIOS_RECIENTE + MIN_ANIOS_PERIODO
     anos de historia devuelve el ranking de un ano y resumen None. `calentamiento_c_por_decada`: un escenario que

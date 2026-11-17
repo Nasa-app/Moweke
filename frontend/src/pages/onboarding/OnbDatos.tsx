@@ -9,8 +9,8 @@ import { useI18n } from '../../i18n'
 
 const IR_AL_MAPA = '/terreno/perimetro?desde=onboarding'
 
-// Primer paso: solo la comuna, para abrir el mapa cerca de la parcela. El sector y el tipo de terreno se
-// preguntan después (paso 2), cuando la parcela ya está marcada.
+// Primer paso: solo la comuna, para abrir el mapa cerca del predio. El sector y el tipo de terreno se
+// preguntan después (paso 2), cuando el predio ya está marcado.
 export default function OnbDatos() {
   const { t } = useI18n()
   const navigate = useNavigate()

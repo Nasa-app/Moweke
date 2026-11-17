@@ -94,15 +94,15 @@ export const textos: Record<string, { es: string; en: string }> = {
     en: 'We assume the temperature rises 0.6 °C per decade until 2040. This is an assumption, not a forecast.',
   },
   fmt_texto_escenario_tendencia: {
-    es: 'Seguimos la tendencia que ha tenido el clima de tu parcela.',
+    es: 'Seguimos la tendencia que ha tenido el clima de tu predio.',
     en: 'We follow the trend your plot\'s climate has had.',
   },
   fmt_texto_escenario_subio: {
-    es: 'En {anios} años, la temperatura de tu parcela subió {grados} °C por década. Seguimos esa tendencia hasta {horizonte}.',
+    es: 'En {anios} años, la temperatura de tu predio subió {grados} °C por década. Seguimos esa tendencia hasta {horizonte}.',
     en: 'Over {anios} years, the temperature on your plot rose {grados} °C per decade. We follow that trend until {horizonte}.',
   },
   fmt_texto_escenario_no_subio: {
-    es: 'En {anios} años, la temperatura de tu parcela no ha subido ({grados} °C por década). No suponemos que baje: sin calentamiento, casi nada cambia hacia {horizonte}.',
+    es: 'En {anios} años, la temperatura de tu predio no ha subido ({grados} °C por década). No suponemos que baje: sin calentamiento, casi nada cambia hacia {horizonte}.',
     en: 'Over {anios} years, the temperature on your plot has not risen ({grados} °C per decade). We do not assume it will drop: with no warming, almost nothing changes by {horizonte}.',
   },
   fmt_categoria_clima_tradicional_chip: { es: 'Se da bien hace años', en: 'Has done well for years' },
@@ -129,7 +129,7 @@ export const textos: Record<string, { es: string; en: string }> = {
   fmt_dato_faltante_radiacion: { es: 'el sol', en: 'the sun' },
   fmt_dato_faltante_agua_suelo: { es: 'el agua que guarda el suelo', en: 'the water the soil holds' },
   fmt_datos_faltantes: {
-    es: 'No pudimos medir {lista} de tu parcela. La lista puede incluir especies que no se den bien aquí.',
+    es: 'No pudimos medir {lista} de tu predio. La lista puede incluir especies que no se den bien aquí.',
     en: "We couldn't measure {lista} on your plot. The list may include species that don't grow well here.",
   },
   fmt_suelo_sin_declarar: {
@@ -166,11 +166,11 @@ export const textos: Record<string, { es: string; en: string }> = {
   fuentesdato_sol_titulo: { es: 'Sol', en: 'Sun' },
   fuentesdato_sol_detalle: { es: 'Cuánto sol llega a tu zona en cada mes', en: 'How much sun reaches your area each month' },
   fuentesdato_sol_nota: {
-    es: 'NASA POWER · celda de unos 100 km: referencia de la región, no de tu parcela',
+    es: 'NASA POWER · celda de unos 100 km: referencia de la región, no de tu predio',
     en: 'NASA POWER · cell of about 100 km: a reference for the region, not for your plot',
   },
   fuentesdato_incendios_titulo: { es: 'Incendios', en: 'Fires' },
-  fuentesdato_incendios_detalle: { es: 'Focos de calor cerca de tu parcela', en: 'Hot spots near your plot' },
+  fuentesdato_incendios_detalle: { es: 'Focos de calor cerca de tu predio', en: 'Hot spots near your plot' },
   fuentesdato_incendios_nota: {
     es: 'NASA FIRMS (satélites VIIRS) · alertas oficiales: SENAPRED',
     en: 'NASA FIRMS (VIIRS satellites) · official alerts: SENAPRED',
@@ -182,11 +182,11 @@ export const textos: Record<string, { es: string; en: string }> = {
     en: 'Sentinel-2, from ESA · every 5 days, when the sky lets us see the plot',
   },
   fuentesdato_relieve_titulo: { es: 'Relieve', en: 'Terrain' },
-  fuentesdato_relieve_detalle: { es: 'Altura y pendiente de tu parcela', en: 'Height and slope of your plot' },
+  fuentesdato_relieve_detalle: { es: 'Altura y pendiente de tu predio', en: 'Height and slope of your plot' },
   fuentesdato_relieve_nota: { es: 'Modelo de elevación Copernicus GLO-30', en: 'Copernicus GLO-30 elevation model' },
   fuentesdato_cauce_titulo: { es: 'Cercanía al cauce', en: 'Closeness to the stream' },
   fuentesdato_cauce_detalle: {
-    es: 'Qué tan alto queda tu parcela sobre el cauce más cercano',
+    es: 'Qué tan alto queda tu predio sobre el cauce más cercano',
     en: 'How high your plot sits above the nearest stream',
   },
   fuentesdato_cauce_nota: {
@@ -271,10 +271,10 @@ export const textos: Record<string, { es: string; en: string }> = {
   mapa_opcion_mapa: { es: 'Mapa', en: 'Map' },
   mapa_opcion_satelite: { es: 'Satélite', en: 'Satellite' },
   mapa_atribucion_satelite: { es: 'Imagen: Esri, Maxar, Earthstar Geographics', en: 'Imagery: Esri, Maxar, Earthstar Geographics' },
-  mapa_aria_dibujo: { es: 'Mapa para marcar las esquinas de tu parcela', en: 'Map to mark the corners of your plot' },
-  mapa_aria_celdas: { es: 'Mapa de tu parcela dividida en cuadros', en: 'Map of your plot divided into squares' },
+  mapa_aria_dibujo: { es: 'Mapa para marcar las esquinas de tu predio', en: 'Map to mark the corners of your plot' },
+  mapa_aria_celdas: { es: 'Mapa de tu predio dividido en cuadros', en: 'Map of your plot divided into squares' },
   mapa_acerca: {
-    es: 'Acerca el mapa hasta tu parcela para marcar sus esquinas',
+    es: 'Acerca el mapa hasta tu predio para marcar sus esquinas',
     en: 'Zoom in to your plot to mark its corners',
   },
 
@@ -294,7 +294,7 @@ export const textos: Record<string, { es: string; en: string }> = {
   tiempo_tormenta: { es: 'Tormenta', en: 'Thunderstorm' },
   servidor_demasiados_intentos: { es: 'Demasiados intentos. Espera unos minutos e intenta otra vez.', en: 'Too many attempts. Wait a few minutes and try again.' },
   servidor_sin_base: { es: 'Base de datos no disponible', en: 'Database not available' },
-  servidor_parcela_no_existe: { es: 'Parcela no existe', en: 'Plot does not exist' },
+  servidor_parcela_no_existe: { es: 'Predio no existe', en: 'Plot does not exist' },
   servidor_perimetro_cruzado: { es: 'El perímetro se cruza a sí mismo; dibújalo de nuevo sin cruzar líneas', en: 'The outline crosses itself; draw it again without crossing lines' },
   servidor_especie_no_catalogo: { es: 'La especie no está en el catálogo', en: 'This species is not in the catalog' },
   servidor_cultivo_no_existe: { es: 'Cultivo no existe', en: 'Crop does not exist' },

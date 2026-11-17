@@ -96,7 +96,7 @@ function TarjetaVerdor({ parcela, numeroDeParcela }: { parcela: ParcelaResumen; 
   )
 }
 
-// Una imagen de verdor (NASA HLS, 30 m) por cada parcela del usuario.
+// Una imagen de verdor (NASA HLS, 30 m) por cada predio del usuario.
 export function VerdorParcelas() {
   const { t } = useI18n()
   const [parcelas, setParcelas] = useState<ParcelaResumen[]>([])

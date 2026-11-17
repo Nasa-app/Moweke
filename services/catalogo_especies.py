@@ -68,7 +68,7 @@ class RepositorioEspecies(Protocol):
     async def parametros_agua(self, especie: str) -> dict | None: ...
 
 
-# Agua aprovechable de 0 a 200 cm cuando la parcela no tiene el dato de CLSoilMaps (un franco medio da unos
+# Agua aprovechable de 0 a 200 cm cuando el predio no tiene el dato de CLSoilMaps (un franco medio da unos
 # 150 mm por metro). Antes eran 100 mm para todo el perfil; ahora la capacidad se reparte por la profundidad
 # de raices, y 100 mm dejaban una zona de raices de 25 mm: una sequia segura.
 AWC_POR_DEFECTO_MM = 200.0
@@ -211,7 +211,7 @@ async def calcular_idoneidad(sitio: dict, especies: list[tuple[str, str | None]]
 
     sitio: {'ph': float|None, 'tmin': float|None, 'tmax': float|None, 'awc_mm': float|None}
     -- valores REALES del sitio (ej. ph/awc de SoilGrids/CLSoilMaps, tmin/tmax promedio
-    real de CR2MET/POWER para la parcela), nunca inventados. Ausencia de un dato de
+    real de CR2MET/POWER para el predio), nunca inventados. Ausencia de un dato de
     sitio (None) NUNCA descarta una especie -- "no sabemos" no es "no sirve", mismo
     principio que el resto del proyecto (ver advertencia de nivel_madurez).
 
@@ -303,7 +303,7 @@ MARGEN_ALTITUD = 0.10
 MARGEN_TEXTURA_PCT = 5.0
 TEXTURA_TOLERADA = 0.75
 
-# Suelo que declara el agricultor (la parcela no tiene esos datos medidos). Respuesta de lo que la
+# Suelo que declara el agricultor (el predio no tiene esos datos medidos). Respuesta de lo que la
 # especie solo tolera, de menos a mas costosa de corregir: la fertilidad se mejora con abono (piso
 # 0,5, nunca descarta); la profundidad y el drenaje no; la sal baja el rendimiento a la mitad.
 DRENAJE_TOLERADO = 0.75
@@ -317,7 +317,7 @@ ORDEN_FERTILIDAD = {"low": 0, "moderate": 1, "high": 2}
 CAMPOS_SUELO = ("drenaje", "salinidad", "profundidad", "fertilidad")
 
 # Temperatura: -6,5 C por km de subida (gradiente estandar de la atmosfera) para pasar de la altura
-# media de la celda de CR2MET a la de la parcela. Tope de seguridad si un dato viene malo.
+# media de la celda de CR2MET a la del predio. Tope de seguridad si un dato viene malo.
 GRADIENTE_TEMPERATURA_C_POR_M = 0.0065
 CORRECCION_TEMPERATURA_MAX_C = 5.0
 
@@ -547,9 +547,9 @@ def aplicar_tope_suelo(ranking: list[dict], sitio: dict) -> list[dict]:
 
 
 def delta_temperatura_por_altitud(altitud_parcela_m: float | None, altitud_celda_m: float | None) -> float:
-    """Grados a sumar a la temperatura de la celda de 5 km de CR2MET para llevarla a la altura de la
-    parcela: la temperatura baja GRADIENTE_TEMPERATURA_C_POR_M por metro de subida. Con la
-    parcela mas alta que la altura media de su celda da negativo. 0 si falta algun dato, y
+    """Grados a sumar a la temperatura de la celda de 5 km de CR2MET para llevarla a la altura del
+    predio: la temperatura baja GRADIENTE_TEMPERATURA_C_POR_M por metro de subida. Con el
+    predio mas alto que la altura media de su celda da negativo. 0 si falta algun dato, y
     nunca mas de CORRECCION_TEMPERATURA_MAX_C en valor absoluto."""
     if altitud_parcela_m is None or altitud_celda_m is None:
         return 0.0
@@ -1320,7 +1320,7 @@ async def construir_catalogo(especies: list[tuple[str, str | None]], repo: Repos
     falta propagar el error hacia arriba para que el resto del catalogo funcione.
 
     Las especies se construyen en secuencia, no con asyncio.gather -- son pocas por
-    parcela (3-8 especies tipico) y el paralelismo no vale la complejidad de manejar
+    predio (3-8 especies tipico) y el paralelismo no vale la complejidad de manejar
     errores parciales de gather aqui. Si esto escala a decenas de especies por consulta,
     reconsiderar."""
     cultivos, perfiles, reglas, sin_perfil = {}, {}, {}, []

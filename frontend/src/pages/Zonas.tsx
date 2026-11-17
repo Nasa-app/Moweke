@@ -11,7 +11,7 @@ import { tr } from '../i18n/dictionary'
 
 // Cada capa de GET /api/parcelas/{id}/mapa: cómo se nombra, con qué colores (los de
 // tokens.css) y entre qué valores se reparte la escala. El verdor y la pendiente usan una
-// escala fija, para que un color signifique lo mismo en cualquier parcela; la altura, la
+// escala fija, para que un color signifique lo mismo en cualquier predio; la altura, la
 // del propio predio, porque lo que importa es qué parte queda más alta.
 const CAPAS: Record<CapaMapa, {
   colores: string[]

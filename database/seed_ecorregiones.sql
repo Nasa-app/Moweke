@@ -40,7 +40,7 @@ INSERT INTO ecoregion_wwf (eco_id, eco_name, bioma_wwf, reino, fuente, geometria
 ON CONFLICT (eco_id) DO UPDATE SET eco_name = EXCLUDED.eco_name, bioma_wwf = EXCLUDED.bioma_wwf,
   reino = EXCLUDED.reino, fuente = EXCLUDED.fuente, geometria = EXCLUDED.geometria;
 
--- Parcelas que todavia no tienen ecorregion: la que contiene su centroide o, si
+-- Predios que todavia no tienen ecorregion: la que contiene su centroide o, si
 -- cae en un borde simplificado (costa), la mas cercana a menos de 5 km.
 UPDATE parcela p SET id_ecoregion = (
   SELECT e.id FROM ecoregion_wwf e

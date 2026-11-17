@@ -66,7 +66,7 @@ INSERT INTO equivalencia_luz_ghi (categoria, orden, ghi_min_kwh_m2_dia) VALUES
   ('light shade', 4, 1.5),
   ('heavy shade', 5, 0.0);
 
--- job_extraccion pasa a registrar tambien las ingestas por parcela (Fase A.1 del plan):
+-- job_extraccion pasa a registrar tambien las ingestas por predio (Fase A.1 del plan):
 -- antes solo podia colgar de un perfil climatico regional y ningun endpoint la escribia.
 ALTER TABLE job_extraccion ALTER COLUMN id_perfil_climatico DROP NOT NULL;
 ALTER TABLE job_extraccion ADD COLUMN id_parcela INT REFERENCES parcela(id);

@@ -31,7 +31,7 @@ export default function OnbAntes() {
   const navigate = useNavigate()
   const [elegido, setElegido] = useState(() => leer<Record<string, string>>('onboarding_antes', {}))
 
-  // Sobre la parcela ya marcada: opcional, y queda en este dispositivo (el servidor todavía no lo guarda).
+  // Sobre el predio ya marcado: opcional, y queda en este dispositivo (el servidor todavía no lo guarda).
   const [sector, setSector] = useState(() => leerBorrador().sector)
   const [terreno, setTerreno] = useState(() => leerBorrador().terreno)
 

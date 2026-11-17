@@ -7,7 +7,7 @@ cache_consulta_grilla de verdad, no solo devolver datos sueltos.
 
 cache_consulta_grilla ya esta disenada para ser generica por fuente (ver comentario en
 database/schema.sql: "HLS, SRTM, SMAP, POWER, ECOSTRESS -- todo lo que se consulta por
-poligono o centroide de una parcela especifica") -- no hizo falta ninguna columna nueva
+poligono o centroide de un predio especifico") -- no hizo falta ninguna columna nueva
 para Explorador Solar ni Copernicus, solo valores nuevos de `capa`/`version_producto`.
 """
 from __future__ import annotations
@@ -138,7 +138,7 @@ def elegir_referencia(cr2met: pd.DataFrame, daymet: pd.DataFrame) -> tuple[str |
 
 
 async def leer_historia(session: AsyncSession, id_parcela: int) -> dict[int, pd.DataFrame]:
-    """El clima diario historico de la parcela, corregido: {ano: DataFrame(tmin, tmax, lluvia)} con un dia por
+    """El clima diario historico del predio, corregido: {ano: DataFrame(tmin, tmax, lluvia)} con un dia por
     fila desde el 1 de enero. Vacio si todavia no se ingirio."""
     filas = (await session.execute(text(
         "SELECT anio, tmin, tmax, lluvia FROM clima_historico_parcela WHERE id_parcela = :id ORDER BY anio"
@@ -166,7 +166,7 @@ async def guardar_historia(session: AsyncSession, id_parcela: int, anios: dict[i
 
 
 async def leer_factores_et0(session: AsyncSession, id_parcela: int) -> list[float] | None:
-    """Los 12 factores de calibracion de la ET0 de la parcela (enero primero), o None si no estan todos."""
+    """Los 12 factores de calibracion de la ET0 del predio (enero primero), o None si no estan todos."""
     filas = (await session.execute(text(
         "SELECT capa, valor FROM cache_consulta_grilla WHERE id_parcela = :id AND capa = ANY(:capas)"
     ), {"id": id_parcela, "capas": list(CAPAS_ET0_FACTOR_MENSUAL)})).mappings().all()
@@ -235,7 +235,7 @@ async def leer_sitio(session: AsyncSession, id_parcela: int, hoy: date | None = 
         else:
             clima = None
 
-    # Altura media de la parcela segun el mismo DEM con que se calculo la de la celda de CR2MET:
+    # Altura media del predio segun el mismo DEM con que se calculo la de la celda de CR2MET:
     # la diferencia entre ambas es la correccion de temperatura por altitud.
     altitud_dem = (await session.execute(text(
         "SELECT avg(valor) FROM cache_celda WHERE id_parcela = :id AND capa = 'altitud_m' AND valor IS NOT NULL"
@@ -320,7 +320,7 @@ def _sesgo_modelo(cr2met: pd.DataFrame, modelo: pd.DataFrame) -> dict | None:
 
 
 def corregir_contra_referencia(referencia: pd.DataFrame, otra: pd.DataFrame) -> tuple[pd.DataFrame, dict | None]:
-    """La serie `otra` (tmin, tmax, lluvia) corregida con su sesgo contra la serie de referencia de la misma parcela
+    """La serie `otra` (tmin, tmax, lluvia) corregida con su sesgo contra la serie de referencia del mismo predio
     (CR2MET, o Daymet fuera de Chile; ver elegir_referencia), y el sesgo aplicado (None si no hay dias en comun
     suficientes: entonces no se corrige)."""
     sesgo = _sesgo_power(referencia, otra)

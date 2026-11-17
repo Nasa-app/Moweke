@@ -57,8 +57,8 @@ COLUMNAS_HISTORIA = {"temperature_2m_min": "tmin", "temperature_2m_max": "tmax",
 def consultar_historia(lat: float, lon: float, inicio: str, fin: str, timeout: int = 90) -> pd.DataFrame:
     """Clima diario historico de la celda de reanalisis (ERA5) mas cercana, de `inicio` a `fin`
     ('YYYY-MM-DD'): tmin y tmax (C), lluvia (mm), ET0 de Penman-Monteith FAO-56 (mm) y radiacion
-    (MJ/m2/dia). VERIFICADO el 15-nov-2026: 35 anos (12.784 dias) de una parcela de Chiloe en 13 s, sin
-    huecos. Es modelo, no medicion: la celda es de ~10 km y su sesgo contra el CR2MET de la parcela se
+    (MJ/m2/dia). VERIFICADO el 15-nov-2026: 35 anos (12.784 dias) de un predio de Chiloe en 13 s, sin
+    huecos. Es modelo, no medicion: la celda es de ~10 km y su sesgo contra el CR2MET del predio se
     corrige despues (ingesta_predio._clima_historico). Mismas condiciones de uso que el pronostico:
     gratis solo para uso no comercial; los datos son CC BY 4.0 (ERA5, Copernicus) y piden atribucion.
     El archivo llega con unos dias de atraso."""

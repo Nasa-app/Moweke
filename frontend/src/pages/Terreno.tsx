@@ -39,7 +39,7 @@ export default function Terreno() {
   useEffect(() => {
     if (!idParcela) return
     let vigente = true
-    // Al cambiar de parcela no se deja a la vista lo de la anterior mientras llega lo nuevo.
+    // Al cambiar de predio no se deja a la vista lo de la anterior mientras llega lo nuevo.
     setParcela(null)
     setSitio(null)
     setSuelo(null)

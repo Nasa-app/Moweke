@@ -42,7 +42,7 @@ def radiacion_extraterrestre(lat, doy):
 
 def et0_hargreaves(clima, lat):
     """ET0 diaria (mm) de Hargreaves-Samani con tmin y tmax. Sobrestima en climas costeros humedos
-    (depende de la raiz del rango diurno): se calibra por parcela contra Penman-Monteith, ver
+    (depende de la raiz del rango diurno): se calibra por predio contra Penman-Monteith, ver
     factores_et0() y la tabla de calibracion de repositorio_clima."""
     ra = radiacion_extraterrestre(lat, clima.index.dayofyear.values)
     tmed = (clima.tmin.values + clima.tmax.values) / 2
@@ -101,7 +101,7 @@ def calibrar_et0_mensual(clima, et0_referencia, lat, min_dias_mes=10):
     referencia (Penman-Monteith): suma de la referencia sobre suma de Hargreaves en los dias en comun de cada mes.
     Un mes con menos de `min_dias_mes` dias en comun usa el factor de todo el traslape; se suaviza con los
     meses vecinos (1-2-1, circular) y se acota a LIMITES_FACTOR_ET0. Es la calibracion local de Hargreaves que
-    recomienda FAO-56, hecha una vez por parcela."""
+    recomienda FAO-56, hecha una vez por predio."""
     comun = clima[["tmin", "tmax"]].join(pd.Series(et0_referencia, name="ref"), how="inner").dropna()
     hs = pd.Series(et0_hargreaves(comun, lat), index=comun.index)
     if comun.empty or hs.sum() <= 0:
@@ -318,7 +318,7 @@ def evaluar(clima, agua, siembra, fechas, c, reglas, externos=(), manejo=()):
     para que una regla con mitigado_por reduzca su dano si corresponde (ver Regla).
     manejo=() (default) -- comportamiento identico a cuando esto no existia: pensado para
     motor_rotacion.evaluar_cultivos(), que trabaja con anos sinteticos sin manejo real que
-    registrar. Quien evalue un cultivo real de una parcela real (calcular_fenologia_cultivo,
+    registrar. Quien evalue un cultivo real de un predio real (calcular_fenologia_cultivo,
     Fase 6) es quien debe leer manejo_predio y pasarlo aqui."""
     danos, eventos, fecha_perdida, atraso = [], [], None, 0
     ciclo_completo = c.etapas[-1][0] in fechas

@@ -13,7 +13,7 @@ export function Screen({ children, sinMenu }: { children: ReactNode; sinMenu?: b
 
 // "Volver" lleva a la pantalla de la que se vino, no a una fija: casi todas se alcanzan desde varios lados. `volverA` es
 // el respaldo cuando no hay historial dentro de la app (un enlace directo, la app instalada). `fijo` fuerza `volverA`
-// donde volver atrás repetiría algo que ya se hizo (marcar la parcela otra vez).
+// donde volver atrás repetiría algo que ya se hizo (marcar el predio otra vez).
 export function BarraSuperior({
   volverA,
   derecha,

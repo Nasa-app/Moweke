@@ -1,4 +1,4 @@
-"""Motor de rotacion: reglas duras, busqueda con tope y el plan que compara estrategias para una parcela."""
+"""Motor de rotacion: reglas duras, busqueda con tope y el plan que compara estrategias para un predio."""
 import numpy as np
 import pytest
 from fastapi import HTTPException

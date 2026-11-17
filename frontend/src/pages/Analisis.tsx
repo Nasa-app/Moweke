@@ -285,7 +285,7 @@ function FilaPeriodo({ nombre, periodo }: { nombre: string; periodo: PeriodoClim
   )
 }
 
-// Cómo le fue y le iría a la especie en tu parcela: antes, ahora y hacia el futuro, con el mismo cálculo año por año.
+// Cómo le fue y le iría a la especie en tu predio: antes, ahora y hacia el futuro, con el mismo cálculo año por año.
 function ClimaEnElTiempo({ clima, serie, apta }: { clima: NonNullable<Candidata['clima']>; serie: SerieClimatica; apta: boolean }) {
   const { t } = useI18n()
   const categoria = clima.categoria ? TEXTO_CATEGORIA_CLIMA[clima.categoria] : null

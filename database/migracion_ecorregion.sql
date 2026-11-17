@@ -4,7 +4,7 @@
 --
 -- Los datos son de "Biomes and Ecoregions 2017" (RESOLVE), la revision del mapa de WWF:
 -- ver database/importar_ecorregiones.py. Despues de esto hay que correr
--- database/seed_ecorregiones.sql, que carga las ecorregiones y las asigna a las parcelas.
+-- database/seed_ecorregiones.sql, que carga las ecorregiones y las asigna a los predios.
 --
 -- No se toca `bioma_tipo` ni perfil_climatico_regional: son la clasificacion propia de
 -- cuatro valores del proyecto, y no hay equivalencia publicada con los biomas de WWF.

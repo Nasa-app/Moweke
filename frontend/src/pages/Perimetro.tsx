@@ -14,7 +14,7 @@ import { useI18n } from '../i18n'
 // Los mismos límites que valida POST /api/parcelas.
 const HECTAREAS_MIN = 0.05
 const HECTAREAS_MAX = 1000
-// Zoom con el que se ve una parcela (se usa con la ubicación del dispositivo y con un predio ya marcado).
+// Zoom con el que se ve un predio (se usa con la ubicación del dispositivo y con un predio ya marcado).
 const ZOOM_PARCELA = 17
 
 interface Vista {
@@ -23,7 +23,7 @@ interface Vista {
 }
 
 // Dónde abre el mapa. Al venir del registro, en la comuna que la persona acaba de elegir. Si no, donde quedó la
-// última parcela, y si no hay ninguna, en la comuna elegida o en la comuna piloto. El centro de una comuna llega
+// último predio, y si no hay ninguno, en la comuna elegida o en la comuna piloto. El centro de una comuna llega
 // del API: mientras no esté, la vista queda en null.
 function vistaInicial(enOnboarding: boolean, comunas: ZonaComuna[]): Vista | null {
   const ultima = leer<Punto | null>('mapa_centro', null)
@@ -38,7 +38,7 @@ export default function Perimetro() {
   const [params] = useSearchParams()
   const enOnboarding = params.get('desde') === 'onboarding'
   const { idParcela, setParcelaActiva, setCultivoActivo } = usePredio()
-  // Fuera del registro, con una parcela anterior o con la lista ya guardada, el mapa abre sin consultar las comunas.
+  // Fuera del registro, con un predio anterior o con la lista ya guardada, el mapa abre sin consultar las comunas.
   const [pedirComunas] = useState(() => enOnboarding || (!leer<Punto | null>('mapa_centro', null) && comunasGuardadas().length === 0))
   const { comunas, cargando: cargandoComunas } = useComunas(pedirComunas)
   const [elegida, setVista] = useState<Vista | null>(null)

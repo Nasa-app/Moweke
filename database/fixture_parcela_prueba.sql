@@ -1,4 +1,4 @@
--- Parcela de prueba para verificar cache_consulta_grilla con las fuentes nuevas
+-- Predio de prueba para verificar cache_consulta_grilla con las fuentes nuevas
 -- (cliente_solar, cliente_copernicus) -- no es seed de producto, es fixture de
 -- verificacion, igual que el usuario "Agricultor Prueba" ya creado via /api/auth/registro.
 -- Punto elegido tierra adentro (-42.45, -73.78, 76 msnm segun Explorador Solar) despues

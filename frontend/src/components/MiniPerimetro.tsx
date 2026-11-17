@@ -1,7 +1,7 @@
 import { IconoUbicacion } from './icons'
 import type { Poligono } from '../lib/api'
 
-// El contorno real de la parcela marcada, escalado a un recuadro (el este-oeste se acorta con la latitud).
+// El contorno real del predio marcado, escalado a un recuadro (el este-oeste se acorta con la latitud).
 export function MiniPerimetro({ perimetro, tamano = 52 }: { perimetro: Poligono; tamano?: number }) {
   const anillo = perimetro.coordinates[0] ?? []
   if (anillo.length < 3) return <IconoUbicacion stroke="var(--verde)" />

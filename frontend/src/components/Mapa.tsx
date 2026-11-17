@@ -14,7 +14,7 @@ type Base = 'satelite' | 'mapa'
 // con atribución visible: antes de publicar la app hay que revisar la licencia.
 // Mapa: OpenStreetMap. Sus servidores son de mejor esfuerzo y no admiten precargar zonas
 // ni uso sin conexión; la atribución tiene que verse siempre sobre el mapa.
-// Cada tesela se pide por la zona que se mira: la ubicación aproximada de la parcela sale
+// Cada tesela se pide por la zona que se mira: la ubicación aproximada del predio sale
 // del dispositivo hacia ese servicio.
 // La atribución del satélite se lee al crear la capa para seguir el idioma vigente.
 const BASES: Record<Base, { url: string; opciones: () => L.TileLayerOptions }> = {

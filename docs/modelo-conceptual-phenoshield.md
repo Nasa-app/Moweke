@@ -43,7 +43,7 @@ El mismo patrón estructural —referencias climáticas que cambian de comportam
 
 El sistema no reemplaza la observación directa del agricultor sobre su propio cultivo — eso lo ve mejor que cualquier sensor remoto. El valor real se concentra en tres cosas que un agricultor, por buena que sea su observación, no puede construir solo:
 
-1. **Comparación contra el resto de la comuna** — distingue si un desfase es de su parcela específica o de toda la zona (decide si la respuesta correcta es arreglar drenaje o cambiar de variedad).
+1. **Comparación contra el resto de la comuna** — distingue si un desfase es de su predio específico o de toda la zona (decide si la respuesta correcta es arreglar drenaje o cambiar de variedad).
 2. **Anticipación antes del síntoma** — proyecta riesgo de tizón/helada antes de que aparezca, algo que la observación del presente no puede hacer.
 3. **Conexión con otros agricultores de la red para conseguir semilla alternativa** — es un problema de información/logística, no de percepción agronómica.
 
@@ -87,7 +87,7 @@ Esta sección existe porque el catálogo de 4.1/10.1 describe lo que se investig
 | NASA POWER | `services/cliente_power.py` | ✅ Verificado — incluye `radiacion` (ALLSKY_SFC_SW_DWN), agregada tras encontrar que nunca se pedía |
 | CR2MET (CR2/U. de Chile) | `services/cliente_cr2met.py` | ✅ Verificado — reemplaza/complementa a POWER para clima diario de Chile, mejor calibrado localmente, ~9 días de latencia real medida |
 | AppEEARS (HLS, SMAP, ECOSTRESS, Landsat nativo) | `services/cliente_appeears.py` | ✅ Verificado — login por usuario/clave real (el "user token" de EDL NO funciona federado, da 403); NDVI/NDMI/EVI/SAVI/NBR/índices minerales desde bandas HLS reales; LST de Landsat 8/9 dio vacío real para Chiloé (sin gránulos válidos, no es bug) |
-| Copernicus Data Space / Sentinel Hub (Sentinel-1/2) | `services/cliente_copernicus.py` | ✅ Verificado — OAuth client_credentials real; Statistical API da NDVI/backscatter agregados sobre el polígono real de la parcela (única fuente que usa el polígono, no el centroide) |
+| Copernicus Data Space / Sentinel Hub (Sentinel-1/2) | `services/cliente_copernicus.py` | ✅ Verificado — OAuth client_credentials real; Statistical API da NDVI/backscatter agregados sobre el polígono real del predio (única fuente que usa el polígono, no el centroide) |
 | CLSoilMaps (agua disponible de suelo) | `services/cliente_clsoilmaps.py` | ✅ Verificado — extrae solo el archivo necesario (328MB) de un zip remoto de 10GB vía HTTP Range, sin descargar el resto |
 | SoilGrids (pH, textura, carbono orgánico) | `services/cliente_soilgrids.py` | ✅ Verificado — reemplaza al rol que 10.1 le daba a CHLSOC/SoilGrids conceptualmente; API de consulta puntual real, sin descarga |
 | Explorador Solar (MinEnergía Chile) | `services/cliente_solar.py` | ✅ Verificado — endpoint no documentado públicamente, encontrado inspeccionando el mapa interactivo |
@@ -128,7 +128,7 @@ Schema real y vigente: `database/schema.sql`. No se duplica aquí para evitar qu
 
 Dos decisiones de esa versión que no estaban en el diseño original y vale la pena explicar el porqué:
 
-- **`parcela` separada de `predio_cultivos`**: `parcela` es el terreno, estable a través de temporadas. `predio_cultivos` es un ciclo de cultivo dentro de esa parcela. El motor de rotación (sección 8) compara secuencias de cultivos sobre la misma tierra a través del tiempo — eso no se puede consultar si el terreno y el ciclo actual son la misma fila.
+- **`parcela` separada de `predio_cultivos`**: `parcela` es el terreno, estable a través de temporadas. `predio_cultivos` es un ciclo de cultivo dentro de ese predio. El motor de rotación (sección 8) compara secuencias de cultivos sobre la misma tierra a través del tiempo — eso no se puede consultar si el terreno y el ciclo actual son la misma fila.
 - **`bioindicador_observado` separada de `fenologia_observada`**: el Ulmo y el zarapito (sección 10) no pertenecen a un ciclo de cultivo, pertenecen a quien los observa y a su zona. Forzarlos a referenciar un cultivo no reflejaba el diseño.
 - **`unidad_administrativa_local`** reemplaza a "comuna" en todo el schema — término genérico para que el sistema funcione fuera de Chile sin reescribir el modelo de datos (ver sección 10.1.2).
 
@@ -179,7 +179,7 @@ confianza({
 # -> {"nivel": "A"|"B"|"C", "limitante": "anos_indicador", "valor": 0.45}
 ```
 
-Esto es mejor que la versión categórica porque dice *cuál* dato es el limitante, no solo un nivel general — "A/B/C" se derivan de este cálculo, no al revés. Cada componente sigue el mismo principio de antes (revisar nivel comunal/regional antes de asumir cero información; una parcela sin historial propio no es lo mismo que toda su zona sin ningún reporte), pero expresado como un número que se puede mezclar con otros, no como una categoría cerrada.
+Esto es mejor que la versión categórica porque dice *cuál* dato es el limitante, no solo un nivel general — "A/B/C" se derivan de este cálculo, no al revés. Cada componente sigue el mismo principio de antes (revisar nivel comunal/regional antes de asumir cero información; un predio sin historial propio no es lo mismo que toda su zona sin ningún reporte), pero expresado como un número que se puede mezclar con otros, no como una categoría cerrada.
 
 ### 7.5 Calendario dinámico
 
@@ -189,7 +189,7 @@ calendario_predio = {
   etapas_proyectadas: [{ etapa, ventana: {inicio, fin}, confianza }],
   delta_microclima,  -- de pheno_engine.delta_microclima: correccion de TEMPERATURA calibrada con un
                        -- indicador local (no un offset de dias — se traslada correctamente a
-                       -- cualquier cultivo evaluado en la misma parcela, porque entra al calculo de GDD)
+                       -- cualquier cultivo evaluado en el mismo predio, porque entra al calculo de GDD)
   ultima_actualizacion: {fecha, fuente}
 }
 ```
@@ -277,7 +277,7 @@ El sistema no elige la mejor rotación — reordena las estrategias comparadas s
 
 ### 8.5 Salida de la comparación — implementada en `services/motor_rotacion.py`
 
-Esto reemplaza la descripción genérica que teníamos (`evidencia` con cuatro campos sueltos) por lo que de verdad calcula `buscar()`: genera todas las secuencias de 3-5 temporadas entre los cultivos viables de la parcela —incluyendo **pradera/barbecho como opción explícita**, no solo "sembrar algo"—, descarta las que violan una regla dura, y puntúa el resto con cinco criterios:
+Esto reemplaza la descripción genérica que teníamos (`evidencia` con cuatro campos sueltos) por lo que de verdad calcula `buscar()`: genera todas las secuencias de 3-5 temporadas entre los cultivos viables del predio —incluyendo **pradera/barbecho como opción explícita**, no solo "sembrar algo"—, descarta las que violan una regla dura, y puntúa el resto con cinco criterios:
 
 ```
 criterios = {
@@ -317,7 +317,7 @@ Se descartó el modelo original de banco de semillas con rol de "guardadora" des
 
 ### 10.1 Resueltos o mejorados
 
-- **Tipo de suelo y pH**: **SoilGrids (ISRIC) — implementado y verificado** (`services/cliente_soilgrids.py`, v2.0 REST real, sin auth). pH/textura/carbono orgánico confirmados para la parcela de prueba de Chiloé (pH 5.3, franco-arenoso, 22.5% carbono orgánico — plausible para andisol volcánico). **CHLSOC nunca se implementó** — quedó como mención conceptual, se usó SoilGrids directo. `match_suelo` deja de ser `"no_evaluado"` por default cuando hay cobertura de SoilGrids para ese punto (confirmado: responde `null` explícito, no un error, en puntos fuera de cobertura — ej. océano).
+- **Tipo de suelo y pH**: **SoilGrids (ISRIC) — implementado y verificado** (`services/cliente_soilgrids.py`, v2.0 REST real, sin auth). pH/textura/carbono orgánico confirmados para el predio de prueba de Chiloé (pH 5.3, franco-arenoso, 22.5% carbono orgánico — plausible para andisol volcánico). **CHLSOC nunca se implementó** — quedó como mención conceptual, se usó SoilGrids directo. `match_suelo` deja de ser `"no_evaluado"` por default cuando hay cobertura de SoilGrids para ese punto (confirmado: responde `null` explícito, no un error, en puntos fuera de cobertura — ej. océano).
 - **Corrección taxonómica**: "ajo chilote" **no es Allium sativum** — es *Allium ampeloprasum* (ajo Blandino). No afecta el rol agronómico en rotación (sigue siendo familia Allium para ruptura de ciclo de solanáceas), pero cualquier búsqueda de literatura adicional debe usar el nombre correcto. Ficha INIA (vía Portal Frutícola) da datos reales: ciclo 210-230 días, T° mínima 7°C, máxima 30°C, óptima 15-20°C, suelos franco a franco-arcillosos, pH 5,6-8,0. `umbral_fenologico_config` para ajo pasa de `placeholder_sin_validar` a `fuente='INIA_ficha_tecnica'`.
 - **Haba**: ficha técnica de **CIREN (Haba.pdf)** — temperatura base 5°C, óptimo 15-20°C, máximo 28°C, suma térmica 450-650 GDD desde siembra hasta cosecha (grano seco). Nota: esto NO resuelve el vacío de suelo de CIREN (es un documento de cultivo, no el sistema de datos de suelo) — son dos cosas separadas. Otros modelos (CROPGRO-faba bean, estudio de Mendoza) dan temperaturas base muy distintas (-3,8°C a 4,47°C) según método y cultivar — no hay consenso universal, la ficha de CIREN es la referencia chilena más directa disponible, no la única posible.
 - **WWF Terrestrial Ecoregions**: confirmado accesible vía espejos académicos (Stanford, Columbia, NYU, MIT), basado en Olson et al. 2001. No se confirmó en la búsqueda (solo por conocimiento general, sin verificar línea por línea en el shapefile) que la ecorregión "Valdivian temperate rain forests" esté correctamente delimitada para Chiloé — hay que confirmarlo al momento de implementar, no asumirlo.

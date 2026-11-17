@@ -1,8 +1,8 @@
 """
 Plan de rotacion
 ================
-Compara estrategias de rotacion para una parcela con el MISMO modelo de agua y de riesgo del ranking de especies:
-cada especie se puntua en cada uno de los ultimos 15 anos de la serie de la parcela, tal cual
+Compara estrategias de rotacion para un predio con el MISMO modelo de agua y de riesgo del ranking de especies:
+cada especie se puntua en cada uno de los ultimos 15 anos de la serie del predio, tal cual
 multianual.perdidas_anuales(), y de ahi sale la tabla que consumen puntuar() y buscar() de motor_rotacion.
 
   perdida de un ano  = 1 - puntaje de ese ano (el menor entre la simulacion por fase y EcoCrop)
@@ -103,7 +103,7 @@ def _incumplimientos(seq, previos, perfil, extra=None) -> list[str]:
     if not mr.sin_familia_seguida(seq, perfil):
         fallas.append("Pone solanáceas una tras otra: consumen lo mismo y comparten plagas y enfermedades.")
     if previos and not mr.cumple_historial(seq, previos, perfil, extra):
-        fallas.append("Choca con lo ya sembrado en la parcela (intervalo o familia respecto del último cultivo).")
+        fallas.append("Choca con lo ya sembrado en el predio (intervalo o familia respecto del último cultivo).")
     return fallas
 
 
@@ -134,7 +134,7 @@ def _estrategia(tipo, seq, r, modeladas, placeholder, perfiles, fallas):
 async def plan_rotacion(sitio: dict, repo, historia, lat: float | None, previos: list[str],
                         riego: bool = False, delta_temp: float = 0.0, calentamiento_c_por_decada: float | None = None,
                         largo_max: int = 5, limite: int = 5) -> dict:
-    """Estrategias de rotacion de la parcela, desde la proxima temporada. `previos`: las especies ya sembradas, de la
+    """Estrategias de rotacion del predio, desde la proxima temporada. `previos`: las especies ya sembradas, de la
     mas antigua a la mas reciente. `estado` es 'historia_insuficiente' si la serie no alcanza para evaluar anos (no hay
     plan), o 'ok'. La estrategia base es repetir el cultivo actual (el ultimo de `previos`). Siempre salen al menos
     MIN_ESPECIES estrategias si hay especies viables, aunque `limite` sea menor: base mas las mejores rotaciones."""
@@ -149,7 +149,7 @@ async def plan_rotacion(sitio: dict, repo, historia, lat: float | None, previos:
         return {"estado": "historia_insuficiente", "aviso": AVISO, "estrategias": [], "especies": [],
                 "descartes": {}, "no_modeladas": [],
                 "vacios": [{"codigo": "historia_insuficiente", "mensaje":
-                            f"Hacen falta al menos {minimo} años de clima de la parcela para evaluar rotaciones."},
+                            f"Hacen falta al menos {minimo} años de clima del predio para evaluar rotaciones."},
                            *vacios_sitio]}
 
     identidades = await repo.identidades()
@@ -200,7 +200,7 @@ async def plan_rotacion(sitio: dict, repo, historia, lat: float | None, previos:
     vacios = list(vacios_sitio)
     if not previos:
         vacios.append({"codigo": "historial_vacio", "mensaje":
-                       "No hay cultivos declarados en la parcela: no se puede cuidar el intervalo ni comparar con "
+                       "No hay cultivos declarados en el predio: no se puede cuidar el intervalo ni comparar con "
                        "repetir el cultivo actual."})
     sin_perfil = sorted({p for p in previos if p not in perfiles})
     if sin_perfil:
@@ -210,7 +210,7 @@ async def plan_rotacion(sitio: dict, repo, historia, lat: float | None, previos:
     viables_total = len(info["viables"]) + len(info["recortadas"])
     if viables_total < MIN_ESPECIES:
         vacios.append({"codigo": "pocas_especies", "detalle": viables_total, "mensaje":
-                       f"Solo {viables_total} especie(s) viable(s) en esta parcela: hay poco que combinar."})
+                       f"Solo {viables_total} especie(s) viable(s) en este predio: hay poco que combinar."})
 
     return {
         "estado": "ok", "aviso": AVISO,
@@ -252,7 +252,7 @@ def _detalle_clima(n: str, tablas: dict) -> str:
         partes.append(f"el ciclo cierra solo en {peor['cierra'] * 100:.0f} % de los años")
     if peor["p_perdido"] > PERDIDA_TOTAL_MAXIMA:
         partes.append(f"se pierde por completo en {peor['p_perdido'] * 100:.0f} % de los años")
-    return "; ".join(partes) or "no es viable con el clima de la parcela"
+    return "; ".join(partes) or "no es viable con el clima del predio"
 
 
 def _estrategia_base(previos, perfiles, perfil_plan, tablas, pesos, modeladas, placeholder, excluidas):
@@ -265,7 +265,7 @@ def _estrategia_base(previos, perfiles, perfil_plan, tablas, pesos, modeladas, p
     fallas = _incumplimientos(seq, previos, perfiles)
     if n in excluidas or n not in perfil_plan:
         motivo = excluidas.get(n, {})
-        fallas.append(f"{n} queda excluido en esta parcela ({motivo.get('causa', 'sin datos')}: "
+        fallas.append(f"{n} queda excluido en este predio ({motivo.get('causa', 'sin datos')}: "
                       f"{motivo.get('detalle', '')}).")
         return {"tipo": "base", "secuencia": list(seq), "temporadas": len(seq), "puntaje": None,
                 "peor_escenario": None, "criterios": {}, "perdida_media": None, "perdida_ano_dificil": None,

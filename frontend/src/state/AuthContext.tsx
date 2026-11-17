@@ -24,7 +24,7 @@ const AuthContext = createContext<AuthContextValor | null>(null)
 
 interface ResultadoSesion {
   usuario: Usuario
-  // Se descartó una cuenta anterior: lo que estaba en memoria (parcela activa, cultivo) era de ella.
+  // Se descartó una cuenta anterior: lo que estaba en memoria (predio activo, cultivo) era de ella.
   cuentaNueva: boolean
 }
 

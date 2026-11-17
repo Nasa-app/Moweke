@@ -164,8 +164,8 @@ export function aPorcentaje(fraccion: number | null | undefined): number {
 
 const DATOS_FALTANTES = new Set(['temperatura', 'helada', 'lluvia', 'ph', 'radiacion', 'agua_suelo'])
 
-// Aviso para cuando el servidor no pudo medir algo de la parcela: sin ese dato, ese factor no
-// descarta nada y la lista puede traer especies que la parcela no tolera.
+// Aviso para cuando el servidor no pudo medir algo del predio: sin ese dato, ese factor no
+// descarta nada y la lista puede traer especies que el predio no tolera.
 export function textoDatosFaltantes(claves: string[] | undefined): string | null {
   if (!claves?.length) return null
   const nombres = claves.map((c) => (DATOS_FALTANTES.has(c) ? tr(`fmt_dato_faltante_${c}`) : c))

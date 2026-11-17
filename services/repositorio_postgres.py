@@ -233,7 +233,7 @@ Como se conecta con los endpoints (docs/arquitectura-flujos-mogen.md):
     @app.get("/api/parcelas/{id}/rotacion/comparar")
     async def comparar_rotacion(id: int, repo: RepositorioPostgres = Depends(obtener_repo)):
         especies = await especies_a_evaluar(id, session)   # que especies tiene sentido
-                                                              # evaluar para ESTA parcela --
+                                                              # evaluar para ESTE predio --
                                                               # decision de la capa de API,
                                                               # no de catalogo_especies.
         cat = await ce.construir_catalogo(especies, repo)

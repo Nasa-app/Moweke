@@ -6,8 +6,8 @@ import { numero } from '../lib/formato'
 import { usePredio } from '../state/PredioContext'
 import { useI18n } from '../i18n'
 
-// Elige con qué parcela se trabaja y deja marcar otra. Las parcelas van en una fila que se desliza; "Agregar" queda
-// fijo a su derecha, siempre a la vista aunque haya muchas parcelas. La parcela activa es la que miran Hoy, Cultivos,
+// Elige con qué predio se trabaja y deja marcar otro. Los predios van en una fila que se desliza; "Agregar" queda
+// fijo a su derecha, siempre a la vista aunque haya muchos predios. El predio activo es el que miran Hoy, Cultivos,
 // Tu terreno y Qué sembrar.
 export function SelectorParcelas() {
   const { t } = useI18n()
@@ -24,7 +24,7 @@ export function SelectorParcelas() {
     }
   }, [])
 
-  if (parcelas.length === 0) return null   // cargando, o sin parcelas (Terreno ya lleva a marcar la primera)
+  if (parcelas.length === 0) return null   // cargando, o sin predios (Terreno ya lleva a marcar la primera)
 
   function elegir(id: number) {
     if (id === idParcela) return

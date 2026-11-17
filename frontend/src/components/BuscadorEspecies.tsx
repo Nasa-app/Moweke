@@ -6,7 +6,7 @@ import { useI18n } from '../i18n'
 const MIN_LETRAS = 2
 const ESPERA_MS = 250
 
-// Busca una especie por su nombre (español, inglés, común o científico) y la agrega como cultivo de la parcela con su
+// Busca una especie por su nombre (español, inglés, común o científico) y la agrega como cultivo del predio con su
 // fecha de siembra. Las que tienen calendario por etapa se marcan; las demás se registran igual.
 export function BuscadorEspecies({ idParcela, onAgregada }: { idParcela: number; onAgregada: (idCultivo: number, especie: string) => void }) {
   const { t } = useI18n()

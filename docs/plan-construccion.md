@@ -32,7 +32,7 @@ La métrica honesta: de los 7 Flujos del diseño conceptual, **0 están implemen
 
 ### 2.3 Fuentes de datos — ✅ 8 verificadas, ver detalle en `modelo-conceptual-phenoshield.md` §4.4
 
-NASA POWER, CR2MET, Explorador Solar, CLSoilMaps, SoilGrids, AppEEARS (HLS/SMAP/ECOSTRESS/Landsat), Copernicus/Sentinel Hub, NASA FIRMS. Todas con cliente real en `services/cliente_*.py`, todas probadas contra la parcela real de Quemchi.
+NASA POWER, CR2MET, Explorador Solar, CLSoilMaps, SoilGrids, AppEEARS (HLS/SMAP/ECOSTRESS/Landsat), Copernicus/Sentinel Hub, NASA FIRMS. Todas con cliente real en `services/cliente_*.py`, todas probadas contra el predio real de Quemchi.
 
 **GAEZ nunca se implementó** — el plan original lo asumía para los escenarios climáticos moderado/extremo de Flujo 5; se reemplazó en la práctica por CR2MET/Sentinel/SoilGrids/CLSoilMaps, pero ninguno de esos cubre el rol específico de "escenario climático futuro" que tenía GAEZ. **Decisión pendiente, no tomada todavía** — ver §4.
 
@@ -59,7 +59,7 @@ GET  /api/admin/parcelas/{id}/idoneidad              -- catalogo_especies.calcul
 GET  /api/admin/copernicus/sentinel{1,2}/disponibilidad
 ```
 
-**No existe ningún endpoint de `/api/parcelas` (crear), `/api/cultivos` (crear/fenología), `/api/observaciones`, `/api/alertas`, `/api/notificaciones`, `/api/parcelas/{id}/rotacion/comparar`.** La única parcela real en la base (`id=2`, Quemchi) se creó con SQL directo, no por API — y su polígono es un cuadrado inventado de 4ha alrededor del punto que dio el usuario, no un deslinde real (ver hallazgo del 14-nov).
+**No existe ningún endpoint de `/api/parcelas` (crear), `/api/cultivos` (crear/fenología), `/api/observaciones`, `/api/alertas`, `/api/notificaciones`, `/api/parcelas/{id}/rotacion/comparar`.** El único predio real en la base (`id=2`, Quemchi) se creó con SQL directo, no por API — y su polígono es un cuadrado inventado de 4ha alrededor del punto que dio el usuario, no un deslinde real (ver hallazgo del 14-nov).
 
 ### 2.6 Lo que la base de datos tiene y nadie usa todavía
 
@@ -72,9 +72,9 @@ GET  /api/admin/copernicus/sentinel{1,2}/disponibilidad
 
 ### Fase A — Cerrar el loop de ingesta real (antes de construir más arriba)
 
-1. **`job_extraccion` real**: cada endpoint de `/ingesta/*` debe escribir una fila al empezar y actualizarla al terminar/fallar — hoy no hay forma de saber desde la base si una ingesta falló o cuándo fue la última vez que corrió para una parcela.
-2. **Scheduler real (Flujo 2)**: hoy cada fuente se dispara a mano por HTTP. Falta el worker/cron que recorra parcelas activas y llame las 7 ingestas solo, con el manejo de reintento que ya se encontró necesario en vivo (AppEEARS se congestionó 40+ minutos en esta sesión — un cron necesita backoff real, no reintento ciego).
-3. **Resolución geométrica real**: 6 de 8 fuentes usan el centroide de la parcela, no su polígono — para CR2MET/SMAP/Explorador Solar tiene sentido (resolución nativa mucho más gruesa que cualquier predio), pero para CLSoilMaps/SoilGrids/ECOSTRESS/Landsat (más finos que un predio típico) se está perdiendo la variación real dentro del predio. Decidir cuáles vale la pena pasar a promedio zonal sobre el polígono, como ya se hizo con Sentinel-1/2.
+1. **`job_extraccion` real**: cada endpoint de `/ingesta/*` debe escribir una fila al empezar y actualizarla al terminar/fallar — hoy no hay forma de saber desde la base si una ingesta falló o cuándo fue la última vez que corrió para un predio.
+2. **Scheduler real (Flujo 2)**: hoy cada fuente se dispara a mano por HTTP. Falta el worker/cron que recorra predios activos y llame las 7 ingestas solo, con el manejo de reintento que ya se encontró necesario en vivo (AppEEARS se congestionó 40+ minutos en esta sesión — un cron necesita backoff real, no reintento ciego).
+3. **Resolución geométrica real**: 6 de 8 fuentes usan el centroide del predio, no su polígono — para CR2MET/SMAP/Explorador Solar tiene sentido (resolución nativa mucho más gruesa que cualquier predio), pero para CLSoilMaps/SoilGrids/ECOSTRESS/Landsat (más finos que un predio típico) se está perdiendo la variación real dentro del predio. Decidir cuáles vale la pena pasar a promedio zonal sobre el polígono, como ya se hizo con Sentinel-1/2.
 
 ### Fase B — Flujo 1/1b real (onboarding)
 
@@ -107,5 +107,5 @@ Bloqueada hasta que existan B y C — hoy no se puede probar el ciclo completo (
 1. **Escenarios climáticos sin GAEZ** (Fase C) — qué fuente real reemplaza el rol de "proyección futura" que tenía GAEZ en el plan original.
 2. **Siembras múltiples al año**: `rasgos_rotacion_especie` solo soporta una fecha de siembra por especie — documentado como hueco real en la extensión de Copernicus, sin resolver.
 3. **Multi-cropping / rotación con sub-ciclos**: relacionado al punto anterior, mismo hueco.
-4. **Geometría real de las parcelas**: no hay ninguna parcela con deslinde real todavía, todo lo probado usa polígonos inventados.
+4. **Geometría real de los predios**: no hay ningún predio con deslinde real todavía, todo lo probado usa polígonos inventados.
 5. **Cuenta de servicio vs. cuenta personal para AppEEARS/Copernicus/FIRMS**: las credenciales reales hoy están atadas a la cuenta personal del usuario — antes de producción, decidir si pasan a cuentas de servicio dedicadas.

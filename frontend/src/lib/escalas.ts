@@ -1,4 +1,4 @@
-// Escalas de color de los mapas del predio. Un color significa lo mismo en cualquier parcela cuando la escala es fija.
+// Escalas de color de los mapas del predio. Un color significa lo mismo en cualquier predio cuando la escala es fija.
 export const COLORES_NDVI = ['#d9cbb0', '#d9a85b', '#829e30', '#3f611c']
 export const DOMINIO_NDVI: [number, number] = [0.1, 0.9]
 

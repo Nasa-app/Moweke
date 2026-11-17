@@ -4,45 +4,45 @@ Base: el modelo conceptual en `modelo-conceptual-phenoshield.md`. Este documento
 
 **Decisión de ingesta**: DAACs directos (AppEEARS / `earthaccess` / REST propio de cada fuente), no Google Earth Engine. El backend siempre tiene internet; el teléfono del agricultor nunca llama directo a ninguna fuente externa, solo sincroniza con nuestro backend (offline-first, sin cambios por esta decisión).
 
-**Estado real vs. lo que describe este documento**: los Flujos 1-7 de abajo son el diseño objetivo. Lo que existe hoy en `main.py` son 14 endpoints bajo `/api/admin/parcelas/{id}/ingesta/*` e `idoneidad` — **síncronos, disparados a mano, no el Flujo 2 (job nocturno/cron) ni la API pública de Flujo 1/3/4/5/6/7**. Cada fuente real (CR2MET, Explorador Solar, CLSoilMaps, SoilGrids, AppEEARS, Copernicus, FIRMS) tiene su propio endpoint de ingesta que un admin llama por parcela, escribe a `cache_consulta_grilla`, y devuelve el resultado en la misma respuesta HTTP. Esto fue deliberado para poder verificar cada fuente contra datos reales antes de construir el scheduler/worker de Flujo 2 — ver `docs/plan-construccion.md` para el detalle de qué falta para llegar de esto a los Flujos reales.
+**Estado real vs. lo que describe este documento**: los Flujos 1-7 de abajo son el diseño objetivo. Lo que existe hoy en `main.py` son 14 endpoints bajo `/api/admin/parcelas/{id}/ingesta/*` e `idoneidad` — **síncronos, disparados a mano, no el Flujo 2 (job nocturno/cron) ni la API pública de Flujo 1/3/4/5/6/7**. Cada fuente real (CR2MET, Explorador Solar, CLSoilMaps, SoilGrids, AppEEARS, Copernicus, FIRMS) tiene su propio endpoint de ingesta que un admin llama por predio, escribe a `cache_consulta_grilla`, y devuelve el resultado en la misma respuesta HTTP. Esto fue deliberado para poder verificar cada fuente contra datos reales antes de construir el scheduler/worker de Flujo 2 — ver `docs/plan-construccion.md` para el detalle de qué falta para llegar de esto a los Flujos reales.
 
 ---
 
-## Flujo 1 — Onboarding de usuario, parcela y primer cultivo
+## Flujo 1 — Onboarding de usuario, predio y primer cultivo
 
 **Trigger**: registro nuevo.
 
 **Pasos**:
-1. Captura geometría de la parcela (el terreno, estable a través de temporadas).
+1. Captura geometría del predio (el terreno, estable a través de temporadas).
 2. `asignar_bioma_tipo(geometria)` — point-in-polygon contra WWF Terrestrial Ecoregions. Local, síncrono.
 3. `calcular_utm_zone(geometria)` — síncrono.
 4. Consulta a POWER (REST, sin login) — clima actual, síncrono, responde en segundos.
 5. `verificar_grilla_activa(utm_zone, bioma_tipo)`.
-   - Si existe: la parcela se asocia a la grilla existente. Fin del flujo.
+   - Si existe: el predio se asocia a la grilla existente. Fin del flujo.
    - Si no existe: crear `perfil_climatico_regional`, encolar `extraccion_historica` (job AppEEARS, asíncrono).
 6. Mostrar `estado_confianza` inicial al usuario (`sin_referencia` si región nueva, con mensaje explícito de que el histórico se está construyendo).
 7. Captura de geometría práctica: GPS da el punto (funciona sin señal de datos); el agricultor declara hectáreas; el sistema genera un polígono aproximado centrado en el punto con esa área. Suficiente para capas gruesas (centroide) y razonable para finas mientras no haya algo mejor — caminar el perímetro real queda como mejora futura, no requisito de entrada.
-8. Si la parcela no tiene ningún ciclo de cultivo todavía → Flujo 1b antes de cerrar el registro.
+8. Si el predio no tiene ningún ciclo de cultivo todavía → Flujo 1b antes de cerrar el registro.
 
 **Componentes**: API de registro, servicio de ecorregiones, cliente POWER REST, cola de jobs AppEEARS.
 
-**Output**: usuario + parcela creados, `bioma_tipo` asignado (o pendiente de confirmación si ambiguo), estado de confianza inicial, primer ciclo de cultivo decidido vía Flujo 1b.
+**Output**: usuario + predio creados, `bioma_tipo` asignado (o pendiente de confirmación si ambiguo), estado de confianza inicial, primer ciclo de cultivo decidido vía Flujo 1b.
 
 ---
 
 ## Flujo 1b — Planificación de primera siembra
 
-**Trigger**: parcela registrada (Flujo 1), sin ningún `predio_cultivos` todavía.
+**Trigger**: predio registrado (Flujo 1), sin ningún `predio_cultivos` todavía.
 
 **Pasos**:
 1. El agricultor indica qué especies está considerando, o el sistema sugiere candidatas típicas de la región.
-2. `rotation_engine` corre en **modo candidatas**, no modo secuencia: compara cada especie directo contra `calcular_idoneidad` (humedad, luz, suelo del punto) y GAEZ. No hay componente de rotación porque no existe historial de qué se sembró antes en esa parcela.
+2. `rotation_engine` corre en **modo candidatas**, no modo secuencia: compara cada especie directo contra `calcular_idoneidad` (humedad, luz, suelo del punto) y GAEZ. No hay componente de rotación porque no existe historial de qué se sembró antes en ese predio.
 3. Cada especie se marca con su `nivel_madurez_especie` real — la primera siembra no tiene menos honestidad sobre vacíos de información que las siguientes.
 4. El agricultor confirma qué sembrar → se crea la fila en `predio_cultivos` → de ahí en adelante entra al ciclo normal (Flujo 3/4).
 
 **Componentes**: `rotation_engine` (modo candidatas), acceso a `requisitos_especie`/`rasgos_rotacion_especie`, GAEZ.
 
-**Output**: primer `predio_cultivos` creado sobre la parcela.
+**Output**: primer `predio_cultivos` creado sobre el predio.
 
 ---
 
@@ -52,7 +52,7 @@ Base: el modelo conceptual en `modelo-conceptual-phenoshield.md`. Este documento
 
 **Pasos**:
 1. Iterar sobre regiones activas (no una región fija).
-2. Por región: actualizar `cache_consulta_grilla` por parcela (POWER, SMAP, IMERG, HLS, ECOSTRESS, VNP13A1 según disponibilidad; capas regionales opcionales si el país de la región las tiene) y `cache_consulta_regional` por perfil climático (GRACE y cualquier señal que no varía entre parcelas de la misma región).
+2. Por región: actualizar `cache_consulta_grilla` por predio (POWER, SMAP, IMERG, HLS, ECOSTRESS, VNP13A1 según disponibilidad; capas regionales opcionales si el país de la región las tiene) y `cache_consulta_regional` por perfil climático (GRACE y cualquier señal que no varía entre predios de la misma región).
 3. Marcar cobertura por entrada: `completa` | `parcial_nubes` | `sin_dato`.
 4. Revisar jobs AppEEARS pendientes del Flujo 1; al completar, poblar el baseline histórico de esa región y subir su `estado_confianza`.
 
@@ -111,7 +111,7 @@ Base: el modelo conceptual en `modelo-conceptual-phenoshield.md`. Este documento
 **Trigger**: agricultor pide evaluar qué sembrar, típicamente tras confirmar cosecha (BBCH97) de un cultivo.
 
 **Pasos**:
-1. Generar todas las secuencias candidatas de 3-5 temporadas entre los cultivos viables de la parcela (`buscar()`), incluida la pradera/barbecho como opción explícita (`perenne=True` en `PERFIL` — "dejar descansar" es una estrategia real, no solo las otras dos quedaron sin esa opción hasta ahora).
+1. Generar todas las secuencias candidatas de 3-5 temporadas entre los cultivos viables del predio (`buscar()`), incluida la pradera/barbecho como opción explícita (`perenne=True` en `PERFIL` — "dejar descansar" es una estrategia real, no solo las otras dos quedaron sin esa opción hasta ahora).
 2. Descartar por reglas duras: `cumple_intervalo()` (temporadas mínimas antes de repetir un cultivo — reemplaza el booleano `ruptura_ciclo_patogeno` por un número configurable por especie, `extra_intervalo` lo alarga si hay inóculo/enfermedad declarada en `manejo_predio`) y barbecho máximo (`MAX_BARBECHO`).
 3. Por cultivo de cada secuencia: llamar al Flujo 4 para obtener sus ventanas (siembra, BBCH09, BBCH65, BBCH97), y a `evaluar_cultivos()`/`evaluar()` de `motor_estres.py` para la pérdida esperada por fase y tipo de peligro (helada/calor/sequía/anegamiento/lluvia en cosecha/**ceniza** — relevante en Chile por actividad volcánica, se reporta como evento externo, no viene de ningún dato climático).
 4. Calcular `calcular_idoneidad` (humedad vía `balance_agua`, luz, suelo) por cultivo contra condiciones del sitio, usando capas de grilla + capas regionales si existen.
@@ -219,7 +219,7 @@ GET  /api/parcelas/{id}/notificaciones      -- lee notificacion_pendiente donde 
 ## Dependencias entre flujos
 
 ```
-Flujo 1 (onboarding) → Flujo 1b si la parcela no tiene cultivo todavía → crea el primer predio_cultivos
+Flujo 1 (onboarding) → Flujo 1b si el predio no tiene cultivo todavía → crea el primer predio_cultivos
 Flujo 1 (onboarding) → habilita Flujo 2 (región queda activa)
 Flujo 2 (ingesta nocturna) → alimenta Flujo 4 (grilla disponible)
 Flujo 3 (reporte de campo) → llama a Flujo 4, puede disparar Flujo 6, siempre pasa por Flujo 7
@@ -259,7 +259,7 @@ Hay dos corrientes de datos distintas, y el diseño entero depende de que ningun
 
 **Transformación, paso a paso**:
 1. Llega como gránulo crudo o respuesta de API (`job_extraccion`, con `proveedor`/`producto`/`estado` — asíncrono porque AppEEARS puede tardar horas, no se puede hacer esperar a nadie).
-2. Se reduce a un valor por parcela o por región, con su ficha de procedencia (`cache_consulta_grilla` o `cache_consulta_regional` — resolución nativa, versión del producto, cobertura de nubes). El dato crudo (el gránulo global) no se guarda; solo el valor ya extraído para los puntos que importan.
+2. Se reduce a un valor por predio o por región, con su ficha de procedencia (`cache_consulta_grilla` o `cache_consulta_regional` — resolución nativa, versión del producto, cobertura de nubes). El dato crudo (el gránulo global) no se guarda; solo el valor ya extraído para los puntos que importan.
 3. Ese valor nunca llega al agricultor como número. Se consume dentro de un cálculo: GDD diario (`pheno_engine.tiempo_termico_diario`), balance de agua (`motor_estres.balance_agua`), curva de anomalía (`detect_curve_anomaly`), idoneidad de sitio (`calcular_idoneidad`). El agricultor no ve "SMAP dice 0.22 m³/m³" — ve "tu suelo tiene humedad normal para esta etapa" o nada, si no hay nada que decir.
 4. Si el dato no llegó (nubes, job todavía pendiente), el cálculo lo sabe (`cobertura: parcial_nubes | sin_dato`) y responde con menos confianza, nunca con un valor inventado para rellenar el hueco.
 

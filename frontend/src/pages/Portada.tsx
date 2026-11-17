@@ -6,7 +6,7 @@ import { useI18n } from '../i18n'
 
 export default function Portada() {
   const { t } = useI18n()
-  const { idParcela } = usePredio()   // con una parcela marcada ya se usó la app: se sigue en Hoy
+  const { idParcela } = usePredio()   // con un predio marcado ya se usó la app: se sigue en Hoy
   return (
     <Screen sinMenu>
       <div style={{ padding: '60px 0 0 0', display: 'flex', justifyContent: 'center' }}>

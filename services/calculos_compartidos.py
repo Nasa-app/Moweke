@@ -1,4 +1,4 @@
-"""Un calculo caro que muchas solicitudes piden igual (el ranking de especies de una parcela) se hace una vez.
+"""Un calculo caro que muchas solicitudes piden igual (el ranking de especies de un predio) se hace una vez.
 
 - Si ya se calculo hace menos de `vigencia_s`, se devuelve el guardado.
 - Si se esta calculando ahora, las demas solicitudes iguales esperan ese mismo calculo en vez de lanzar otro: un

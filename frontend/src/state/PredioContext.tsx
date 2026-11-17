@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 import { guardar, leer } from './storage'
 
-// Guarda qué parcela y qué cultivo está mirando el agricultor ahora, para que cada
+// Guarda qué predio y qué cultivo está mirando el agricultor ahora, para que cada
 // pantalla (Hoy, Cultivo, Terreno, Reportar...) sepa de qué predio hablar sin tener que
-// volver a pedirlo. Las páginas piden los datos reales (parcela, cultivos, fenología) por
+// volver a pedirlo. Las páginas piden los datos reales (predio, cultivos, fenología) por
 // su cuenta con lib/api.ts a partir de estos ids.
 interface PredioContextValor {
   idParcela: number | null

@@ -62,7 +62,7 @@ _CACHE_CLSOILMAPS = ingesta_predio.CACHE_CLSOILMAPS
 _CLSOILMAPS_ARCHIVO_INTERNO = ingesta_predio.CLSOILMAPS_ARCHIVO_INTERNO
 
 # Limites del flujo de predio. El tope de hectareas acota el poligono que se genera a
-# partir del punto; el de parcelas por usuario acota cuantas ingestas externas puede
+# partir del punto; el de predios por usuario acota cuantas ingestas externas puede
 # disparar una sola cuenta.
 HECTAREAS_MAX = 1000.0
 HECTAREAS_MIN_DIBUJADO = 0.05     # 500 m2: menos que eso es un clic de mas, no un predio
@@ -156,7 +156,7 @@ _REPORTES_POR_USUARIO = LimiteIntentos(60, 60 * 60)
 # El tiempo de una comuna se ve sin cuenta: se acota por IP aunque el resultado se guarda en memoria.
 _ZONAS_POR_IP = LimiteIntentos(120, 60 * 60)
 ESCENARIOS_CALENTAMIENTO = {"observado": None, "moderado": 0.3, "fuerte": 0.6}   # °C por decada hasta 2040
-# El ranking de una parcela tarda segundos y varias pantallas lo piden con los mismos datos: se calcula una vez y se
+# El ranking de un predio tarda segundos y varias pantallas lo piden con los mismos datos: se calcula una vez y se
 # comparte unos minutos. La clave lleva todo lo que lo cambia (suelo declarado, clima, filtros), asi que un cambio
 # del agricultor o una ingesta nueva lo recalcula solo.
 _RANKINGS = CalculosCompartidos(vigencia_s=15 * 60, maximo=64)
@@ -445,7 +445,7 @@ async def yo(usuario: dict = Depends(usuario_actual)):
 # Punto + hectareas -> poligono -> ingesta de las fuentes de sitio -> especies candidatas.
 
 async def _parcela_autorizada(id_parcela: int, usuario: dict, session: AsyncSession) -> dict:
-    """La parcela, solo si es del usuario (o el usuario es admin). Una parcela ajena
+    """El predio, solo si es del usuario (o el usuario es admin). Un predio ajeno
     responde 404 igual que una inexistente: no se confirma que el id existe."""
     fila = (await session.execute(text("""
         SELECT p.id, p.id_usuario, p.altitud_msnm,
@@ -458,7 +458,7 @@ async def _parcela_autorizada(id_parcela: int, usuario: dict, session: AsyncSess
         WHERE p.id = :id
     """), {"id": id_parcela})).mappings().first()
     if not fila or (fila["id_usuario"] != usuario["id"] and usuario["rol"] != "admin"):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Predio no existe")
     parcela = dict(fila)
     del parcela["id_usuario"]
     parcela["suelo"] = {campo: parcela.pop(f"suelo_{campo}") for campo in catalogo_especies.CAMPOS_SUELO}
@@ -519,7 +519,7 @@ async def crear_parcela(datos: ParcelaNueva, tareas: BackgroundTasks, request: R
             text("SELECT count(*) FROM parcela WHERE id_usuario = :u"), {"u": usuario["id"]})).scalar_one()
         if cantidad >= PARCELAS_MAX_POR_USUARIO:
             raise HTTPException(status.HTTP_409_CONFLICT,
-                                 f"Ya tienes {PARCELAS_MAX_POR_USUARIO} parcelas, el máximo permitido")
+                                 f"Ya tienes {PARCELAS_MAX_POR_USUARIO} predios, el máximo permitido")
 
     if dibujado is not None:
         # Segunda validacion, geometrica, en PostGIS: que el poligono no se cruce a si
@@ -594,8 +594,8 @@ async def ver_parcela(id_parcela: int, tareas: BackgroundTasks, session: AsyncSe
                        usuario: dict = Depends(usuario_actual)):
     parcela = await _parcela_autorizada(id_parcela, usuario, session)
     # Los focos de calor se leen aca (Tu terreno, Hoy): si la revision esta vencida, o nunca corrio para esta
-    # parcela, se deja refrescandose. Antes solo se refrescaba al pedir el seguimiento de un cultivo, asi que
-    # una parcela sin cultivos se quedaba con los focos del dia en que se marco, o sin revisar para siempre.
+    # predio, se deja refrescandose. Antes solo se refrescaba al pedir el seguimiento de un cultivo, asi que
+    # un predio sin cultivos se quedaba con los focos del dia en que se marco, o sin revisar para siempre.
     jobs = await ingesta_predio.encolar(session, id_parcela, ("firms", "inundacion"))
     if jobs:
         tareas.add_task(ingesta_predio.ingerir_predio, id_parcela, jobs)
@@ -662,7 +662,7 @@ async def reintentar_ingesta(id_parcela: int, tareas: BackgroundTasks,
 
 def _armar_datos_sitio(parcela: dict, sitio: dict):
     """Lo que el ranking y el motor de rotacion esperan de un predio: el clima de CR2MET (una celda de 5 km) llevado a
-    la altura de la parcela, sus normales y el suelo declarado. Devuelve (datos_sitio, clima, correccion, altitud,
+    la altura del predio, sus normales y el suelo declarado. Devuelve (datos_sitio, clima, correccion, altitud,
     textura)."""
     altitud = sitio["altitud_dem_m"] if sitio["altitud_dem_m"] is not None else parcela["altitud_msnm"]
     correccion = catalogo_especies.delta_temperatura_por_altitud(altitud, sitio["altitud_celda_m"])
@@ -699,7 +699,7 @@ def _resumen_sitio(parcela: dict, sitio: dict, normales: dict, altitud, correcci
 @app.get("/api/parcelas/{id_parcela}/sitio")
 async def sitio_parcela(id_parcela: int, tareas: BackgroundTasks, session: AsyncSession = Depends(obtener_sesion),
                          usuario: dict = Depends(usuario_actual)):
-    """Lo medido del sitio de la parcela (clima normal, radiacion, pH, agua del suelo, altitud), sin calcular el
+    """Lo medido del sitio del predio (clima normal, radiacion, pH, agua del suelo, altitud), sin calcular el
     ranking de especies: es lo que Tu terreno necesita y cambia muy de vez en cuando, asi que el cliente lo guarda.
     Mismo contenido que `datos_sitio` de candidatas_siembra. Responde 409 mientras no haya clima del predio."""
     parcela = await _parcela_autorizada(id_parcela, usuario, session)
@@ -739,12 +739,12 @@ async def candidatas_siembra(id_parcela: int, tareas: BackgroundTasks,
     repone la falta de lluvia (por defecto, solo lluvia). `datos_faltantes` lista lo que no
     se pudo medir del sitio. Responde 409 mientras no haya clima del predio.
 
-    Con la serie historica de la parcela (35 anos, ver multianual.py) cada especie se evalua en cada ano:
+    Con la serie historica del predio (35 anos, ver multianual.py) cada especie se evalua en cada ano:
     `apta` es que su ano dificil reciente (el peor decil de los ultimos 15) llegue al minimo, `puntaje` es la
     compatibilidad tipica (la mediana) y `puntaje_ano_dificil` la del peor decil. `clima` trae los tres periodos
     (historico, reciente, proyectado a 2040 con la tendencia de la propia serie) y la categoria: tradicional,
     emergente o en_riesgo; `clima_futuro` filtra por ella e incluye las que aun no son aptas. `escenario`: como
-    sube la temperatura hasta 2040: la tendencia observada en la parcela (por defecto) o un supuesto de +0,3 o +0,6 °C
+    sube la temperatura hasta 2040: la tendencia observada en el predio (por defecto) o un supuesto de +0,3 o +0,6 °C
     por decada. Sin historia todavia se usa el ano de clima de antes."""
     parcela = await _parcela_autorizada(id_parcela, usuario, session)
     # Solo las fuentes de sitio: CR2MET vence cada mes y, si la tarea programada no
@@ -812,7 +812,7 @@ async def comparar_rotaciones(id_parcela: int,
                               limite: int = Query(5, ge=1, le=8),
                               session: AsyncSession = Depends(obtener_sesion),
                               usuario: dict = Depends(usuario_actual)):
-    """Compara estrategias de rotacion para la parcela desde la proxima temporada: repetir el cultivo actual contra las
+    """Compara estrategias de rotacion para el predio desde la proxima temporada: repetir el cultivo actual contra las
     mejores rotaciones de 3 a `largo_max` temporadas, con el mismo modelo de agua y de riesgo del ranking de especies
     (ver services/plan_rotacion.py). Las solanaceas nunca van una tras otra, tambien contra lo ya sembrado. `escenario`
     y `riego` como en candidatas_siembra. Salen al menos 3 estrategias si hay especies viables, aunque `limite` sea
@@ -866,7 +866,7 @@ async def declarar_cultivo(id_parcela: int, datos: CultivoNuevo, tareas: Backgro
         text("SELECT count(*) FROM predio_cultivos WHERE id_parcela = :p"), {"p": id_parcela})).scalar_one()
     if cantidad >= CULTIVOS_MAX_POR_PARCELA:
         raise HTTPException(status.HTTP_409_CONFLICT,
-                             f"La parcela ya tiene {CULTIVOS_MAX_POR_PARCELA} cultivos, el máximo permitido")
+                             f"El predio ya tiene {CULTIVOS_MAX_POR_PARCELA} cultivos, el máximo permitido")
 
     id_cultivo = (await session.execute(text("""
         INSERT INTO predio_cultivos (id_parcela, especie, variedad_local, fecha_siembra)
@@ -996,7 +996,7 @@ async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
 
 
 async def _cultivo_autorizado(id_cultivo: int, usuario: dict, session: AsyncSession) -> dict:
-    """El cultivo, solo si su parcela es del usuario (o el usuario es admin). Uno ajeno responde 404
+    """El cultivo, solo si su predio es del usuario (o el usuario es admin). Uno ajeno responde 404
     igual que uno inexistente."""
     cultivo = (await session.execute(text(
         "SELECT id, id_parcela, fecha_siembra FROM predio_cultivos WHERE id = :id"), {"id": id_cultivo})).mappings().first()
@@ -1351,7 +1351,7 @@ async def ingesta_solar(id_parcela: int, session: AsyncSession = Depends(obtener
              "FROM parcela WHERE id = :id"), {"id": id_parcela},
     )).mappings().first()
     if not centroide:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Predio no existe")
     lat, lon = centroide["lat"], centroide["lon"]
 
     if not cliente_solar.disponibilidad(lat, lon):
@@ -1384,7 +1384,7 @@ async def ingesta_suelo(id_parcela: int, session: AsyncSession = Depends(obtener
              "FROM parcela WHERE id = :id"), {"id": id_parcela},
     )).mappings().first()
     if not centroide:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Predio no existe")
     lat, lon = centroide["lat"], centroide["lon"]
 
     os.makedirs(_CACHE_CLSOILMAPS, exist_ok=True)
@@ -1411,7 +1411,7 @@ async def ingesta_suelo_quimico(id_parcela: int, session: AsyncSession = Depends
              "FROM parcela WHERE id = :id"), {"id": id_parcela},
     )).mappings().first()
     if not centroide:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Predio no existe")
     lat, lon = centroide["lat"], centroide["lon"]
 
     datos = cliente_soilgrids.consultar_suelo(lat, lon)
@@ -1432,7 +1432,7 @@ async def ingesta_incendios(id_parcela: int, dias: int = 5, radio_grados: float 
                              _admin: dict = Depends(requerir_admin)):
     """NASA FIRMS -- focos de calor reales (VIIRS). Necesita FIRMS_MAP_KEY en el entorno
     (clave gratuita por email, ver cliente_firms.py). dias: 1-5 (limite real de la API
-    para productos _NRT). radio_grados: medio lado del cuadrado alrededor de la parcela
+    para productos _NRT). radio_grados: medio lado del cuadrado alrededor del predio
     -- un foco de incendio es un evento regional, no tiene sentido pedir solo el centroide
     como las demas fuentes puntuales."""
     map_key = os.environ.get("FIRMS_MAP_KEY")
@@ -1444,7 +1444,7 @@ async def ingesta_incendios(id_parcela: int, dias: int = 5, radio_grados: float 
              "FROM parcela WHERE id = :id"), {"id": id_parcela},
     )).mappings().first()
     if not centroide:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Predio no existe")
     lat, lon = centroide["lat"], centroide["lon"]
     bbox = (lon - radio_grados, lat - radio_grados, lon + radio_grados, lat + radio_grados)
 
@@ -1489,7 +1489,7 @@ async def idoneidad_parcela(id_parcela: int, especies: str | None = None, limite
         text("SELECT ST_Y(ST_Centroid(geometria)) AS lat FROM parcela WHERE id = :id"), {"id": id_parcela},
     )).mappings().first()
     if not centroide:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Predio no existe")
     lat = centroide["lat"]
 
     # Lista explicita de capas por variable -- BUG REAL corregido: antes era
@@ -1508,7 +1508,7 @@ async def idoneidad_parcela(id_parcela: int, especies: str | None = None, limite
     """), {"id": id_parcela, "capas_tmin": list(CAPAS_TMIN), "capas_tmax": list(CAPAS_TMAX)})).mappings().first()
     if fila is None or all(v is None for v in fila.values()):
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                             "Parcela sin datos en cache_consulta_grilla todavia -- correr las ingestas primero")
+                             "Predio sin datos en cache_consulta_grilla todavia -- correr las ingestas primero")
     sitio = dict(fila)
 
     filas_clima = (await session.execute(text("""
@@ -1562,7 +1562,7 @@ async def ingesta_appeears(id_parcela: int, dias: int = 60, session: AsyncSessio
              "FROM parcela WHERE id = :id"), {"id": id_parcela},
     )).mappings().first()
     if not centroide:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Predio no existe")
     lat, lon = centroide["lat"], centroide["lon"]
 
     token = cliente_appeears.iniciar_sesion(usuario, clave)
@@ -1682,7 +1682,7 @@ async def ingesta_cr2met(id_parcela: int, dias: int = 90, session: AsyncSession 
              "FROM parcela WHERE id = :id"), {"id": id_parcela},
     )).mappings().first()
     if not centroide:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Predio no existe")
     lat, lon = centroide["lat"], centroide["lon"]
 
     hoy = date.today()
@@ -1721,7 +1721,7 @@ async def ingesta_copernicus(id_parcela: int, dias: int = 30, intervalo_dias: in
         {"id": id_parcela},
     )).mappings().first()
     if not fila_parcela:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Parcela no existe")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Predio no existe")
     bbox = [fila_parcela["xmin"], fila_parcela["ymin"], fila_parcela["xmax"], fila_parcela["ymax"]]
 
     hoy = date.today()

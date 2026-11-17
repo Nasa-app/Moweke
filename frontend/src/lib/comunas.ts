@@ -4,7 +4,7 @@ import { zonas, type ZonaComuna } from './api'
 import { guardar, leer } from '../state/storage'
 import { tr } from '../i18n/dictionary'
 
-// Las comunas de Chiloé y dónde abrir el mapa para marcar la parcela vienen del API (GET /api/zonas): el punto es el
+// Las comunas de Chiloé y dónde abrir el mapa para marcar el predio vienen del API (GET /api/zonas): el punto es el
 // pueblo cabecera de cada comuna, no un deslinde, y sirve para que el mapa abra cerca. La última lista recibida
 // queda en el dispositivo para abrir sin esperar.
 export const COMUNA_POR_DEFECTO = 'Quemchi'
@@ -51,7 +51,7 @@ export function nombreTerreno(terreno: (typeof TERRENOS)[number]): string {
   return tr(`comunas_terreno_${terreno.toLowerCase()}`)
 }
 
-// Lo que la persona va respondiendo mientras arma su parcela. Queda en este dispositivo: el servidor todavía
+// Lo que la persona va respondiendo mientras arma su predio. Queda en este dispositivo: el servidor todavía
 // no guarda comuna, sector ni terreno.
 export interface BorradorPredio {
   comuna: string
@@ -72,8 +72,8 @@ export function leerBorrador(): BorradorPredio {
   }
 }
 
-// La comuna de cada parcela, anotada al marcarla en el registro (cuando la persona acaba de elegirla). Las
-// parcelas marcadas de otra forma, o antes de este registro, quedan sin comuna: no se adivina.
+// La comuna de cada predio, anotada al marcarlo en el registro (cuando la persona acaba de elegirla). Las
+// predios marcados de otra forma, o antes de este registro, quedan sin comuna: no se adivina.
 export function guardarComunaDeParcela(idParcela: number, comuna: string): void {
   guardar('comunas_parcelas', { ...leer<Record<string, string>>('comunas_parcelas', {}), [String(idParcela)]: comuna })
 }

@@ -1,5 +1,5 @@
 -- Dos tablas nuevas: los parametros de agua de cada cultivo con seguimiento por etapa, y el clima
--- historico diario de cada parcela (35 anos, un renglon por ano). Ya incorporadas en
+-- historico diario de cada predio (35 anos, un renglon por ano). Ya incorporadas en
 -- database/schema.sql para despliegues nuevos -- este archivo queda como registro de lo que se aplica
 -- a la base de Railway ya corriendo.
 --
@@ -31,7 +31,7 @@ INSERT INTO parametros_agua_cultivo (especie, zr_m, p_agotamiento, kc_ini, kc_me
 ON CONFLICT (especie) DO NOTHING;
 
 -- Clima diario de 1991 al ultimo ano completo, de ERA5 por Open-Meteo, corregido contra el CR2MET de la
--- parcela (ver services/ingesta_predio._clima_historico). Un renglon por ano; cada arreglo tiene un valor por
+-- predio (ver services/ingesta_predio._clima_historico). Un renglon por ano; cada arreglo tiene un valor por
 -- dia, desde el 1 de enero (365 o 366).
 CREATE TABLE IF NOT EXISTS clima_historico_parcela (
   id_parcela INT NOT NULL REFERENCES parcela(id) ON DELETE CASCADE,
