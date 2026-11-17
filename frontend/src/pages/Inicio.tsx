@@ -4,6 +4,7 @@ import { Screen } from '../components/Screen'
 import { MoonStrip } from '../components/MoonStrip'
 import { EscenaTerreno } from '../components/EscenaTerreno'
 import { SelectorCultivos } from '../components/SelectorCultivos'
+import { SelectorParcelas } from '../components/SelectorParcelas'
 import { SenalesLocales } from '../components/SenalesLocales'
 import { TarjetaRiego } from '../components/TarjetaRiego'
 import { IconoCalor, IconoCampana, IconoHelada, IconoIncendio, IconoInundacion, IconoLluvia, IconoPerfil, IconoSequia, IconoSiguiente, IconoTelefono } from '../components/icons'
@@ -30,6 +31,7 @@ export default function Inicio() {
   useEffect(() => {
     if (!idParcela) return
     let vigente = true
+    setFocos([])
     verParcela(idParcela)
       .then((p) => vigente && setFocos(p.incendios_cercanos.dias_con_focos))
       .catch(() => vigente && setFocos([]))
@@ -47,6 +49,7 @@ export default function Inicio() {
   useEffect(() => {
     if (!idParcela) return
     let vigente = true
+    setDiaClima(null)
     climaParcela(idParcela, 2)
       .then((c) => vigente && setDiaClima(c.dias.find((d) => d.fecha === c.hoy) ?? null))
       .catch(() => vigente && setDiaClima(null))
@@ -85,6 +88,8 @@ export default function Inicio() {
           <IconoPerfil />
         </Link>
       </div>
+
+      <SelectorParcelas />
 
       {focoReciente ? (
         <section role="alert" aria-labelledby="emerg" className="ps-banner-emergencia" style={{ margin: '12px 16px 0 16px' }}>
