@@ -47,7 +47,7 @@ export function SelectorParcelas() {
             className={`ps-pill ${activa ? 'activo' : ''}`}
             style={{ padding: '0 16px', minHeight: 44, flexShrink: 0, whiteSpace: 'nowrap' }}
           >
-            {t('selector_parcela_n', { n: i + 1, ha: numero(p.hectareas, 2) })}
+            {p.nombre ? t('selector_parcela_nombre', { nombre: p.nombre, ha: numero(p.hectareas, 2) }) : t('selector_parcela_n', { n: i + 1, ha: numero(p.hectareas, 2) })}
           </button>
         )
       })}

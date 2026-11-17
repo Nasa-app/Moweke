@@ -199,7 +199,9 @@ export function MapaCeldas({
   colorDe,
   elegida,
   onElegir,
+  etiqueta,
 }: {
+  etiqueta?: string
   perimetro: Poligono
   celdas: CeldaMapa[]
   colorDe: (valor: number) => string
@@ -257,7 +259,7 @@ export function MapaCeldas({
 
   return (
     <div style={{ position: 'relative' }}>
-      <div ref={contenedor} className="ps-mapa" role="application" aria-label={t('mapa_aria_celdas')} />
+      <div ref={contenedor} className="ps-mapa" role="application" aria-label={etiqueta ?? t('mapa_aria_celdas')} />
       <SelectorBase base={base} onCambio={cambiarBase} />
     </div>
   )

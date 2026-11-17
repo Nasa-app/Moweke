@@ -48,6 +48,7 @@ export default function Perimetro() {
   const vista = elegida ?? inicial
   const comunaElegida = enOnboarding ? leerBorrador().comuna : null
   const [esquinas, setEsquinas] = useState<Punto[]>([])
+  const [nombre, setNombre] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -74,7 +75,7 @@ export default function Perimetro() {
     setEnviando(true)
     setError(null)
     try {
-      const parcela = await crearParcela(aPoligono(esquinas))
+      const parcela = await crearParcela(aPoligono(esquinas), nombre)
       guardar('mapa_centro', [parcela.lat, parcela.lon])
       if (comunaElegida) guardarComunaDeParcela(parcela.id, comunaElegida)
       setParcelaActiva(parcela.id)
@@ -147,6 +148,18 @@ export default function Perimetro() {
           {error}
         </p>
       ) : null}
+
+      <label className="ps-pad-16" style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+        <span style={{ fontSize: 16, fontWeight: 700, padding: '0 4px' }}>{t('perimetro_nombre')}</span>
+        <input
+          type="text"
+          value={nombre}
+          maxLength={60}
+          placeholder={t('terreno_nombre_ejemplo')}
+          onChange={(e) => setNombre(e.target.value)}
+          style={{ minHeight: 52, padding: '0 14px', borderRadius: 16, border: '2px solid var(--borde-control)', background: '#fff', color: 'var(--carbon)', font: "700 17px 'Alegreya Sans', sans-serif" }}
+        />
+      </label>
 
       <div style={{ marginTop: 'auto', padding: '16px 16px 32px 16px' }}>
         <button type="button" onClick={analizar} disabled={enviando || !listo} className="ps-btn">

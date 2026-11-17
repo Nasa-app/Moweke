@@ -186,6 +186,12 @@ const base: Record<string, { es: string; en: string }> = {
 
   // terreno / perímetro / zonas
   terreno_titulo: { es: 'Tu terreno', en: 'Your land' },
+  terreno_nombre: { es: 'Nombre de tu predio', en: 'Name of your plot' },
+  terreno_nombre_ejemplo: { es: 'Ej. Huerta de abajo', en: 'E.g. Lower orchard' },
+  terreno_nombre_guardar: { es: 'Guardar nombre', en: 'Save name' },
+  terreno_nombre_guardado: { es: 'Nombre guardado', en: 'Name saved' },
+  terreno_ubicacion_osm: { es: 'Ubicación: © OpenStreetMap contributors', en: 'Location: © OpenStreetMap contributors' },
+  perimetro_nombre: { es: 'Nombre del predio (opcional)', en: 'Plot name (optional)' },
   terreno_zonas_sembrar: { es: 'Mapa de tu predio', en: 'Map of your plot' },
   terreno_mis_parcelas: { es: 'Ver mis predios', en: 'See my plots' },
   terreno_cambio_20_anios: { es: 'Cómo viene cambiando · 20 años', en: 'How it has been changing · 20 years' },

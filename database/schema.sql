@@ -56,6 +56,11 @@ CREATE TABLE parcela (
   -- crear el predio. NULL si el punto queda fuera de las ecorregiones cargadas.
   id_ecoregion INT REFERENCES ecoregion_wwf(id),
   geometria GEOMETRY(Polygon, 4326) NOT NULL,
+  -- Nombre de referencia que le pone el agricultor, y pais/region escritos al ubicar el predio
+  -- (geocodificacion inversa; NULL mientras el servicio no responda).
+  nombre VARCHAR(60),
+  pais VARCHAR(80),
+  region VARCHAR(120),
   -- 'dibujado': el agricultor marco el deslinde. 'aproximado': cuadrado generado desde un
   -- punto y las hectareas. Lo que mira dentro del predio (curva satelital, mapa por celda)
   -- solo corresponde al potrero cuando el perimetro es dibujado.

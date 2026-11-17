@@ -52,6 +52,7 @@ export const textos: Record<string, { es: string; en: string }> = {
   selector_parcela_aria: { es: 'Predio', en: 'Plot' },
   selector_parcela_agregar: { es: 'Agregar', en: 'Add' },
   selector_parcela_agregar_aria: { es: 'Agregar otro predio', en: 'Add another plot' },
+  selector_parcela_nombre: { es: '{nombre} · {ha} ha', en: '{nombre} · {ha} ha' },
   selector_parcela_n: { es: 'Predio {n} · {ha} ha', en: 'Plot {n} · {ha} ha' },
 
   // Terreno
@@ -62,7 +63,7 @@ export const textos: Record<string, { es: string; en: string }> = {
   terreno_periodo: { es: '{desde} a {hasta}', en: '{desde} to {hasta}' },
   terreno_ha_marcadas: { es: '{n} ha marcadas · ', en: '{n} ha marked · ' },
   terreno_zonas_detalle: { es: 'Qué tan verde, alta e inclinada está cada parte', en: 'How green, high and steep each part is' },
-  terreno_escena_aria: { es: 'Ilustración de un predio con casa, árboles y un paño de tierra labrada', en: 'Illustration of a farm with a house, trees and a patch of plowed land' },
+  terreno_escena_aria: { es: 'Mapa con el contorno de tu predio', en: 'Map with the outline of your plot' },
   terreno_fuente_firms: { es: 'Satélites de NASA (FIRMS)', en: 'NASA satellites (FIRMS)' },
   terreno_focos_radio: { es: 'Focos de calor a menos de {km} km', en: 'Fire hotspots within {km} km' },
   terreno_sin_revisar: { es: 'Todavía sin revisar', en: 'Not checked yet' },

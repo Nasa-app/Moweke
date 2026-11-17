@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { Screen, Titulo } from '../components/Screen'
-import { EscenaTerreno } from '../components/EscenaTerreno'
+import { MapaCeldas } from '../components/Mapa'
 import { MiniPerimetro } from '../components/MiniPerimetro'
 import { SelectorParcelas } from '../components/SelectorParcelas'
 import { Chip } from '../components/Chip'
@@ -10,7 +10,7 @@ import { PreguntaSuelo } from '../components/PreguntaSuelo'
 import { IconoIncendio, IconoSiguiente, IconoUbicacion } from '../components/icons'
 import { usePredio } from '../state/PredioContext'
 import {
-  ApiError, guardarSuelo, sitioParcela, mensajeDeError, verParcela,
+  ApiError, guardarNombre, guardarSuelo, sitioParcela, mensajeDeError, verParcela,
   type DatosSitio, type ParcelaDetalle, type SueloDeclarado,
 } from '../lib/api'
 import { PREGUNTAS_SUELO } from '../lib/suelo'
@@ -18,6 +18,10 @@ import { comunaDeParcela, leerBorrador } from '../lib/comunas'
 import { fechaCorta, nombreMes, numero } from '../lib/formato'
 import { useI18n } from '../i18n'
 import { tr } from '../i18n/dictionary'
+
+const SIN_CELDAS: never[] = []
+const SIN_COLOR = () => '#000000'
+const SIN_ELEGIR = () => undefined
 
 function extremo(serie: number[] | null, elegir: (...valores: number[]) => number): { valor: number; mes: number } | null {
   if (!serie || serie.length === 0) return null
@@ -32,6 +36,9 @@ export default function Terreno() {
   const [sitio, setSitio] = useState<DatosSitio | null>(null)
   const [suelo, setSuelo] = useState<SueloDeclarado | null>(null)
   const [errorSuelo, setErrorSuelo] = useState<string | null>(null)
+  const [nombre, setNombre] = useState('')
+  const [nombreGuardado, setNombreGuardado] = useState(false)
+  const [errorNombre, setErrorNombre] = useState<string | null>(null)
   const [sinClima, setSinClima] = useState(false)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -50,6 +57,8 @@ export default function Terreno() {
       verParcela(idParcela).then((p) => {
         if (!vigente) return
         setParcela(p)
+        setNombre(p.nombre ?? '')
+        setNombreGuardado(false)
         setSuelo(p.suelo)
       }),
       sitioParcela(idParcela)
@@ -69,6 +78,19 @@ export default function Terreno() {
 
   if (!idParcela) return <Navigate to="/terreno/perimetro" replace />
 
+  function enviarNombre(e: React.FormEvent) {
+    e.preventDefault()
+    if (!idParcela) return
+    setErrorNombre(null)
+    setNombreGuardado(false)
+    guardarNombre(idParcela, nombre)
+      .then((r) => {
+        setNombre(r.nombre ?? '')
+        setNombreGuardado(true)
+      })
+      .catch((err) => setErrorNombre(mensajeDeError(err, tr('terreno_error_guardar'))))
+  }
+
   function elegirSuelo(campo: keyof SueloDeclarado, valor: string | null) {
     if (!idParcela || !suelo) return
     const anterior = suelo
@@ -84,8 +106,9 @@ export default function Terreno() {
 
   const predio = leerBorrador()
   const comuna = comunaDeParcela(idParcela)
+  const referencia = parcela ? [parcela.region, parcela.pais].filter(Boolean).join(', ') : ''
   const subtitulo = parcela
-    ? [predio.sector && comuna ? `${predio.sector}, ${comuna}` : comuna ?? (predio.sector || null),
+    ? [referencia || (predio.sector && comuna ? `${predio.sector}, ${comuna}` : comuna ?? (predio.sector || null)),
         t('terreno_ha', { n: numero(parcela.hectareas, 2) }),
         parcela.altitud_msnm !== null ? t('terreno_msnm', { n: numero(parcela.altitud_msnm) }) : null,
         parcela.ecorregion?.nombre].filter(Boolean).join(' · ')
@@ -112,6 +135,32 @@ export default function Terreno() {
       <Titulo sub={subtitulo}>{t('terreno_titulo')}</Titulo>
       <SelectorParcelas />
 
+      {parcela ? (
+        <form onSubmit={enviarNombre} className="ps-pad-16" style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label htmlFor="nombre-predio" style={{ fontSize: 16, fontWeight: 700, padding: '0 4px' }}>{t('terreno_nombre')}</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              id="nombre-predio"
+              type="text"
+              value={nombre}
+              maxLength={60}
+              placeholder={t('terreno_nombre_ejemplo')}
+              onChange={(e) => {
+                setNombre(e.target.value)
+                setNombreGuardado(false)
+              }}
+              style={{ flex: 1, minWidth: 0, minHeight: 52, padding: '0 14px', borderRadius: 16, border: '2px solid var(--borde-control)', background: '#fff', color: 'var(--carbon)', font: "700 17px 'Alegreya Sans', sans-serif" }}
+            />
+            <button type="submit" className="ps-btn-secundario" style={{ padding: '0 14px', minHeight: 52 }} disabled={nombre.trim() === (parcela.nombre ?? '')}>
+              {t('terreno_nombre_guardar')}
+            </button>
+          </div>
+          {nombreGuardado ? <span className="ps-nota" role="status" style={{ padding: '0 4px' }}>{t('terreno_nombre_guardado')}</span> : null}
+          {errorNombre ? <span className="ps-nota" role="alert" style={{ padding: '0 4px', color: 'var(--riesgo-texto)' }}>{errorNombre}</span> : null}
+          {referencia ? <SourceLink>{t('terreno_ubicacion_osm')}</SourceLink> : null}
+        </form>
+      ) : null}
+
       <Link to="/terreno/zonas" className="ps-card" style={{ margin: '12px 16px 0 16px', textDecoration: 'none', color: 'var(--carbon)', display: 'flex', alignItems: 'center', gap: 12 }}>
         <span aria-hidden="true" style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--menta)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           {parcela ? <MiniPerimetro perimetro={parcela.perimetro} /> : <IconoUbicacion stroke="var(--verde)" />}
@@ -127,7 +176,11 @@ export default function Terreno() {
       </Link>
 
       <div className="ps-pad-16" style={{ margin: '8px 16px 0 16px' }}>
-        <EscenaTerreno etiqueta={t('terreno_escena_aria')} />
+        {parcela ? (
+          <MapaCeldas perimetro={parcela.perimetro} celdas={SIN_CELDAS} colorDe={SIN_COLOR} elegida={null} onElegir={SIN_ELEGIR} etiqueta={t('terreno_escena_aria')} />
+        ) : (
+          <div className="ps-mapa" aria-hidden="true" />
+        )}
       </div>
 
       {sinClima ? (

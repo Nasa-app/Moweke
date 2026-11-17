@@ -36,6 +36,7 @@ import services.cliente_clsoilmaps as cliente_clsoilmaps
 import services.cliente_copernicus as cliente_copernicus
 import services.cliente_cr2met as cliente_cr2met
 import services.cliente_firms as cliente_firms
+import services.cliente_geocodificacion as cliente_geocodificacion
 import services.cliente_soilgrids as cliente_soilgrids
 import services.cliente_solar as cliente_solar
 import services.indicadores_locales as indicadores_locales
@@ -219,6 +220,12 @@ class ParcelaNueva(BaseModel):
     lon: float | None = Field(None, ge=-180, le=180)
     hectareas: float | None = Field(None, gt=0, le=HECTAREAS_MAX)
     perimetro: dict | None = None
+    nombre: str | None = Field(None, max_length=60)
+
+    @field_validator("nombre")
+    @classmethod
+    def _nombre_predio(cls, valor: str | None) -> str | None:
+        return indicadores_locales.limpiar_texto(valor) if valor and valor.strip() else None
 
     @model_validator(mode="after")
     def _una_forma(self):
@@ -229,6 +236,15 @@ class ParcelaNueva(BaseModel):
         elif any(v is None for v in punto):
             raise ValueError("Faltan `lat`, `lon` y `hectareas`, o bien `perimetro`")
         return self
+
+
+class NombrePredio(BaseModel):
+    nombre: str | None = Field(None, max_length=60)
+
+    @field_validator("nombre")
+    @classmethod
+    def _nombre_predio(cls, valor: str | None) -> str | None:
+        return indicadores_locales.limpiar_texto(valor) if valor and valor.strip() else None
 
 
 class SueloDeclarado(BaseModel):
@@ -450,6 +466,7 @@ async def _parcela_autorizada(id_parcela: int, usuario: dict, session: AsyncSess
     fila = (await session.execute(text("""
         SELECT p.id, p.id_usuario, p.altitud_msnm,
                p.suelo_drenaje, p.suelo_salinidad, p.suelo_profundidad, p.suelo_fertilidad,
+               p.nombre, p.pais, p.region,
                ST_Y(ST_Centroid(p.geometria)) AS lat, ST_X(ST_Centroid(p.geometria)) AS lon,
                ST_Area(p.geometria::geography) / 10000 AS hectareas,
                ST_AsGeoJSON(p.geometria, 6) AS perimetro, p.origen_perimetro, p.lado_celda_m,
@@ -468,6 +485,33 @@ async def _parcela_autorizada(id_parcela: int, usuario: dict, session: AsyncSess
     nombre, bioma = parcela.pop("ecorregion"), parcela.pop("bioma")
     parcela["ecorregion"] = {"nombre": nombre, "bioma": bioma} if nombre else None
     return parcela
+
+
+_REFERENCIA_REINTENTO_S = 600
+_referencia_intentada: dict[int, float] = {}
+
+
+async def _escribir_referencia(id_parcela: int) -> None:
+    """Tarea en segundo plano: escribe pais y region del predio con la geocodificacion inversa. Si el servicio falla
+    o no conoce el lugar, queda en NULL y se reintenta al ver el predio, no antes de 10 minutos."""
+    ahora = asyncio.get_running_loop().time()
+    if ahora - _referencia_intentada.get(id_parcela, -_REFERENCIA_REINTENTO_S) < _REFERENCIA_REINTENTO_S:
+        return
+    _referencia_intentada[id_parcela] = ahora
+    async with base_de_datos.SessionLocal() as session:
+        centro = (await session.execute(text(
+            "SELECT ST_Y(ST_Centroid(geometria)) AS lat, ST_X(ST_Centroid(geometria)) AS lon "
+            "FROM parcela WHERE id = :id"), {"id": id_parcela})).mappings().first()
+        if centro is None:
+            return
+        try:
+            pais, region = await asyncio.to_thread(cliente_geocodificacion.referencia, centro["lat"], centro["lon"])
+        except Exception:
+            return
+        if pais or region:
+            await session.execute(text("UPDATE parcela SET pais = :pais, region = :region WHERE id = :id"),
+                                   {"pais": pais, "region": region, "id": id_parcela})
+            await session.commit()
 
 
 def _validar_perimetro(perimetro: dict) -> str:
@@ -536,20 +580,20 @@ async def crear_parcela(datos: ParcelaNueva, tareas: BackgroundTasks, request: R
                                  f"El perímetro mide {forma['hectareas']:.2f} hectáreas; debe medir entre "
                                  f"{HECTAREAS_MIN_DIBUJADO} y {HECTAREAS_MAX:.0f}")
         id_parcela = (await session.execute(text("""
-            INSERT INTO parcela (id_usuario, geometria, origen_perimetro)
-            VALUES (:usuario, ST_ForcePolygonCCW(ST_Force2D(ST_SetSRID(ST_GeomFromGeoJSON(:gj), 4326))), 'dibujado')
+            INSERT INTO parcela (id_usuario, nombre, geometria, origen_perimetro)
+            VALUES (:usuario, :nombre, ST_ForcePolygonCCW(ST_Force2D(ST_SetSRID(ST_GeomFromGeoJSON(:gj), 4326))), 'dibujado')
             RETURNING id
-        """), {"usuario": usuario["id"], "gj": dibujado})).scalar_one()
+        """), {"usuario": usuario["id"], "gj": dibujado, "nombre": datos.nombre})).scalar_one()
     else:
         srid_utm = (32700 if datos.lat < 0 else 32600) + int((datos.lon + 180) // 6) + 1
         medio_lado_m = (datos.hectareas * 10_000) ** 0.5 / 2
         id_parcela = (await session.execute(text("""
-            INSERT INTO parcela (id_usuario, geometria)
-            VALUES (:usuario, ST_Transform(ST_Expand(ST_Transform(
+            INSERT INTO parcela (id_usuario, nombre, geometria)
+            VALUES (:usuario, :nombre, ST_Transform(ST_Expand(ST_Transform(
                         ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), CAST(:srid AS integer)),
                         CAST(:medio_lado AS double precision)), 4326))
             RETURNING id
-        """), {"usuario": usuario["id"], "lon": datos.lon, "lat": datos.lat,
+        """), {"usuario": usuario["id"], "nombre": datos.nombre, "lon": datos.lon, "lat": datos.lat,
                "srid": srid_utm, "medio_lado": medio_lado_m})).scalar_one()
     # Grilla del predio: zona UTM de su centro y lado de celda segun su superficie.
     centro = (await session.execute(text("""
@@ -573,6 +617,7 @@ async def crear_parcela(datos: ParcelaNueva, tareas: BackgroundTasks, request: R
 
     jobs = await ingesta_predio.encolar(session, id_parcela)
     tareas.add_task(ingesta_predio.ingerir_predio, id_parcela, jobs)
+    tareas.add_task(_escribir_referencia, id_parcela)
     parcela = await _parcela_autorizada(id_parcela, usuario, session)
     return {**parcela, "estado_ingesta": await ingesta_predio.estado_ingesta(session, id_parcela)}
 
@@ -581,7 +626,7 @@ async def crear_parcela(datos: ParcelaNueva, tareas: BackgroundTasks, request: R
 async def listar_parcelas(session: AsyncSession = Depends(obtener_sesion),
                            usuario: dict = Depends(usuario_actual)):
     filas = (await session.execute(text("""
-        SELECT id, altitud_msnm, ST_Y(ST_Centroid(geometria)) AS lat, ST_X(ST_Centroid(geometria)) AS lon,
+        SELECT id, nombre, pais, region, altitud_msnm, ST_Y(ST_Centroid(geometria)) AS lat, ST_X(ST_Centroid(geometria)) AS lon,
                round((ST_Area(geometria::geography) / 10000)::numeric, 2)::float AS hectareas,
                ST_AsGeoJSON(geometria, 6) AS perimetro
         FROM parcela WHERE id_usuario = :u ORDER BY id
@@ -593,6 +638,8 @@ async def listar_parcelas(session: AsyncSession = Depends(obtener_sesion),
 async def ver_parcela(id_parcela: int, tareas: BackgroundTasks, session: AsyncSession = Depends(obtener_sesion),
                        usuario: dict = Depends(usuario_actual)):
     parcela = await _parcela_autorizada(id_parcela, usuario, session)
+    if not parcela["pais"] and not parcela["region"]:
+        tareas.add_task(_escribir_referencia, id_parcela)
     # Los focos de calor se leen aca (Tu terreno, Hoy): si la revision esta vencida, o nunca corrio para esta
     # predio, se deja refrescandose. Antes solo se refrescaba al pedir el seguimiento de un cultivo, asi que
     # un predio sin cultivos se quedaba con los focos del dia en que se marco, o sin revisar para siempre.
@@ -603,6 +650,17 @@ async def ver_parcela(id_parcela: int, tareas: BackgroundTasks, session: AsyncSe
             "cercania_cauce": await leer_cercania_cauce(session, id_parcela),
             "curva_satelital": await leer_disponibilidad_optica(session, id_parcela),
             "estado_ingesta": await ingesta_predio.estado_ingesta(session, id_parcela)}
+
+
+@app.put("/api/parcelas/{id_parcela}/nombre")
+async def guardar_nombre(id_parcela: int, datos: NombrePredio, session: AsyncSession = Depends(obtener_sesion),
+                          usuario: dict = Depends(usuario_actual)):
+    """Nombre de referencia del predio, el que le pone el agricultor. null lo borra."""
+    await _parcela_autorizada(id_parcela, usuario, session)
+    await session.execute(text("UPDATE parcela SET nombre = :nombre WHERE id = :id"),
+                           {"nombre": datos.nombre, "id": id_parcela})
+    await session.commit()
+    return {"nombre": datos.nombre}
 
 
 @app.put("/api/parcelas/{id_parcela}/suelo")

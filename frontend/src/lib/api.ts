@@ -194,6 +194,9 @@ export interface Poligono {
 
 export interface ParcelaResumen {
   id: number
+  nombre: string | null
+  pais: string | null
+  region: string | null
   altitud_msnm: number | null
   lat: number
   lon: number
@@ -601,9 +604,15 @@ export function quienSoy() {
 }
 
 // ---------------------------------------------------------------- predios
-export function crearParcela(perimetro: Poligono) {
+export function crearParcela(perimetro: Poligono, nombre?: string) {
   olvidarLecturas()
-  return peticion<Parcela>('/api/parcelas', { method: 'POST', body: { perimetro } })
+  return peticion<Parcela>('/api/parcelas', { method: 'POST', body: { perimetro, nombre: nombre?.trim() || null } })
+}
+
+// Nombre de referencia del predio; vacío lo borra.
+export function guardarNombre(idParcela: number, nombre: string) {
+  olvidarLecturas()
+  return peticion<{ nombre: string | null }>(`/api/parcelas/${idParcela}/nombre`, { method: 'PUT', body: { nombre: nombre.trim() || null } })
 }
 
 export function listarParcelas() {
