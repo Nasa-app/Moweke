@@ -38,9 +38,9 @@ export const textos: Record<string, { es: string; en: string }> = {
   fmt_lista_y: { es: '{inicio} y {ultimo}', en: '{inicio} and {ultimo}' },
 
   // fases, amenazas y factores del suelo y el clima
-  fmt_palabra_inicial: { es: 'Primeras hojas', en: 'First leaves' },
+  fmt_palabra_inicial: { es: 'Brote', en: 'Sprouting' },
   fmt_palabra_desarrollo: { es: 'Crecimiento', en: 'Growth' },
-  fmt_palabra_media: { es: 'Pleno desarrollo', en: 'Full growth' },
+  fmt_palabra_media: { es: 'Formación de la cosecha', en: 'Crop forming' },
   fmt_palabra_emergencia: { es: 'Brote', en: 'Sprouting' },
   fmt_palabra_tuberizacion: { es: 'Formación de papas', en: 'Potato formation' },
   fmt_palabra_bulbificacion: { es: 'Formación del bulbo', en: 'Bulb formation' },
