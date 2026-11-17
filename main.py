@@ -938,7 +938,7 @@ async def fenologia_cultivo(id_cultivo: int, tareas: BackgroundTasks,
     reportes = (await session.execute(text(
         "SELECT fase_fenologica AS fase, fecha_observada AS fecha FROM fenologia_observada "
         "WHERE id_cultivo = :id AND fase_fenologica = ANY(:fases)"),
-        {"id": id_cultivo, "fases": list(catalogo_especies.ETAPA_DE_REPORTE)})).mappings().all()
+        {"id": id_cultivo, "fases": list(catalogo_especies.FASES_QUE_REANCLAN)})).mappings().all()
 
     sin_clima = {"mensaje": "Todavía no hay clima diario del predio desde la fecha de siembra",
                  "estado_ingesta": estado}

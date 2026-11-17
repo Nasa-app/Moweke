@@ -82,3 +82,50 @@ def test_la_funcion_con_una_etapa_media_corrige_las_anteriores_que_quedan_despue
     nuevas, conf = ce.calendario_con_reportes(clima, sim, c, "2024-11-15", LAT, [{"fase": "flor", "fecha": date(2024, 12, 20)}])
     assert nuevas["floracion"] == pd.Timestamp("2024-12-20") and set(conf) == {"floracion"}
     assert nuevas["emergencia"] <= nuevas["floracion"] and nuevas["madurez"] > nuevas["floracion"]
+
+
+# Especies con etapas derivadas de FAO-56: inicial, desarrollo, media, madurez.
+ETAPAS_FAO = (("inicial", 100), ("desarrollo", 300), ("media", 300), ("madurez", 200))
+
+
+def calendario_fao(especie, reportes):
+    c = Cultivo(f"{especie}:generica", 4, 20, 30, etapas=ETAPAS_FAO)
+    idx = pd.date_range("2024-11-01", "2025-09-30", freq="D")
+    clima = pd.DataFrame({"tmin": 8.0, "tmax": 18.0, "lluvia": 0.0}, index=idx)
+    from pheno_engine import simular
+    sim = simular(clima, "2024-11-15", LAT, c)
+    nuevas, conf = ce.calendario_con_reportes(clima, sim, c, "2024-11-15", LAT, reportes)
+    return sim, nuevas, conf
+
+
+def test_fao_la_flor_confirma_desarrollo_y_corre_las_etapas_siguientes():
+    sim, nuevas, conf = calendario_fao("especie_fao", [{"fase": "flor", "fecha": date(2025, 2, 1)}])
+    assert conf == {"desarrollo": pd.Timestamp("2025-02-01")} and nuevas["desarrollo"] == pd.Timestamp("2025-02-01")
+    assert nuevas["inicial"] <= nuevas["desarrollo"]
+    assert nuevas["media"] > nuevas["desarrollo"] and nuevas["madurez"] > nuevas["media"]
+    assert nuevas["media"] != sim["media"]
+
+
+def test_fao_las_hojas_amarillas_confirman_media_y_corren_madurez():
+    sim, nuevas, conf = calendario_fao("especie_fao", [{"fase": "amarilla", "fecha": date(2025, 4, 1)}])
+    assert conf == {"media": pd.Timestamp("2025-04-01")} and nuevas["media"] == pd.Timestamp("2025-04-01")
+    assert nuevas["inicial"] <= nuevas["desarrollo"] <= nuevas["media"] and nuevas["madurez"] > nuevas["media"]
+    assert nuevas["madurez"] != sim["madurez"]
+
+
+def test_fao_brote_hojas_fruto_y_cosecha_no_mueven_nada():
+    for fase in ("brote", "hojas", "fruto", "cosecha"):
+        sim, nuevas, conf = calendario_fao("especie_fao", [{"fase": fase, "fecha": date(2025, 1, 20)}])
+        assert nuevas == sim and conf == {}, fase
+
+
+def test_fao_en_especies_que_no_florecen_antes_de_cosecharse_la_flor_no_mueve_nada():
+    for especie in ("daucus_carota", "beta_vulgaris", "brassica_oleracea_var_capitata"):
+        sim, nuevas, conf = calendario_fao(especie, [{"fase": "flor", "fecha": date(2025, 2, 1)}])
+        assert nuevas == sim and conf == {}, especie
+    sim, nuevas, conf = calendario_fao("daucus_carota", [{"fase": "amarilla", "fecha": date(2025, 4, 1)}])
+    assert conf == {"media": pd.Timestamp("2025-04-01")}
+
+
+def test_las_fases_que_reancla_cubren_papa_y_fao():
+    assert set(ce.FASES_QUE_REANCLAN) == {"brote", "flor", "amarilla"}

@@ -4,7 +4,7 @@ import { useI18n } from '../i18n'
 
 // Lo que el agricultor ha reportado de este cultivo (la etapa en que lo ve), del más reciente al más antiguo. Lo que
 // aún no llegó al servidor se marca "Por enviar". Está en el registro del cultivo, con o sin seguimiento por etapa.
-export function ReportesCultivo({ idCultivo }: { idCultivo: number }) {
+export function ReportesCultivo({ idCultivo, calendarioAproximado = false }: { idCultivo: number; calendarioAproximado?: boolean }) {
   const { t } = useI18n()
   const { reportes, pendientes, cargando, falla } = useReportes(idCultivo)
   const filas = [
@@ -30,7 +30,7 @@ export function ReportesCultivo({ idCultivo }: { idCultivo: number }) {
             ))}
           </ul>
         ) : null}
-        <span className="ps-nota">{t('reportes_nota')}</span>
+        <span className="ps-nota">{t(calendarioAproximado ? 'reportes_nota_aprox' : 'reportes_nota')}</span>
       </div>
     </section>
   )

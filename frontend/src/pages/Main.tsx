@@ -163,7 +163,7 @@ export default function Main() {
           ) : null}
 
           <RegistroCultivo key={activo.id} idCultivo={activo.id} onCambio={recargar} />
-          <ReportesCultivo key={`r${activo.id}`} idCultivo={activo.id} />
+          <ReportesCultivo key={`r${activo.id}`} idCultivo={activo.id} calendarioAproximado={fenologia?.calendario_aproximado} />
 
           <div className="ps-pad-16" style={{ marginTop: 16, display: 'flex', gap: 8 }}>
             <Link to="/reportar" className="ps-btn" style={{ flex: 1 }}>

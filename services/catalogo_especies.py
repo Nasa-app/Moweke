@@ -975,6 +975,29 @@ def _perdida_de(eventos: list[dict]) -> float:
 # no tienen una etapa propia en el reloj termico de estas especies: se anotan pero no mueven el calendario.
 ETAPA_DE_REPORTE = {"brote": "emergencia", "flor": "floracion"}
 
+# Especies con etapas derivadas de FAO-56 (inicial, desarrollo, media, madurez): ahi "desarrollo" termina con la
+# cobertura plena (lo que se ve como flor) y "media" al empezar la senescencia (hojas amarillas). El brote y el resto
+# no coinciden con ningun corte. Sin validar con datos de campo. En las especies de abajo la flor no marca el fin de
+# "desarrollo" (raiz, tuberculo, hortaliza de hoja o inflorescencia que se cosecha antes de florecer).
+ETAPA_DE_REPORTE_FAO = {"flor": "desarrollo", "amarilla": "media"}
+ESPECIES_FAO_SIN_FLOR = frozenset({
+    "beta_vulgaris", "daucus_carota", "ipomoea_batatas", "raphanus_sativus_var_radicula",
+    "brassica_oleracea_var_botrytis", "brassica_oleracea_var_capitata", "brassica_oleracea_var_italica"})
+FASES_QUE_REANCLAN = tuple(dict.fromkeys([*ETAPA_DE_REPORTE, *ETAPA_DE_REPORTE_FAO]))
+
+
+def etapa_de_reporte(fase: str, c: Cultivo) -> str | None:
+    """Etapa del calendario de `c` que confirma un reporte de `fase`, o None si ese reporte no mueve nada."""
+    etapa = ETAPA_DE_REPORTE.get(fase)
+    nombres = [n for n, _ in c.etapas]
+    if etapa in nombres:
+        return etapa
+    if "desarrollo" in nombres and "media" in nombres:
+        if fase == "flor" and c.nombre.split(":")[0] in ESPECIES_FAO_SIN_FLOR:
+            return None
+        return ETAPA_DE_REPORTE_FAO.get(fase)
+    return None
+
 
 def calendario_con_reportes(clima: pd.DataFrame, fechas: dict, c: Cultivo, siembra, lat: float,
                             reportes: list[dict]) -> tuple[dict, dict]:
@@ -987,7 +1010,7 @@ def calendario_con_reportes(clima: pd.DataFrame, fechas: dict, c: Cultivo, siemb
     siembra = pd.Timestamp(siembra)
     confirmadas: dict[str, pd.Timestamp] = {}
     for r in sorted(reportes, key=lambda r: r["fecha"]):
-        etapa = ETAPA_DE_REPORTE.get(r["fase"])
+        etapa = etapa_de_reporte(r["fase"], c)
         fecha = pd.Timestamp(r["fecha"])
         if etapa in nombres and siembra <= fecha <= clima.index[-1]:
             confirmadas[etapa] = fecha
