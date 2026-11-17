@@ -14,28 +14,39 @@
 -- eleccion propia y estan marcadas para revision en el script (REGIONES).
 -- Filas FAO usadas: 101; omitidas por falta de region o fecha: 4.
 -- Etapas: inicial, desarrollo, media, madurez (reportes 'brotó'/'floreció' no las reanclan).
+-- Solo se escriben las especies con total gdd_maximo / total gdd_minimo <= 2. Excluidas (26, rango entre regiones demasiado ancho para usar el punto medio):
+--   allium_cepa (x2.17)
+--   allium_cepa_var_cepa (x2.17)
+--   apium_graveolens (x3.5)
+--   apium_graveolens_var_dulce (x2.69)
+--   beta_vulgaris_var_saccharifera (x6.05)
+--   brassica_oleracea_var_acephala (x3.2)
+--   brassica_oleracea_var_gemmifera (x4.27)
+--   brassica_oleracea_var_gongyloides (x4.85)
+--   capsicum_annuum (x2.38)
+--   carthamus_tinctorius (x2.83)
+--   cucumis_melo (x6.1)
+--   cucurbita_maxima (x2.18)
+--   cucurbita_mixta (x2.05)
+--   cucurbita_moschata (x2.41)
+--   gossypium_hirsutum (x2.36)
+--   lactuca_sativa_var_capitata (x2.82)
+--   lycopersicon_esculentum (x2.14)
+--   phaseolus_vulgaris (x11.1)
+--   pisum_sativum (x2.33)
+--   raphanus_sativus (x2.77)
+--   solanum_melongena (x2.46)
+--   spinacia_oleracea (x2.45)
+--   triticum_aestivum (x5.55)
+--   vigna_unguiculata (x2.04)
+--   zea_mays (x5.31)
+--   zea_mays_ssp_saccharata (x4.91)
 -- No pisa especies con etapas de otra fuente.
 
 BEGIN;
 DELETE FROM umbral_fenologico_config WHERE fuente = 'FAO56_t11_derivado_sin_validar';
 INSERT INTO umbral_fenologico_config (especie, variedad_local, orden, etapa, gdd_minimo, gdd_maximo, fuente)
 SELECT v.especie, NULL, v.orden, v.etapa, v.gdd_minimo, v.gdd_maximo, v.fuente FROM (VALUES
-  ('allium_cepa', 1, 'inicial', 116, 173, 'FAO56_t11_derivado_sin_validar'),
-  ('allium_cepa', 2, 'desarrollo', 231, 366, 'FAO56_t11_derivado_sin_validar'),
-  ('allium_cepa', 3, 'media', 427, 1094, 'FAO56_t11_derivado_sin_validar'),
-  ('allium_cepa', 4, 'madurez', 157, 384, 'FAO56_t11_derivado_sin_validar'),
-  ('allium_cepa_var_cepa', 1, 'inicial', 116, 173, 'FAO56_t11_derivado_sin_validar'),
-  ('allium_cepa_var_cepa', 2, 'desarrollo', 231, 366, 'FAO56_t11_derivado_sin_validar'),
-  ('allium_cepa_var_cepa', 3, 'media', 427, 1094, 'FAO56_t11_derivado_sin_validar'),
-  ('allium_cepa_var_cepa', 4, 'madurez', 157, 384, 'FAO56_t11_derivado_sin_validar'),
-  ('apium_graveolens', 1, 'inicial', 143, 227, 'FAO56_t11_derivado_sin_validar'),
-  ('apium_graveolens', 2, 'desarrollo', 230, 412, 'FAO56_t11_derivado_sin_validar'),
-  ('apium_graveolens', 3, 'media', 45, 685, 'FAO56_t11_derivado_sin_validar'),
-  ('apium_graveolens', 4, 'madurez', 6, 162, 'FAO56_t11_derivado_sin_validar'),
-  ('apium_graveolens_var_dulce', 1, 'inicial', 176, 325, 'FAO56_t11_derivado_sin_validar'),
-  ('apium_graveolens_var_dulce', 2, 'desarrollo', 329, 565, 'FAO56_t11_derivado_sin_validar'),
-  ('apium_graveolens_var_dulce', 3, 'media', 228, 1004, 'FAO56_t11_derivado_sin_validar'),
-  ('apium_graveolens_var_dulce', 4, 'madurez', 56, 229, 'FAO56_t11_derivado_sin_validar'),
   ('arachis_hypogaea', 1, 'inicial', 319, 410, 'FAO56_t11_derivado_sin_validar'),
   ('arachis_hypogaea', 2, 'desarrollo', 598, 649, 'FAO56_t11_derivado_sin_validar'),
   ('arachis_hypogaea', 3, 'media', 481, 506, 'FAO56_t11_derivado_sin_validar'),
@@ -44,14 +55,6 @@ SELECT v.especie, NULL, v.orden, v.etapa, v.gdd_minimo, v.gdd_maximo, v.fuente F
   ('beta_vulgaris', 2, 'desarrollo', 256, 329, 'FAO56_t11_derivado_sin_validar'),
   ('beta_vulgaris', 3, 'media', 233, 298, 'FAO56_t11_derivado_sin_validar'),
   ('beta_vulgaris', 4, 'madurez', 95, 131, 'FAO56_t11_derivado_sin_validar'),
-  ('beta_vulgaris_var_saccharifera', 1, 'inicial', 48, 340, 'FAO56_t11_derivado_sin_validar'),
-  ('beta_vulgaris_var_saccharifera', 2, 'desarrollo', 65, 489, 'FAO56_t11_derivado_sin_validar'),
-  ('beta_vulgaris_var_saccharifera', 3, 'media', 191, 720, 'FAO56_t11_derivado_sin_validar'),
-  ('beta_vulgaris_var_saccharifera', 4, 'madurez', 30, 472, 'FAO56_t11_derivado_sin_validar'),
-  ('brassica_oleracea_var_acephala', 1, 'inicial', 111, 268, 'FAO56_t11_derivado_sin_validar'),
-  ('brassica_oleracea_var_acephala', 2, 'desarrollo', 178, 269, 'FAO56_t11_derivado_sin_validar'),
-  ('brassica_oleracea_var_acephala', 3, 'media', 107, 542, 'FAO56_t11_derivado_sin_validar'),
-  ('brassica_oleracea_var_acephala', 4, 'madurez', 40, 315, 'FAO56_t11_derivado_sin_validar'),
   ('brassica_oleracea_var_botrytis', 1, 'inicial', 66, 157, 'FAO56_t11_derivado_sin_validar'),
   ('brassica_oleracea_var_botrytis', 2, 'desarrollo', 332, 376, 'FAO56_t11_derivado_sin_validar'),
   ('brassica_oleracea_var_botrytis', 3, 'media', 273, 317, 'FAO56_t11_derivado_sin_validar'),
@@ -60,50 +63,18 @@ SELECT v.especie, NULL, v.orden, v.etapa, v.gdd_minimo, v.gdd_maximo, v.fuente F
   ('brassica_oleracea_var_capitata', 2, 'desarrollo', 400, 453, 'FAO56_t11_derivado_sin_validar'),
   ('brassica_oleracea_var_capitata', 3, 'media', 300, 343, 'FAO56_t11_derivado_sin_validar'),
   ('brassica_oleracea_var_capitata', 4, 'madurez', 84, 117, 'FAO56_t11_derivado_sin_validar'),
-  ('brassica_oleracea_var_gemmifera', 1, 'inicial', 91, 195, 'FAO56_t11_derivado_sin_validar'),
-  ('brassica_oleracea_var_gemmifera', 2, 'desarrollo', 121, 199, 'FAO56_t11_derivado_sin_validar'),
-  ('brassica_oleracea_var_gemmifera', 3, 'media', 36, 459, 'FAO56_t11_derivado_sin_validar'),
-  ('brassica_oleracea_var_gemmifera', 4, 'madurez', 8, 241, 'FAO56_t11_derivado_sin_validar'),
-  ('brassica_oleracea_var_gongyloides', 1, 'inicial', 108, 214, 'FAO56_t11_derivado_sin_validar'),
-  ('brassica_oleracea_var_gongyloides', 2, 'desarrollo', 125, 253, 'FAO56_t11_derivado_sin_validar'),
-  ('brassica_oleracea_var_gongyloides', 3, 'media', 36, 585, 'FAO56_t11_derivado_sin_validar'),
-  ('brassica_oleracea_var_gongyloides', 4, 'madurez', 8, 292, 'FAO56_t11_derivado_sin_validar'),
   ('brassica_oleracea_var_italica', 1, 'inicial', 165, 295, 'FAO56_t11_derivado_sin_validar'),
   ('brassica_oleracea_var_italica', 2, 'desarrollo', 468, 502, 'FAO56_t11_derivado_sin_validar'),
   ('brassica_oleracea_var_italica', 3, 'media', 375, 434, 'FAO56_t11_derivado_sin_validar'),
   ('brassica_oleracea_var_italica', 4, 'madurez', 137, 172, 'FAO56_t11_derivado_sin_validar'),
-  ('capsicum_annuum', 1, 'inicial', 48, 332, 'FAO56_t11_derivado_sin_validar'),
-  ('capsicum_annuum', 2, 'desarrollo', 218, 399, 'FAO56_t11_derivado_sin_validar'),
-  ('capsicum_annuum', 3, 'media', 362, 930, 'FAO56_t11_derivado_sin_validar'),
-  ('capsicum_annuum', 4, 'madurez', 195, 297, 'FAO56_t11_derivado_sin_validar'),
-  ('carthamus_tinctorius', 1, 'inicial', 18, 583, 'FAO56_t11_derivado_sin_validar'),
-  ('carthamus_tinctorius', 2, 'desarrollo', 96, 694, 'FAO56_t11_derivado_sin_validar'),
-  ('carthamus_tinctorius', 3, 'media', 470, 693, 'FAO56_t11_derivado_sin_validar'),
-  ('carthamus_tinctorius', 4, 'madurez', 321, 590, 'FAO56_t11_derivado_sin_validar'),
   ('citrullus_lanatus', 1, 'inicial', 19, 78, 'FAO56_t11_derivado_sin_validar'),
   ('citrullus_lanatus', 2, 'desarrollo', 56, 165, 'FAO56_t11_derivado_sin_validar'),
   ('citrullus_lanatus', 3, 'media', 142, 245, 'FAO56_t11_derivado_sin_validar'),
   ('citrullus_lanatus', 4, 'madurez', 231, 275, 'FAO56_t11_derivado_sin_validar'),
-  ('cucumis_melo', 1, 'inicial', 14, 274, 'FAO56_t11_derivado_sin_validar'),
-  ('cucumis_melo', 2, 'desarrollo', 97, 531, 'FAO56_t11_derivado_sin_validar'),
-  ('cucumis_melo', 3, 'media', 102, 585, 'FAO56_t11_derivado_sin_validar'),
-  ('cucumis_melo', 4, 'madurez', 54, 238, 'FAO56_t11_derivado_sin_validar'),
   ('cucumis_sativus', 1, 'inicial', 177, 321, 'FAO56_t11_derivado_sin_validar'),
   ('cucumis_sativus', 2, 'desarrollo', 236, 394, 'FAO56_t11_derivado_sin_validar'),
   ('cucumis_sativus', 3, 'media', 353, 496, 'FAO56_t11_derivado_sin_validar'),
   ('cucumis_sativus', 4, 'madurez', 165, 250, 'FAO56_t11_derivado_sin_validar'),
-  ('cucurbita_maxima', 1, 'inicial', 70, 268, 'FAO56_t11_derivado_sin_validar'),
-  ('cucurbita_maxima', 2, 'desarrollo', 157, 398, 'FAO56_t11_derivado_sin_validar'),
-  ('cucurbita_maxima', 3, 'media', 264, 376, 'FAO56_t11_derivado_sin_validar'),
-  ('cucurbita_maxima', 4, 'madurez', 100, 249, 'FAO56_t11_derivado_sin_validar'),
-  ('cucurbita_mixta', 1, 'inicial', 56, 210, 'FAO56_t11_derivado_sin_validar'),
-  ('cucurbita_mixta', 2, 'desarrollo', 127, 302, 'FAO56_t11_derivado_sin_validar'),
-  ('cucurbita_mixta', 3, 'media', 221, 289, 'FAO56_t11_derivado_sin_validar'),
-  ('cucurbita_mixta', 4, 'madurez', 81, 191, 'FAO56_t11_derivado_sin_validar'),
-  ('cucurbita_moschata', 1, 'inicial', 56, 250, 'FAO56_t11_derivado_sin_validar'),
-  ('cucurbita_moschata', 2, 'desarrollo', 129, 372, 'FAO56_t11_derivado_sin_validar'),
-  ('cucurbita_moschata', 3, 'media', 235, 350, 'FAO56_t11_derivado_sin_validar'),
-  ('cucurbita_moschata', 4, 'madurez', 81, 233, 'FAO56_t11_derivado_sin_validar'),
   ('cucurbita_pepo', 1, 'inicial', 231, 301, 'FAO56_t11_derivado_sin_validar'),
   ('cucurbita_pepo', 2, 'desarrollo', 411, 483, 'FAO56_t11_derivado_sin_validar'),
   ('cucurbita_pepo', 3, 'media', 309, 367, 'FAO56_t11_derivado_sin_validar'),
@@ -116,10 +87,6 @@ SELECT v.especie, NULL, v.orden, v.etapa, v.gdd_minimo, v.gdd_maximo, v.fuente F
   ('glycine_max', 2, 'desarrollo', 212, 364, 'FAO56_t11_derivado_sin_validar'),
   ('glycine_max', 3, 'media', 551, 965, 'FAO56_t11_derivado_sin_validar'),
   ('glycine_max', 4, 'madurez', 129, 306, 'FAO56_t11_derivado_sin_validar'),
-  ('gossypium_hirsutum', 1, 'inicial', 100, 347, 'FAO56_t11_derivado_sin_validar'),
-  ('gossypium_hirsutum', 2, 'desarrollo', 347, 667, 'FAO56_t11_derivado_sin_validar'),
-  ('gossypium_hirsutum', 3, 'media', 244, 673, 'FAO56_t11_derivado_sin_validar'),
-  ('gossypium_hirsutum', 4, 'madurez', 298, 651, 'FAO56_t11_derivado_sin_validar'),
   ('helianthus_annuus', 1, 'inicial', 257, 343, 'FAO56_t11_derivado_sin_validar'),
   ('helianthus_annuus', 2, 'desarrollo', 477, 548, 'FAO56_t11_derivado_sin_validar'),
   ('helianthus_annuus', 3, 'media', 752, 801, 'FAO56_t11_derivado_sin_validar'),
@@ -128,10 +95,6 @@ SELECT v.especie, NULL, v.orden, v.etapa, v.gdd_minimo, v.gdd_maximo, v.fuente F
   ('ipomoea_batatas', 2, 'desarrollo', 232, 280, 'FAO56_t11_derivado_sin_validar'),
   ('ipomoea_batatas', 3, 'media', 552, 612, 'FAO56_t11_derivado_sin_validar'),
   ('ipomoea_batatas', 4, 'madurez', 352, 412, 'FAO56_t11_derivado_sin_validar'),
-  ('lactuca_sativa_var_capitata', 1, 'inicial', 100, 276, 'FAO56_t11_derivado_sin_validar'),
-  ('lactuca_sativa_var_capitata', 2, 'desarrollo', 197, 415, 'FAO56_t11_derivado_sin_validar'),
-  ('lactuca_sativa_var_capitata', 3, 'media', 74, 367, 'FAO56_t11_derivado_sin_validar'),
-  ('lactuca_sativa_var_capitata', 4, 'madurez', 34, 84, 'FAO56_t11_derivado_sin_validar'),
   ('lens_culinaris', 1, 'inicial', 71, 295, 'FAO56_t11_derivado_sin_validar'),
   ('lens_culinaris', 2, 'desarrollo', 224, 430, 'FAO56_t11_derivado_sin_validar'),
   ('lens_culinaris', 3, 'media', 555, 753, 'FAO56_t11_derivado_sin_validar'),
@@ -140,26 +103,10 @@ SELECT v.especie, NULL, v.orden, v.etapa, v.gdd_minimo, v.gdd_maximo, v.fuente F
   ('linum_usitatissimum', 2, 'desarrollo', 267, 365, 'FAO56_t11_derivado_sin_validar'),
   ('linum_usitatissimum', 3, 'media', 442, 806, 'FAO56_t11_derivado_sin_validar'),
   ('linum_usitatissimum', 4, 'madurez', 322, 419, 'FAO56_t11_derivado_sin_validar'),
-  ('lycopersicon_esculentum', 1, 'inicial', 153, 416, 'FAO56_t11_derivado_sin_validar'),
-  ('lycopersicon_esculentum', 2, 'desarrollo', 295, 507, 'FAO56_t11_derivado_sin_validar'),
-  ('lycopersicon_esculentum', 3, 'media', 284, 635, 'FAO56_t11_derivado_sin_validar'),
-  ('lycopersicon_esculentum', 4, 'madurez', 182, 395, 'FAO56_t11_derivado_sin_validar'),
   ('oryza_sativa', 1, 'inicial', 245, 404, 'FAO56_t11_derivado_sin_validar'),
   ('oryza_sativa', 2, 'desarrollo', 318, 400, 'FAO56_t11_derivado_sin_validar'),
   ('oryza_sativa', 3, 'media', 650, 993, 'FAO56_t11_derivado_sin_validar'),
   ('oryza_sativa', 4, 'madurez', 233, 506, 'FAO56_t11_derivado_sin_validar'),
-  ('phaseolus_vulgaris', 1, 'inicial', 7, 208, 'FAO56_t11_derivado_sin_validar'),
-  ('phaseolus_vulgaris', 2, 'desarrollo', 27, 280, 'FAO56_t11_derivado_sin_validar'),
-  ('phaseolus_vulgaris', 3, 'media', 41, 339, 'FAO56_t11_derivado_sin_validar'),
-  ('phaseolus_vulgaris', 4, 'madurez', 17, 194, 'FAO56_t11_derivado_sin_validar'),
-  ('pisum_sativum', 1, 'inicial', 110, 255, 'FAO56_t11_derivado_sin_validar'),
-  ('pisum_sativum', 2, 'desarrollo', 170, 295, 'FAO56_t11_derivado_sin_validar'),
-  ('pisum_sativum', 3, 'media', 114, 353, 'FAO56_t11_derivado_sin_validar'),
-  ('pisum_sativum', 4, 'madurez', 55, 144, 'FAO56_t11_derivado_sin_validar'),
-  ('raphanus_sativus', 1, 'inicial', 8, 64, 'FAO56_t11_derivado_sin_validar'),
-  ('raphanus_sativus', 2, 'desarrollo', 25, 59, 'FAO56_t11_derivado_sin_validar'),
-  ('raphanus_sativus', 3, 'media', 43, 84, 'FAO56_t11_derivado_sin_validar'),
-  ('raphanus_sativus', 4, 'madurez', 10, 31, 'FAO56_t11_derivado_sin_validar'),
   ('raphanus_sativus_var_radicula', 1, 'inicial', 38, 117, 'FAO56_t11_derivado_sin_validar'),
   ('raphanus_sativus_var_radicula', 2, 'desarrollo', 86, 115, 'FAO56_t11_derivado_sin_validar'),
   ('raphanus_sativus_var_radicula', 3, 'media', 137, 174, 'FAO56_t11_derivado_sin_validar'),
@@ -172,38 +119,14 @@ SELECT v.especie, NULL, v.orden, v.etapa, v.gdd_minimo, v.gdd_maximo, v.fuente F
   ('sesamum_indicum', 2, 'desarrollo', 317, 364, 'FAO56_t11_derivado_sin_validar'),
   ('sesamum_indicum', 3, 'media', 390, 481, 'FAO56_t11_derivado_sin_validar'),
   ('sesamum_indicum', 4, 'madurez', 210, 231, 'FAO56_t11_derivado_sin_validar'),
-  ('solanum_melongena', 1, 'inicial', 291, 407, 'FAO56_t11_derivado_sin_validar'),
-  ('solanum_melongena', 2, 'desarrollo', 310, 688, 'FAO56_t11_derivado_sin_validar'),
-  ('solanum_melongena', 3, 'media', 155, 615, 'FAO56_t11_derivado_sin_validar'),
-  ('solanum_melongena', 4, 'madurez', 83, 354, 'FAO56_t11_derivado_sin_validar'),
   ('sorghum_bicolor', 1, 'inicial', 156, 284, 'FAO56_t11_derivado_sin_validar'),
   ('sorghum_bicolor', 2, 'desarrollo', 397, 532, 'FAO56_t11_derivado_sin_validar'),
   ('sorghum_bicolor', 3, 'media', 550, 633, 'FAO56_t11_derivado_sin_validar'),
   ('sorghum_bicolor', 4, 'madurez', 342, 469, 'FAO56_t11_derivado_sin_validar'),
-  ('spinacia_oleracea', 1, 'inicial', 170, 236, 'FAO56_t11_derivado_sin_validar'),
-  ('spinacia_oleracea', 2, 'desarrollo', 157, 326, 'FAO56_t11_derivado_sin_validar'),
-  ('spinacia_oleracea', 3, 'media', 94, 419, 'FAO56_t11_derivado_sin_validar'),
-  ('spinacia_oleracea', 4, 'madurez', 21, 104, 'FAO56_t11_derivado_sin_validar'),
-  ('triticum_aestivum', 1, 'inicial', 141, 1213, 'FAO56_t11_derivado_sin_validar'),
-  ('triticum_aestivum', 2, 'desarrollo', 376, 3241, 'FAO56_t11_derivado_sin_validar'),
-  ('triticum_aestivum', 3, 'media', 303, 514, 'FAO56_t11_derivado_sin_validar'),
-  ('triticum_aestivum', 4, 'madurez', 115, 222, 'FAO56_t11_derivado_sin_validar'),
   ('vigna_radiata', 1, 'inicial', 85, 165, 'FAO56_t11_derivado_sin_validar'),
   ('vigna_radiata', 2, 'desarrollo', 186, 276, 'FAO56_t11_derivado_sin_validar'),
   ('vigna_radiata', 3, 'media', 299, 385, 'FAO56_t11_derivado_sin_validar'),
-  ('vigna_radiata', 4, 'madurez', 255, 309, 'FAO56_t11_derivado_sin_validar'),
-  ('vigna_unguiculata', 1, 'inicial', 3, 57, 'FAO56_t11_derivado_sin_validar'),
-  ('vigna_unguiculata', 2, 'desarrollo', 28, 96, 'FAO56_t11_derivado_sin_validar'),
-  ('vigna_unguiculata', 3, 'media', 105, 181, 'FAO56_t11_derivado_sin_validar'),
-  ('vigna_unguiculata', 4, 'madurez', 117, 181, 'FAO56_t11_derivado_sin_validar'),
-  ('zea_mays', 1, 'inicial', 58, 313, 'FAO56_t11_derivado_sin_validar'),
-  ('zea_mays', 2, 'desarrollo', 125, 504, 'FAO56_t11_derivado_sin_validar'),
-  ('zea_mays', 3, 'media', 86, 587, 'FAO56_t11_derivado_sin_validar'),
-  ('zea_mays', 4, 'madurez', 89, 496, 'FAO56_t11_derivado_sin_validar'),
-  ('zea_mays_ssp_saccharata', 1, 'inicial', 34, 120, 'FAO56_t11_derivado_sin_validar'),
-  ('zea_mays_ssp_saccharata', 2, 'desarrollo', 74, 170, 'FAO56_t11_derivado_sin_validar'),
-  ('zea_mays_ssp_saccharata', 3, 'media', 99, 347, 'FAO56_t11_derivado_sin_validar'),
-  ('zea_mays_ssp_saccharata', 4, 'madurez', 12, 438, 'FAO56_t11_derivado_sin_validar')
+  ('vigna_radiata', 4, 'madurez', 255, 309, 'FAO56_t11_derivado_sin_validar')
 ) AS v(especie, orden, etapa, gdd_minimo, gdd_maximo, fuente)
 WHERE EXISTS (SELECT 1 FROM especie e WHERE e.especie = v.especie)
   AND NOT EXISTS (SELECT 1 FROM umbral_fenologico_config u WHERE u.especie = v.especie);

@@ -89,6 +89,11 @@ MAPEO: dict[str, list[str]] = {
     "Rice": ["oryza_sativa"],
 }
 
+# Una especie solo recibe etapas si el total de gdd_maximo / total de gdd_minimo es <= este valor: el motor usa
+# el punto medio del rango, y con un rango mas ancho entre regiones ese punto medio no representa a ninguna.
+RANGO_MAXIMO = 2.0
+MOTIVO_RANGO = "rango entre regiones demasiado ancho para usar el punto medio"
+
 # Cultivos de la tabla que no se mapean, con el motivo.
 MOTIVO_EXCLUIDO = {
     "Potato": "papa ya tiene etapas propias (INIA Boletin 396)",
@@ -342,7 +347,19 @@ def derivar(filas: list[dict], cardinales: dict, anos: range, cache: Path | None
     return etapas, usadas, omitidas
 
 
-def escribir_sql(etapas: dict, usadas: list, omitidas: list, anos: range) -> None:
+def separar_por_rango(etapas: dict) -> tuple[dict, dict]:
+    """-> (etapas que se escriben, {especie excluida: razon max/min}). Las de PARA_COMPARAR no se filtran."""
+    incluidas, excluidas = {}, {}
+    for e, v in etapas.items():
+        razon = sum(hi for _, hi in v) / sum(lo for lo, _ in v)
+        if e in PARA_COMPARAR or razon <= RANGO_MAXIMO:
+            incluidas[e] = v
+        else:
+            excluidas[e] = round(razon, 2)
+    return incluidas, excluidas
+
+
+def escribir_sql(etapas: dict, usadas: list, omitidas: list, anos: range, excluidas: dict) -> None:
     revisar = sorted({(r, ) for _, r, _, _, rev in usadas if rev})
     lineas = [
         "-- Etapas por especie derivadas de FAO-56, tabla 11. GENERADO por database/derivar_etapas_fao.py;",
@@ -361,6 +378,8 @@ def escribir_sql(etapas: dict, usadas: list, omitidas: list, anos: range) -> Non
         "-- eleccion propia y estan marcadas para revision en el script (REGIONES).",
         f"-- Filas FAO usadas: {len(usadas)}; omitidas por falta de region o fecha: {len(omitidas)}.",
         "-- Etapas: inicial, desarrollo, media, madurez (reportes 'brotó'/'floreció' no las reanclan).",
+        f"-- Solo se escriben las especies con total gdd_maximo / total gdd_minimo <= {RANGO_MAXIMO:g}. Excluidas ({len(excluidas)}, {MOTIVO_RANGO}):",
+        *[f"--   {e} (x{r})" for e, r in sorted(excluidas.items())],
         "-- No pisa especies con etapas de otra fuente.",
         "",
         "BEGIN;",
@@ -410,7 +429,10 @@ def main() -> None:
     faltan = [e for e in especies if e not in cardinales]
     anos = anos_de(a.anos)
     etapas, usadas, omitidas = derivar(filas, cardinales, anos, a.cache)
-    escribir_sql(etapas, usadas, omitidas, anos)
+    etapas, excluidas = separar_por_rango(etapas)
+    escribir_sql(etapas, usadas, omitidas, anos, excluidas)
+    for e, r in sorted(excluidas.items()):
+        print(f"  excluida por rango x{r}: {e}")
     for e in sorted(PARA_COMPARAR & set(etapas)):
         print(f"{e} (solo comparar):", etapas[e])
     print(f"{len(etapas)} especies, {len(usadas)} filas usadas, {len(omitidas)} omitidas -> {SALIDA}")
