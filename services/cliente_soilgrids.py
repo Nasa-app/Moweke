@@ -13,6 +13,8 @@ leerla del valor, no de un codigo de estado o una excepcion.
 """
 from __future__ import annotations
 
+import time
+
 import requests
 
 URL_BASE = "https://rest.isric.org/soilgrids/v2.0/properties/query"
@@ -28,7 +30,28 @@ _PROPIEDADES = {
 }
 
 
-def consultar_suelo(lat: float, lon: float, profundidad: str = "0-5cm", timeout: int = 30) -> dict:
+# La API publica de ISRIC tarda a veces 24-40 s (medido el 17-nov-2026): con 30 s fallaba la ingesta del suelo. Un
+# solo reintento tras un timeout o un error 5xx; mas, y se toparia con su limite de ~5 consultas por minuto.
+TIMEOUT_S = 90
+ESPERA_REINTENTO_S = 3
+
+
+def _pedir(params: dict, timeout: int) -> requests.Response:
+    for intento in (1, 2):
+        try:
+            r = requests.get(URL_BASE, params=params, timeout=timeout)
+            if r.status_code < 500:
+                r.raise_for_status()
+                return r
+            error = requests.HTTPError(f"SoilGrids respondio {r.status_code}", response=r)
+        except (requests.Timeout, requests.ConnectionError) as e:
+            error = e
+        if intento == 2:
+            raise error
+        time.sleep(ESPERA_REINTENTO_S)
+
+
+def consultar_suelo(lat: float, lon: float, profundidad: str = "0-5cm", timeout: int = TIMEOUT_S) -> dict:
     """profundidad: una de las bandas reales de SoilGrids ('0-5cm','5-15cm','15-30cm',
     '30-60cm','60-100cm','100-200cm'). Devuelve None por variable si el punto cae fuera
     de cobertura (verificado: la API responde 200 con "mean": null, no un error)."""
@@ -36,9 +59,7 @@ def consultar_suelo(lat: float, lon: float, profundidad: str = "0-5cm", timeout:
         "lon": lon, "lat": lat, "depth": profundidad, "value": "mean",
         "property": list(_PROPIEDADES.keys()),
     }
-    r = requests.get(URL_BASE, params=params, timeout=timeout)
-    r.raise_for_status()
-    capas = r.json()["properties"]["layers"]
+    capas = _pedir(params, timeout).json()["properties"]["layers"]
     out = {"profundidad": profundidad}
     for capa in capas:
         nombre, factor = _PROPIEDADES[capa["name"]]
@@ -54,7 +75,7 @@ DISTANCIA_VECINOS_M = 250
 VALIDOS_BUSCADOS = 2
 
 
-def consultar_suelo_entorno(lat: float, lon: float, profundidad: str = "0-5cm", timeout: int = 30) -> dict:
+def consultar_suelo_entorno(lat: float, lon: float, profundidad: str = "0-5cm", timeout: int = TIMEOUT_S) -> dict:
     """Como consultar_suelo(), pero con vecinos si el punto central no tiene dato. Agrega 'pixeles' (cuantos
     puntos aportaron) y 'vecinos' (True si el valor no es el del centro)."""
     from statistics import median
