@@ -91,6 +91,7 @@ export const textos: Record<string, { es: string; en: string }> = {
   terreno_ph_neutro: { es: 'neutro', en: 'neutral' },
   terreno_ph_alcalino: { es: 'alcalino', en: 'alkaline' },
   terreno_agua_suelo: { es: 'Guarda {n} litros de agua por m²', en: 'Holds {n} liters of water per m²' },
+  terreno_agua_suelo_estimada: { es: 'Guardaría unos {n} litros de agua por m² (estimado por la textura)', en: 'Would hold about {n} liters of water per m² (estimated from texture)' },
   terreno_agua_suelo_sin: { es: 'Agua del suelo sin dato', en: 'No soil water data' },
   terreno_sol_dia: { es: 'Sol que llega cada día', en: 'Sun that arrives each day' },
   terreno_sol_horas: { es: '{n} h de sol pleno', en: '{n} h of full sun' },

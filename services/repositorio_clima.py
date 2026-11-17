@@ -95,6 +95,32 @@ ANIOS_TRASLAPE_DAYMET = 3
 COBERTURA_CR2MET_MIN = 0.9   # fraccion de dias de la ventana con CR2MET para llamar al clima "cr2met"
 
 
+PROFUNDIDAD_AGUA_SUELO_MM = 2000     # CLSoilMaps suma 0-200 cm: la estimacion usa la misma profundidad
+AGUA_SUELO_ESTIMADA_LIMITES_MM = (50.0, 600.0)
+FUENTE_AGUA_CLSOILMAPS = "clsoilmaps"
+FUENTE_AGUA_TEXTURA = "estimado_textura"
+
+
+def estimar_agua_disponible_mm(arcilla_pct: float | None, arena_pct: float | None,
+                               carbono_organico_g_kg: float | None) -> float | None:
+    """Agua aprovechable (mm en 0-200 cm) estimada desde la textura, para donde CLSoilMaps (solo Chile) no llega.
+    Ecuaciones de pedotransferencia de Saxton y Rawls (2006): contenido de agua a capacidad de campo (33 kPa) menos
+    el del punto de marchitez (1500 kPa), con arcilla, arena y materia organica (carbono x 1,724) de SoilGrids, y
+    multiplicado por 2000 mm de perfil. Limites de esa fuente: SoilGrids da la capa superficial y aqui se extiende
+    a todo el perfil, y no hay pedregosidad ni salinidad. Es una estimacion gruesa (mas baja que CLSoilMaps en
+    Chiloe: unos 280 mm para un franco contra 437 medidos), y por eso se informa como estimada. None si falta un dato."""
+    if arcilla_pct is None or arena_pct is None or carbono_organico_g_kg is None:
+        return None
+    s, c = arena_pct / 100.0, arcilla_pct / 100.0
+    mo = carbono_organico_g_kg * 1.724 / 10.0
+    t1500 = -0.024 * s + 0.487 * c + 0.006 * mo + 0.005 * s * mo - 0.013 * c * mo + 0.068 * s * c + 0.031
+    t1500 += 0.14 * t1500 - 0.02
+    t33 = -0.251 * s + 0.195 * c + 0.011 * mo + 0.006 * s * mo - 0.027 * c * mo + 0.452 * s * c + 0.299
+    t33 += 1.283 * t33 ** 2 - 0.374 * t33 - 0.015
+    bajo, alto = AGUA_SUELO_ESTIMADA_LIMITES_MM
+    return min(max((t33 - t1500) * PROFUNDIDAD_AGUA_SUELO_MM, bajo), alto)
+
+
 def inicio_traslape_daymet(hoy: date) -> date:
     """Desde cuando se guarda el clima de POWER para medir su sesgo contra Daymet (anterior a la ventana)."""
     return date(hoy.year - ANIOS_TRASLAPE_DAYMET, 1, 1)
@@ -153,7 +179,8 @@ async def leer_sitio(session: AsyncSession, id_parcela: int, hoy: date | None = 
     (Explorador Solar) y el clima diario de la ventana de doce meses (CR2MET). Cada dato
     que falte queda en None -- quien llama decide que hacer, aca no se inventa nada."""
     inicio, fin = ventana_clima(hoy or date.today())
-    estaticas = ["soilgrids_ph", "soilgrids_arcilla_pct", "soilgrids_arena_pct", "clsoilmaps_awc_total_mm",
+    estaticas = ["soilgrids_ph", "soilgrids_arcilla_pct", "soilgrids_arena_pct", "soilgrids_carbono_organico_g_kg",
+                 "clsoilmaps_awc_total_mm",
                  "cr2met_elevacion_celda_m", *CAPAS_ET0_FACTOR_MENSUAL, *CAPAS_GHI_MENSUAL, *CAPAS_GHI_POWER]
     filas = (await session.execute(text(
         "SELECT capa, valor FROM cache_consulta_grilla WHERE id_parcela = :id AND capa = ANY(:capas)"
@@ -211,7 +238,12 @@ async def leer_sitio(session: AsyncSession, id_parcela: int, hoy: date | None = 
     altitud_dem = (await session.execute(text(
         "SELECT avg(valor) FROM cache_celda WHERE id_parcela = :id AND capa = 'altitud_m' AND valor IS NOT NULL"
     ), {"id": id_parcela})).scalar()
-    return {"ph": valores.get("soilgrids_ph"), "awc_mm": valores.get("clsoilmaps_awc_total_mm"),
+    awc_mm, fuente_agua = valores.get("clsoilmaps_awc_total_mm"), FUENTE_AGUA_CLSOILMAPS
+    if awc_mm is None:
+        awc_mm = estimar_agua_disponible_mm(valores.get("soilgrids_arcilla_pct"), valores.get("soilgrids_arena_pct"),
+                                            valores.get("soilgrids_carbono_organico_g_kg"))
+        fuente_agua = FUENTE_AGUA_TEXTURA if awc_mm is not None else None
+    return {"ph": valores.get("soilgrids_ph"), "awc_mm": awc_mm, "fuente_agua_suelo": fuente_agua,
             "arcilla_pct": valores.get("soilgrids_arcilla_pct"), "arena_pct": valores.get("soilgrids_arena_pct"),
             "altitud_celda_m": valores.get("cr2met_elevacion_celda_m"),
             "altitud_dem_m": None if altitud_dem is None else float(altitud_dem),

@@ -129,3 +129,46 @@ def test_un_clima_mas_frio_cambia_la_lista():
     aptas = lambda c: {r["especie"] for r in correr(ce.ranking_idoneidad(sitio(c), repo_prueba(con_luz=False))) if r["apta"]}
     tibio, frio = aptas(ce.corregir_temperatura(clima, +4.0)), aptas(ce.corregir_temperatura(clima, -8.0))
     assert tibio != frio
+
+
+# ---------------------------------------------------------------- agua del suelo estimada fuera de Chile
+def test_el_agua_estimada_de_un_franco_ronda_los_280_mm():
+    import services.repositorio_clima as rc
+    assert rc.estimar_agua_disponible_mm(20, 40, 11.6) == pytest.approx(280, abs=15)    # 2 % de materia organica
+
+
+def test_un_suelo_arcilloso_guarda_mas_que_uno_arenoso_y_siempre_queda_en_los_limites():
+    import services.repositorio_clima as rc
+    arenoso, franco = rc.estimar_agua_disponible_mm(5, 90, 5), rc.estimar_agua_disponible_mm(20, 40, 11.6)
+    assert arenoso < franco
+    bajo, alto = rc.AGUA_SUELO_ESTIMADA_LIMITES_MM
+    assert all(bajo <= v <= alto for v in (arenoso, franco, rc.estimar_agua_disponible_mm(60, 5, 80)))
+
+
+def test_sin_textura_o_carbono_no_se_inventa_el_agua():
+    import services.repositorio_clima as rc
+    assert rc.estimar_agua_disponible_mm(None, 40, 10) is None
+    assert rc.estimar_agua_disponible_mm(20, 40, None) is None
+
+
+def test_leer_sitio_prefiere_clsoilmaps_y_estima_solo_si_falta():
+    import asyncio
+    from datetime import date
+    import services.repositorio_clima as rc
+
+    class Sesion:
+        def __init__(self, filas):
+            self.filas = filas
+
+        async def execute(self, sentencia, parametros=None):
+            fila = self.filas.pop(0)
+            return type("R", (), {"mappings": lambda s: s, "all": lambda s: fila, "scalar": lambda s: None})()
+
+    suelo = [{"capa": "soilgrids_arcilla_pct", "valor": 20.0}, {"capa": "soilgrids_arena_pct", "valor": 40.0},
+             {"capa": "soilgrids_carbono_organico_g_kg", "valor": 11.6}]
+    chile = asyncio.run(rc.leer_sitio(Sesion([suelo + [{"capa": "clsoilmaps_awc_total_mm", "valor": 437.0}], [], []]), 1, date(2026, 11, 15)))
+    fuera = asyncio.run(rc.leer_sitio(Sesion([suelo, [], []]), 1, date(2026, 11, 15)))
+    sin = asyncio.run(rc.leer_sitio(Sesion([[], [], []]), 1, date(2026, 11, 15)))
+    assert (chile["awc_mm"], chile["fuente_agua_suelo"]) == (437.0, "clsoilmaps")
+    assert fuera["fuente_agua_suelo"] == "estimado_textura" and 250 < fuera["awc_mm"] < 310
+    assert sin["awc_mm"] is None and sin["fuente_agua_suelo"] is None

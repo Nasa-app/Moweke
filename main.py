@@ -688,7 +688,7 @@ def _resumen_sitio(parcela: dict, sitio: dict, normales: dict, altitud, correcci
         "lluvia_anual_mm": None if normales["lluvia"] is None else round(sum(normales["lluvia"]), 1),
         "ghi_mensual_kwh_m2_dia": redondear(sitio["ghi_mensual"]),
         "fuente_radiacion": sitio["fuente_radiacion"], "fuente_clima": sitio.get("fuente_clima"),
-        "ph": sitio["ph"], "agua_disponible_suelo_mm": sitio["awc_mm"],
+        "ph": sitio["ph"], "agua_disponible_suelo_mm": sitio["awc_mm"], "fuente_agua_suelo": sitio.get("fuente_agua_suelo"),
         "altitud_m": None if altitud is None else round(altitud),
         "altitud_celda_m": None if sitio["altitud_celda_m"] is None else round(sitio["altitud_celda_m"]),
         "correccion_temperatura_c": round(correccion, 2),

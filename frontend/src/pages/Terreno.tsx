@@ -220,7 +220,9 @@ export default function Terreno() {
             <span className="ps-contexto">{t('terreno_suelo')}</span>
             <span style={{ fontSize: 22, fontWeight: 800 }}>{sitio?.ph != null ? t('terreno_ph', { n: numero(sitio.ph, 1), tipo: t(sitio.ph < 6.5 ? 'terreno_ph_acido' : sitio.ph <= 7.5 ? 'terreno_ph_neutro' : 'terreno_ph_alcalino') }) : '—'}</span>
             <span style={{ fontSize: 15, fontWeight: 700 }}>
-              {sitio?.agua_disponible_suelo_mm != null ? t('terreno_agua_suelo', { n: numero(sitio.agua_disponible_suelo_mm) }) : t('terreno_agua_suelo_sin')}
+              {sitio?.agua_disponible_suelo_mm != null
+                ? t(sitio.fuente_agua_suelo === 'estimado_textura' ? 'terreno_agua_suelo_estimada' : 'terreno_agua_suelo', { n: numero(sitio.agua_disponible_suelo_mm) })
+                : t('terreno_agua_suelo_sin')}
             </span>
             <SourceLink>SoilGrids · CLSoilMaps</SourceLink>
           </div>

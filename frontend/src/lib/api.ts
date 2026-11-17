@@ -432,6 +432,7 @@ export interface DatosSitio {
   fuente_clima: 'cr2met' | 'power' | 'power_daymet' | null
   ph: number | null
   agua_disponible_suelo_mm: number | null
+  fuente_agua_suelo: 'clsoilmaps' | 'estimado_textura' | null
   altitud_m: number | null
   altitud_celda_m: number | null
   correccion_temperatura_c: number
