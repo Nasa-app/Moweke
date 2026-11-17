@@ -6,6 +6,8 @@ dispararse a mano por los endpoints /api/admin/.../ingesta/*.
   explorador_solar  GHI anual y mensual 2004-2016 (radiacion) + elevacion del punto
   soilgrids         pH, textura, carbono organico
   cr2met            tmin/tmax/lluvia diarios de los ultimos doce meses completos
+  daymet            tmin/tmax/lluvia diarios a 1 km de los ultimos anos (NASA ORNL DAAC), solo en su cobertura
+                    (Norteamerica, Hawai, Puerto Rico): la referencia que corrige a POWER y ERA5 donde no hay CR2MET
   clsoilmaps        agua disponible total del suelo (0-200 cm)
   relieve           altitud y pendiente de cada celda de la grilla del predio (Copernicus
                     DEM GLO-30, datos abiertos, sin credenciales). Dato fijo: corre una vez
@@ -68,15 +70,16 @@ from rasterio.features import geometry_mask
 from rasterio.transform import xy
 from rasterio.warp import transform as reproyectar
 
-from services import (cliente_clsoilmaps, cliente_copernicus, cliente_cr2met, cliente_dem, cliente_firms,
-                      cliente_hand, cliente_hls, cliente_openmeteo, cliente_power, cliente_soilgrids, cliente_solar, db)
+from services import (cliente_clsoilmaps, cliente_copernicus, cliente_cr2met, cliente_daymet, cliente_dem,
+                      cliente_firms, cliente_hand, cliente_hls, cliente_openmeteo, cliente_power, cliente_soilgrids, cliente_solar, db)
 from services.motor_estres import calibrar_et0_mensual
 from services.repositorio_clima import (CAPAS_ET0_FACTOR_MENSUAL, CAPAS_GHI_MENSUAL, CAPAS_GHI_POWER,
                                         CAPAS_DISPONIBILIDAD_OPTICA,
                                         FRACCION_MIN_CELDA, NUBOSIDAD_ESCENA_MAX_PCT, RADIO_INCENDIO_KM,
-                                        VENTANA_OPTICA_DIAS, VISIBLE_MIN, corregir_contra_cr2met, guardar_celdas,
+                                        VENTANA_OPTICA_DIAS, VISIBLE_MIN, corregir_contra_referencia,
+                                        corregir_historia_contra_daymet, guardar_celdas,
                                         guardar_consultas_grilla, guardar_historia, leer_disponibilidad_optica,
-                                        leer_grilla, ventana_clima)
+                                        inicio_traslape_daymet, leer_grilla, ventana_clima)
 
 log = logging.getLogger("ingesta_predio")
 
@@ -90,6 +93,7 @@ PRODUCTOS = {
     "explorador_solar": "vista_rapida_2004_2016",
     "soilgrids": "v2.0_0-5cm",
     "cr2met": "v2.5_nrt_diario",
+    "daymet": "v4r1_diario_1km",
     "clima_historico": "openmeteo_era5_v1",
     "power": "diario_ag",
     "open_meteo": "pronostico_16d",
@@ -202,6 +206,22 @@ async def _cr2met(session: AsyncSession, id_parcela: int, lat: float, lon: float
     return None if filas else "sin_cobertura"
 
 
+async def _daymet(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
+    """tmin/tmax/lluvia diarios de Daymet para los ultimos anos: la ventana de doce meses y, antes de ella, los anos
+    con que se mide el sesgo de POWER (inicio_traslape_daymet). Daymet publica el ano completo con meses de retraso,
+    asi que lo que cae despues de su ultimo ano publicado no llega y la ventana casi nunca queda cubierta entera.
+    Fuera de su cobertura (Chile, Europa...) no sale a la red y queda 'sin_cobertura'. El registro de 1991 en adelante
+    que pide la historia no se guarda aca: lo baja _clima_historico."""
+    hoy = date.today()
+    inicio = min(ventana_clima(hoy)[0], inicio_traslape_daymet(hoy))
+    clima = await asyncio.to_thread(cliente_daymet.consultar_daymet, *_celda(lat, lon), inicio.isoformat(), hoy.isoformat())
+    filas = [_fila(id_parcela, f"daymet_{columna}", fecha.date(), fecha.date(), valor, "1km", "daymet_v4r1")
+             for fecha, dia in clima.iterrows() for columna in cliente_daymet.COLUMNAS
+             if (valor := dia[columna]) == valor]    # se salta el NaN (31 de dic. bisiesto, ano sin publicar)
+    await guardar_consultas_grilla(session, filas)
+    return None if filas else "sin_cobertura"
+
+
 async def _elevacion_celda(session: AsyncSession, id_parcela: int, lat: float, lon: float, mes: date) -> None:
     """Altura media de la celda de 5 km de CR2MET que da el clima del predio. El NetCDF no la trae
     (CR2 usa la topografia solo por dentro), asi que se calcula con el DEM de Copernicus sobre la
@@ -229,7 +249,10 @@ async def _clima_historico(session: AsyncSession, id_parcela: int, lat: float, l
     """El clima diario de 1991 al ultimo ano completo: ERA5 (Open-Meteo), corregido contra el CR2MET de la parcela
     como ya se corrige POWER (desplazamiento mensual de temperatura y un cociente de lluvia), y la calibracion
     mensual de la ET0 de Hargreaves contra la Penman-Monteith de ERA5. Guarda un renglon por ano completo. Corre
-    despues de CR2MET, que aporta el traslape para corregir; sin el, guarda la serie sin corregir y lo dice."""
+    despues de CR2MET, que aporta el traslape para corregir. Donde no hay CR2MET y el punto cae en la cobertura de
+    Daymet, se corrige contra Daymet (minima por cuantiles; ver repositorio_clima.corregir_historia_contra_daymet)
+    y la fuente queda 'era5_open_meteo_corregido_daymet'; sin ninguno, guarda la serie sin corregir y lo dice.
+    La calibracion de la ET0 sigue siendo solo de Chile."""
     hoy = date.today()
     era5 = await asyncio.to_thread(cliente_openmeteo.consultar_historia, lat, lon, f"{ANIO_INICIO_HISTORIA}-01-01",
                                    (hoy - timedelta(days=ATRASO_ERA5_DIAS)).isoformat())
@@ -245,8 +268,16 @@ async def _clima_historico(session: AsyncSession, id_parcela: int, lat: float, l
         cr2met = pd.DataFrame(filas).pivot(index="fecha", columns="capa", values="valor")
         cr2met.index = pd.to_datetime(cr2met.index)
         cr2met = cr2met.rename(columns={"cr2met_tmin": "tmin", "cr2met_tmax": "tmax", "cr2met_lluvia": "lluvia"})
-    corregido, sesgo = (era5[["tmin", "tmax", "lluvia"]], None) if cr2met is None else \
-        corregir_contra_cr2met(cr2met, era5[["tmin", "tmax", "lluvia"]])
+    sesgo, metodo = None, None
+    if cr2met is not None:
+        corregido, sesgo = corregir_contra_referencia(cr2met, era5[["tmin", "tmax", "lluvia"]])
+    else:
+        # Fuera de Chile: Daymet (1 km), si el punto cae en su cobertura. Se pide el registro completo en una sola
+        # llamada: los cuantiles de la minima necesitan decadas de traslape, no los pocos anos que guarda _daymet.
+        daymet = await asyncio.to_thread(cliente_daymet.consultar_daymet, *_celda(lat, lon),
+                                         f"{ANIO_INICIO_HISTORIA}-01-01", f"{hoy.year - 1}-12-31")
+        corregido, metodo = (era5[["tmin", "tmax", "lluvia"]], None) if daymet.empty else \
+            corregir_historia_contra_daymet(daymet, era5[["tmin", "tmax", "lluvia"]])
     if cr2met is not None:
         factores = calibrar_et0_mensual(cr2met, era5["et0_pm"], lat)
         await guardar_consultas_grilla(session, [
@@ -257,8 +288,8 @@ async def _clima_historico(session: AsyncSession, id_parcela: int, lat: float, l
         d = corregido.loc[str(anio)]
         if len(d) == (366 if pd.Timestamp(anio, 12, 31).dayofyear == 366 else 365):
             anios[anio] = d
-    await guardar_historia(session, id_parcela, anios, "era5_open_meteo" + ("_corregido_cr2met" if sesgo else "_sin_corregir"),
-                           PRODUCTOS["clima_historico"])
+    referencia = "_corregido_daymet" if metodo else "_corregido_cr2met" if sesgo else "_sin_corregir"
+    await guardar_historia(session, id_parcela, anios, "era5_open_meteo" + referencia, PRODUCTOS["clima_historico"])
     return None if anios else "sin_cobertura"
 
 
@@ -303,15 +334,25 @@ def _filas_diarias(id_parcela: int, clima, prefijo: str, resolucion: str, produc
 
 async def _power(session: AsyncSession, id_parcela: int, lat: float, lon: float) -> str | None:
     hoy = date.today()
-    ultimo = (await session.execute(text(
-        "SELECT max(periodo_inicio) FROM cache_consulta_grilla WHERE id_parcela = :id AND capa = 'power_tmin'"
-    ), {"id": id_parcela})).scalar_one()
+    primero, ultimo = (await session.execute(text(
+        "SELECT min(periodo_inicio), max(periodo_inicio) FROM cache_consulta_grilla "
+        "WHERE id_parcela = :id AND capa = 'power_tmin'"), {"id": id_parcela})).one()
     # Primera vez: toda la ventana de clima del predio (humedad relativa del ano completo,
     # que CR2MET no trae). Despues, solo el tramo que POWER todavia puede corregir.
-    desde = ventana_clima(hoy)[0] if ultimo is None else ultimo - timedelta(days=DIAS_REVISION_POWER)
+    inicio_ventana = ventana_clima(hoy)[0]
+    desde = inicio_ventana if ultimo is None else ultimo - timedelta(days=DIAS_REVISION_POWER)
+    # Con Daymet de referencia, tambien los ultimos anos: el traslape con Daymet esta antes de la ventana.
+    traslape = inicio_traslape_daymet(hoy)
+    if (primero is None or primero > traslape) and (await session.execute(text(
+            "SELECT 1 FROM cache_consulta_grilla WHERE id_parcela = :id AND capa = 'daymet_tmin' LIMIT 1"),
+            {"id": id_parcela})).first():
+        desde = min(desde, traslape)
     clima = await asyncio.to_thread(cliente_power.consultar_power, *_celda(lat, lon),
                                      desde.isoformat(), hoy.isoformat(), 60)
     filas = _filas_diarias(id_parcela, clima, "power", "0.5deg_~55km", "POWER_daily_ag")
+    # Antes de la ventana solo sirve lo que se mide contra Daymet: temperatura y lluvia.
+    filas = [f for f in filas if f["periodo_inicio"] >= inicio_ventana
+             or f["capa"] in ("power_tmin", "power_tmax", "power_lluvia")]
     await guardar_consultas_grilla(session, filas)
     if filas:
         await _power_radiacion_mensual(session, id_parcela, lat, lon)
@@ -722,7 +763,7 @@ async def _inundacion(session: AsyncSession, id_parcela: int, lat: float, lon: f
     return None if filas else "sin_cobertura"
 
 
-_INGESTAS = {"explorador_solar": _solar, "soilgrids": _soilgrids, "cr2met": _cr2met,
+_INGESTAS = {"explorador_solar": _solar, "soilgrids": _soilgrids, "cr2met": _cr2met, "daymet": _daymet,
              "clima_historico": _clima_historico, "power": _power, "open_meteo": _open_meteo, "firms": _firms,
              "sentinel2_nubes": _sentinel2_nubes, "relieve": _relieve, "inundacion": _inundacion,
              "sentinel2_ndvi": _sentinel2_ndvi,
@@ -755,7 +796,7 @@ async def estado_ingesta(session: AsyncSession, id_parcela: int) -> dict:
                fecha_solicitud < now() - make_interval(mins => CAST(:vigente AS integer)) AS viejo,
                fecha_solicitud < now() - make_interval(mins => CAST(:espera AS integer)) AS enfriado,
                extract(epoch FROM now() - fecha_completado) / 3600 AS horas_desde,
-               -- CR2MET: vence al cambiar de mes (la ventana se corre) y otra vez el dia 10
+               -- CR2MET (y Daymet, que publica anos nuevos sin aviso): vence al cambiar de mes (la ventana se corre) y otra vez el dia 10
                -- (el mes anterior ya quedo completo pese a los ~9 dias de atraso del producto).
                fecha_completado < date_trunc('month', now())
                  OR (extract(day FROM now()) >= 10
@@ -785,7 +826,7 @@ async def estado_ingesta(session: AsyncSession, id_parcela: int) -> dict:
         elif estado == "completo" and (
                 (fuente in FUENTES_DIARIAS and f["horas_desde"] is not None
                  and f["horas_desde"] > HORAS_VIGENCIA.get(fuente, HORAS_VIGENCIA_DIARIA))
-                or (fuente == "cr2met" and f["mes_vencido"])
+                or (fuente in ("cr2met", "daymet") and f["mes_vencido"])
                 or (fuente == "clima_historico" and f["anio_vencido"])):
             estado = "vencida"
         out[fuente] = {"estado": estado,

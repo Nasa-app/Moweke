@@ -224,6 +224,7 @@ export const textos: Record<string, { es: string; en: string }> = {
   preparando_focos_detalle: { es: 'Incendios cerca de tu parcela', en: 'Fires near your plot' },
   preparando_focos_fuente: { es: 'NASA FIRMS (satélites VIIRS)', en: 'NASA FIRMS (VIIRS satellites)' },
   preparando_clima_global: { es: 'En este lugar usamos datos de clima globales, de menor resolución. Las heladas pueden estar subestimadas.', en: 'For this location we use global climate data, at a lower resolution. Frosts may be underestimated.' },
+  preparando_clima_daymet: { es: 'En este lugar usamos datos de clima globales ajustados con Daymet, de la NASA, a 1 km. Las heladas están corregidas con lo observado en tu zona.', en: 'For this location we use global climate data adjusted with Daymet, from NASA, at 1 km. Frosts are corrected with what was observed in your area.' },
   preparando_fallos_reintentar: { es: 'Algunos datos no se pudieron reunir. Toca Reintentar.', en: "Some data couldn't be gathered. Tap Retry." },
   preparando_fallos_espera: { es: 'Algunos datos no se pudieron reunir. Prueba otra vez en unos minutos.', en: "Some data couldn't be gathered. Try again in a few minutes." },
   preparando_seguir_registro: { es: 'Seguir con el registro', en: 'Continue signing up' },

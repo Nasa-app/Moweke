@@ -508,6 +508,44 @@ def suelo_sin_declarar(sitio: dict) -> list[str]:
     return [campo for campo in CAMPOS_SUELO if suelo.get(campo) is None]
 
 
+# Un puntaje alto con el suelo sin conocer promete lo que no se midio: factores sin dato no puntuan, asi que una
+# especie buena en clima daba 100 % sin saber nada del suelo. Con el suelo incompleto el puntaje tiene un maximo.
+TOPE_SUELO_SIN_DECLARAR = 0.90   # falta alguna de las cuatro respuestas del agricultor (CAMPOS_SUELO)
+TOPE_SUELO_SIN_SATELITE = 0.80   # no hay ni pH ni textura de SoilGrids: falta la base del suelo
+_CAMPOS_PUNTAJE = ("puntaje", "puntaje_ano_dificil")
+
+
+def tope_por_suelo(sitio: dict) -> tuple[float, str] | None:
+    """(tope, motivo) del puntaje segun lo que se sabe del suelo, o None si esta completo: pH o textura de satelite
+    y las cuatro respuestas del agricultor. Sin pH ni textura manda el tope menor, aunque el agricultor haya
+    respondido todo."""
+    if sitio.get("ph") is None and not sitio.get("textura") and not sitio.get("textura_posibles"):
+        return TOPE_SUELO_SIN_SATELITE, "sin_suelo_de_satelite"
+    if suelo_sin_declarar(sitio):
+        return TOPE_SUELO_SIN_DECLARAR, "suelo_sin_declarar"
+    return None
+
+
+def aplicar_tope_suelo(ranking: list[dict], sitio: dict) -> list[dict]:
+    """Limita `puntaje` y `puntaje_ano_dificil` de cada especie al tope de tope_por_suelo() y lo informa en
+    `tope_suelo` ({'tope', 'motivo'}; 'puntaje_sin_tope' solo si el tope lo bajo). El orden no se pierde: el
+    puntaje sin tope desempata. Con el suelo completo no toca nada."""
+    nivel = tope_por_suelo(sitio)
+    if nivel is None:
+        return ranking
+    tope, motivo = nivel
+    for r in ranking:
+        r["tope_suelo"] = {"tope": tope, "motivo": motivo}
+        if r.get("puntaje") is not None and r["puntaje"] > tope:
+            r["tope_suelo"]["puntaje_sin_tope"] = r["puntaje"]
+        for campo in _CAMPOS_PUNTAJE:
+            if r.get(campo) is not None:
+                r[campo] = min(r[campo], tope)
+    ranking.sort(key=lambda r: (r["apta"] is True, r["puntaje"] if r["puntaje"] is not None else -1.0,
+                                r["tope_suelo"].get("puntaje_sin_tope", r["puntaje"] or 0.0)), reverse=True)
+    return ranking
+
+
 def delta_temperatura_por_altitud(altitud_parcela_m: float | None, altitud_celda_m: float | None) -> float:
     """Grados a sumar a la temperatura de la celda de 5 km de CR2MET para llevarla a la altura de la
     parcela: la temperatura baja GRADIENTE_TEMPERATURA_C_POR_M por metro de subida. Con la

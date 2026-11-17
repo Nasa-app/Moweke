@@ -91,6 +91,7 @@ export const textos: Record<string, { es: string; en: string }> = {
   terreno_ph_neutro: { es: 'neutro', en: 'neutral' },
   terreno_ph_alcalino: { es: 'alcalino', en: 'alkaline' },
   terreno_agua_suelo: { es: 'Guarda {n} litros de agua por m²', en: 'Holds {n} liters of water per m²' },
+  terreno_agua_suelo_estimada: { es: 'Guardaría unos {n} litros de agua por m² (estimado por la textura)', en: 'Would hold about {n} liters of water per m² (estimated from texture)' },
   terreno_agua_suelo_sin: { es: 'Agua del suelo sin dato', en: 'No soil water data' },
   terreno_sol_dia: { es: 'Sol que llega cada día', en: 'Sun that arrives each day' },
   terreno_sol_horas: { es: '{n} h de sol pleno', en: '{n} h of full sun' },
@@ -108,6 +109,10 @@ export const textos: Record<string, { es: string; en: string }> = {
   terreno_clima_global: {
     es: 'El clima de este terreno viene de datos globales, de menor resolución que los de Chile. Las heladas pueden estar subestimadas.',
     en: "This plot's climate comes from global data, at a lower resolution than the Chilean data. Frosts may be underestimated.",
+  },
+  terreno_clima_daymet: {
+    es: 'El clima de este terreno viene de datos globales ajustados con Daymet, de la NASA, que mide a 1 km. Las temperaturas mínimas, y con ellas las heladas, están corregidas con lo observado en tu zona.',
+    en: "This plot's climate comes from global data adjusted with Daymet, from NASA, which measures at 1 km. Minimum temperatures, and with them frosts, are corrected with what was observed in your area.",
   },
   terreno_suelo_titulo: { es: 'Cuéntanos de tu suelo', en: 'Tell us about your soil' },
   terreno_suelo_intro: {

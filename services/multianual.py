@@ -333,7 +333,7 @@ async def ranking_multianual(sitio: dict, repo, historia: dict[int, pd.DataFrame
     base = await ce.ranking_idoneidad(sitio, repo, clima=clima, lat=lat, categorias=categorias, riego=riego,
                                       incluir_silvestres=incluir_silvestres, unir_variedades=unir_variedades, solo=solo)
     if not historia or len(historia) < ANIOS_RECIENTE + MIN_ANIOS_PERIODO:
-        return base, None
+        return ce.aplicar_tope_suelo(base, sitio), None
 
     cat = (await repo.catalogo_vectorial()) if hasattr(repo, "catalogo_vectorial") else \
         CatalogoVectorial(await repo.requisitos_genericos(), await repo.equivalencias_luz())
@@ -378,6 +378,7 @@ async def ranking_multianual(sitio: dict, repo, historia: dict[int, pd.DataFrame
     base.sort(key=lambda r: r["especie"])
     base.sort(key=lambda r: (r["apta"] is True, r["puntaje"] if r["puntaje"] is not None else -1.0,
                              r.get("puntaje_ano_dificil") or 0.0, *prioridad(r)), reverse=True)
+    ce.aplicar_tope_suelo(base, sitio)
     resumen = {k: tendencia[k] for k in ("anios", "primer_anio", "ultimo_anio", "temp_c_por_decada_observada",
                                          "lluvia_pct_por_decada_observada")}
     resumen.update(periodo_historico=[historico[0], historico[-1]], periodo_reciente=[reciente[0], reciente[-1]],

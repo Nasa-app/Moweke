@@ -92,8 +92,14 @@ export default function Preparando() {
   if (!idParcela) return <Navigate to="/terreno/perimetro" replace />
 
   const estado = parcela?.estado_ingesta
-  const climaListo = estado ? ['completo', 'vencida'].includes(estado.cr2met.estado) && estado.cr2met.detalle === null : false
+  // El clima del terreno está listo si lo trajo cualquiera de las tres fuentes: CR2MET (Chile), Daymet (Norteamérica)
+  // o NASA POWER (todo el mundo). CR2MET sin cobertura ya no bloquea: fuera de Chile el clima viene de las otras dos.
+  const conDatos = (fuente: string) => ['completo', 'vencida'].includes(estado?.[fuente]?.estado ?? '') && estado?.[fuente]?.detalle === null
+  const climaConDaymet = conDatos('daymet')
+  const climaListo = conDatos('cr2met') || climaConDaymet || conDatos('power')
   const climaSinCobertura = estado?.cr2met.detalle === 'sin_cobertura'
+  const climaLlegando = ['pendiente', 'en_proceso', 'sin_iniciar'].includes(estado?.power?.estado ?? '')
+  const sinClima = climaSinCobertura && !climaListo
   const hayFallos = avances.includes('fallo')
   const puedeReintentar = estado ? Object.values(estado).some((e) => e.reintentable) : false
 
@@ -148,8 +154,8 @@ export default function Preparando() {
       </ul>
 
       {climaSinCobertura ? (
-        <p className="ps-pad ps-nota" role="alert" style={{ margin: '12px 0 0 0', color: 'var(--riesgo-texto)' }}>
-          {t('preparando_clima_global')}
+        <p className="ps-pad ps-nota" role={climaConDaymet ? undefined : 'alert'} style={{ margin: '12px 0 0 0', color: climaConDaymet ? undefined : 'var(--riesgo-texto)' }}>
+          {t(climaConDaymet ? 'preparando_clima_daymet' : 'preparando_clima_global')}
         </p>
       ) : null}
       {hayFallos ? (
@@ -169,23 +175,23 @@ export default function Preparando() {
       ) : null}
 
       <div style={{ position: 'sticky', bottom: 'calc(84px + env(safe-area-inset-bottom, 0px))', marginTop: 'auto', padding: '14px 16px 28px 16px', background: 'var(--arena)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {climaListo || !climaSinCobertura ? (
+        {climaListo || !sinClima ? (
           <Link to={enOnboarding ? '/onboarding/meta' : '/terreno'} className="ps-btn">
             {enOnboarding ? t(climaListo ? 'preparando_seguir_registro' : 'preparando_seguir_mientras') : t('preparando_ir_terreno')}
           </Link>
         ) : (
           <button type="button" disabled className="ps-btn">
-            {climaSinCobertura ? t('preparando_sin_datos_lugar') : t('preparando_reuniendo_clima')}
+            {climaLlegando ? t('preparando_reuniendo_clima') : t('preparando_sin_datos_lugar')}
           </button>
         )}
         <p className="ps-nota" style={{ margin: '0 0 8px 0', textAlign: 'center' }}>
-          {climaListo ? (enOnboarding ? t('preparando_nota_onboarding') : t('preparando_nota_terreno')) : climaSinCobertura ? t('preparando_nota_espera') : t('preparando_nota_mientras')}
+          {climaListo ? (enOnboarding ? t('preparando_nota_onboarding') : t('preparando_nota_terreno')) : sinClima ? t('preparando_nota_espera') : t('preparando_nota_mientras')}
         </p>
         <Link to="/terreno/zonas" className="ps-btn-secundario" style={{ minHeight: 52, display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}>
           {t('preparando_ver_mapa')}
         </Link>
         <p className="ps-nota" style={{ margin: 0, textAlign: 'center' }}>{t('preparando_mapa_nota')}</p>
-        {climaSinCobertura ? (
+        {sinClima && !climaLlegando ? (
           <Link to="/terreno/perimetro" className="ps-btn-texto">
             {t('preparando_marcar_de_nuevo')}
           </Link>
