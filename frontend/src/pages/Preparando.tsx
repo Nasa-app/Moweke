@@ -94,6 +94,7 @@ export default function Preparando() {
   const estado = parcela?.estado_ingesta
   const climaListo = estado ? ['completo', 'vencida'].includes(estado.cr2met.estado) && estado.cr2met.detalle === null : false
   const climaSinCobertura = estado?.cr2met.detalle === 'sin_cobertura'
+  const climaConDaymet = estado ? ['completo', 'vencida'].includes(estado.daymet?.estado ?? '') && estado.daymet.detalle === null : false
   const hayFallos = avances.includes('fallo')
   const puedeReintentar = estado ? Object.values(estado).some((e) => e.reintentable) : false
 
@@ -148,8 +149,8 @@ export default function Preparando() {
       </ul>
 
       {climaSinCobertura ? (
-        <p className="ps-pad ps-nota" role="alert" style={{ margin: '12px 0 0 0', color: 'var(--riesgo-texto)' }}>
-          {t('preparando_clima_global')}
+        <p className="ps-pad ps-nota" role={climaConDaymet ? undefined : 'alert'} style={{ margin: '12px 0 0 0', color: climaConDaymet ? undefined : 'var(--riesgo-texto)' }}>
+          {t(climaConDaymet ? 'preparando_clima_daymet' : 'preparando_clima_global')}
         </p>
       ) : null}
       {hayFallos ? (

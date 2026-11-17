@@ -43,6 +43,7 @@ const fuente = (id: string, origenes: Origen[]): FuenteDato => ({
 
 export const FUENTES: FuenteDato[] = [
   fuente('clima', ['NASA', 'Chile']),
+  fuente('daymet', ['NASA']),
   fuente('sol', ['NASA']),
   fuente('incendios', ['NASA']),
   fuente('verdor', ['Copernicus']),

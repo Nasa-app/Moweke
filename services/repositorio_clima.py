@@ -16,6 +16,7 @@ import json
 import math
 from datetime import date, timedelta
 
+import numpy as np
 import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,12 +81,32 @@ CAPAS_GHI_MENSUAL = tuple(f"explorador_solar_ghi_mes_{m:02d}" for m in range(1, 
 CAPAS_GHI_POWER = tuple(f"power_ghi_mes_{m:02d}" for m in range(1, 13))
 FUENTE_RADIACION_POWER = "NASA POWER"
 FUENTE_RADIACION_EXPLORADOR = "Explorador Solar (Chile)"
+# leer_sitio()["fuente_clima"]: "cr2met" (Chile), "power" (POWER sin corregir o corregido solo contra CR2MET parcial) o esto.
+FUENTE_CLIMA_POWER_DAYMET = "power_daymet"
 # Factor por mes que lleva la ET0 de Hargreaves (con el clima de CR2MET) al nivel de Penman-Monteith (ERA5): ver
 # ingesta_predio._clima_historico. Enero = mes 1.
 CAPAS_ET0_FACTOR_MENSUAL = tuple(f"et0_factor_hargreaves_mes_{m:02d}" for m in range(1, 13))
 _CAPAS_CLIMA = {"cr2met_tmin": "tmin", "cr2met_tmax": "tmax", "cr2met_lluvia": "lluvia"}
 _CAPAS_POWER = {"power_tmin": "tmin", "power_tmax": "tmax", "power_lluvia": "lluvia"}
+_CAPAS_DAYMET = {"daymet_tmin": "tmin", "daymet_tmax": "tmax", "daymet_lluvia": "lluvia"}
+# Daymet publica el ano completo con meses de retraso: la ventana de doce meses casi nunca le queda dentro. Se mide el
+# sesgo de POWER en los ultimos anos con dato de los dos (desde el 1 de enero de hace tantos anos), no en la ventana.
+ANIOS_TRASLAPE_DAYMET = 3
 COBERTURA_CR2MET_MIN = 0.9   # fraccion de dias de la ventana con CR2MET para llamar al clima "cr2met"
+
+
+def inicio_traslape_daymet(hoy: date) -> date:
+    """Desde cuando se guarda el clima de POWER para medir su sesgo contra Daymet (anterior a la ventana)."""
+    return date(hoy.year - ANIOS_TRASLAPE_DAYMET, 1, 1)
+
+
+def elegir_referencia(cr2met: pd.DataFrame, daymet: pd.DataFrame) -> tuple[str | None, pd.DataFrame | None]:
+    """La serie contra la que se corrigen POWER y ERA5: CR2MET si trae dias suficientes (Chile), si no Daymet
+    (Norteamerica, Hawai y Puerto Rico), si no ninguna. Devuelve ('cr2met' | 'daymet' | None, serie)."""
+    for nombre, serie in (("cr2met", cr2met), ("daymet", daymet)):
+        if int(serie[["tmin", "tmax", "lluvia"]].notna().all(axis=1).sum()) >= MIN_DIAS_TRASLAPE:
+            return nombre, serie
+    return None, None
 
 
 async def leer_historia(session: AsyncSession, id_parcela: int) -> dict[int, pd.DataFrame]:
@@ -148,29 +169,40 @@ async def leer_sitio(session: AsyncSession, id_parcela: int, hoy: date | None = 
         ghi, fuente_radiacion = [None], None
     et0_factor = [valores.get(c) for c in CAPAS_ET0_FACTOR_MENSUAL]
 
+    hoy = hoy or date.today()
     filas_clima = (await session.execute(text("""
         SELECT periodo_inicio AS fecha, capa, valor FROM cache_consulta_grilla
         WHERE id_parcela = :id AND capa = ANY(:capas) AND valor IS NOT NULL
           AND periodo_inicio BETWEEN :inicio AND :fin
         ORDER BY periodo_inicio
-    """), {"id": id_parcela, "capas": [*_CAPAS_CLIMA, *_CAPAS_POWER], "inicio": inicio, "fin": fin})).mappings().all()
+    """), {"id": id_parcela, "capas": [*_CAPAS_CLIMA, *_CAPAS_POWER, *_CAPAS_DAYMET],
+           "inicio": min(inicio, inicio_traslape_daymet(hoy)), "fin": fin})).mappings().all()
     clima, fuente_clima = None, None
     if filas_clima:
         ancho = pd.DataFrame(filas_clima).pivot(index="fecha", columns="capa", values="valor")
         ancho.index = pd.to_datetime(ancho.index)
+        en_ventana = (ancho.index >= pd.Timestamp(inicio)) & (ancho.index <= pd.Timestamp(fin))
 
         def de(capas: dict) -> pd.DataFrame:
             return ancho.reindex(columns=list(capas)).rename(columns=capas)[["tmin", "tmax", "lluvia"]]
 
-        cr2met, power = de(_CAPAS_CLIMA), de(_CAPAS_POWER)
-        # Donde CR2MET existe manda; POWER (global, celda de ~55 km) rellena lo que falte, corregido contra
-        # CR2MET cuando ambos se solapan (igual que leer_clima_diario).
-        power = _corregir(power, _sesgo_power(cr2met, power))
+        cr2met, power = de(_CAPAS_CLIMA)[en_ventana], de(_CAPAS_POWER)
+        # Donde CR2MET existe manda; POWER (global, celda de ~55 km) rellena lo que falte, corregido contra la
+        # referencia (CR2MET, o Daymet fuera de Chile) donde ambos se solapan (igual que leer_clima_diario).
+        origen, referencia = elegir_referencia(cr2met, de(_CAPAS_DAYMET))
+        if origen != "daymet":
+            power = power[en_ventana]     # con CR2MET solo cuenta la ventana, como siempre
+        sesgo = None if referencia is None else _sesgo_power(referencia, power)
+        power = _corregir(power, sesgo)
+        power = power[(power.index >= pd.Timestamp(inicio)) & (power.index <= pd.Timestamp(fin))]
         clima = cr2met.combine_first(power).dropna(how="all")
         if not clima.empty:
             dias_ventana = (fin - inicio).days + 1
             dias_cr2met = int(cr2met[["tmin", "tmax"]].notna().all(axis=1).sum())
-            fuente_clima = "cr2met" if dias_cr2met >= COBERTURA_CR2MET_MIN * dias_ventana else "power"
+            if dias_cr2met >= COBERTURA_CR2MET_MIN * dias_ventana:
+                fuente_clima = "cr2met"
+            else:
+                fuente_clima = FUENTE_CLIMA_POWER_DAYMET if origen == "daymet" and sesgo else "power"
         else:
             clima = None
 
@@ -210,6 +242,12 @@ def _sesgo_power(cr2met: pd.DataFrame, power: pd.DataFrame) -> dict | None:
     heladas. POWER ve 1 de 9, 1 de 18 y 0 de 5; corregido ve 4, 4 y 0 -- restar una media
     no devuelve los extremos que la celda aplana.
 
+    Contra Daymet (17-nov-2026, mismos tres puntos, ajuste con anos pares y prueba en impares) la media mensual
+    baja el error absoluto de tmin de POWER de 1,01 / 3,18 / 1,84 a 1,00 / 2,12 / 1,71 (Willamette / Montana /
+    Iowa). En las heladas ayuda donde el sesgo es grande (Montana, POWER 2,5 C mas frio: 211 dias con tmin < 0 por
+    ano contra 167 de Daymet, corregido 160) y no donde es chico (Willamette: 41 sin corregir, 45 corregido, 42
+    Daymet; Iowa: 144 / 150 / 145). Los cuantiles no mejoran a la media con el traslape corto de POWER.
+
     La lluvia lleva un cociente unico y no uno por mes: el de un mes seco sale de muy
     pocos milimetros (nov-2025 en Quemchi: 31 contra 15) y, aplicado al mismo mes del ano
     siguiente, duplico una lluvia que POWER ya traia bien."""
@@ -247,11 +285,64 @@ def _sesgo_modelo(cr2met: pd.DataFrame, modelo: pd.DataFrame) -> dict | None:
             "tmax": float((comun.tmax_m - comun.tmax).mean())}
 
 
-def corregir_contra_cr2met(cr2met: pd.DataFrame, otra: pd.DataFrame) -> tuple[pd.DataFrame, dict | None]:
-    """La serie `otra` (tmin, tmax, lluvia) corregida con su sesgo contra el CR2MET de la misma parcela, y el
-    sesgo aplicado (None si no hay dias en comun suficientes: entonces no se corrige)."""
-    sesgo = _sesgo_power(cr2met, otra)
+def corregir_contra_referencia(referencia: pd.DataFrame, otra: pd.DataFrame) -> tuple[pd.DataFrame, dict | None]:
+    """La serie `otra` (tmin, tmax, lluvia) corregida con su sesgo contra la serie de referencia de la misma parcela
+    (CR2MET, o Daymet fuera de Chile; ver elegir_referencia), y el sesgo aplicado (None si no hay dias en comun
+    suficientes: entonces no se corrige)."""
+    sesgo = _sesgo_power(referencia, otra)
     return _corregir(otra, sesgo), sesgo
+
+
+CUANTILES_AJUSTE = np.linspace(0.02, 0.98, 49)
+VENTANA_CUANTILES_DIAS = 15     # el mapa de un dia del ano se arma con los dias a +-15 de ese dia, de todos los anos
+MIN_DIAS_CUANTILES = 5 * 365    # con menos traslape que esto los cuantiles no se sostienen: queda la media mensual
+
+
+def corregir_historia_contra_daymet(daymet: pd.DataFrame, era5: pd.DataFrame) -> tuple[pd.DataFrame, str | None]:
+    """ERA5 (tmin, tmax, lluvia; decadas de dias) corregido contra Daymet. Devuelve la serie y el metodo usado:
+    'cuantiles' o 'media_mensual' (None si no hay traslape suficiente: se devuelve sin corregir).
+
+    tmax y lluvia llevan la correccion de siempre (corregir_contra_referencia). La minima, con cuantiles por dia
+    del ano: cada valor de ERA5 pasa al valor de Daymet que tiene su mismo rango entre los dias parecidos del
+    ano; fuera del rango ajustado se le suma el desplazamiento del extremo. Restar una media por mes no devuelve
+    los extremos que la celda aplana; esto si, y es lo que cuenta las heladas.
+
+    MEDIDO el 17-nov-2026 con ERA5 y Daymet de 1991 a 2025, ajustando con los anos pares (17 anos) y probando
+    en los impares, en tres puntos: Willamette (Oregon, 45,00 N 123,15 O), Montana (46,87 N 113,99 O) e Iowa
+    (42,03 N 93,62 O). Dias de helada por ano (tmin < 0 C) en los anos de prueba, Daymet / ERA5 sin corregir /
+    media mensual / cuantiles: Willamette 42,4 / 63,0 / 49,7 / 43,7; Montana 167,1 / 136,2 / 166,5 / 170,3; Iowa
+    144,9 / 128,6 / 143,6 / 144,1. Con tmin < -2 C: 14,8 / 32,7 / 21,8 / 16,4; 127,5 / 102,8 / 119,7 / 130,3;
+    118,2 / 107,4 / 121,5 / 118,4. Error absoluto medio de tmin: 1,06 / 0,87 / 0,84; 2,81 / 2,01 / 1,96; 2,16 /
+    1,61 / 1,55 (sin corregir / media / cuantiles). Los cuantiles igualan o mejoran a la media en las heladas, y
+    donde mas pesa es en climas templados como Willamette, donde la helada es un evento marginal. Con pocos anos
+    de ajuste ya no ganan (con los ultimos 10 y prueba en los 25 anteriores, Willamette dio 34,2 contra 39,8 de
+    Daymet con cuantiles y 42,3 con media): por eso solo se usan con el registro largo y no con el traslape de
+    unos pocos anos que tiene POWER, que sigue con la media mensual."""
+    comun = daymet[["tmin", "tmax", "lluvia"]].join(era5[["tmin", "tmax", "lluvia"]], rsuffix="_e").dropna()
+    corregido, sesgo = corregir_contra_referencia(daymet, era5[["tmin", "tmax", "lluvia"]])
+    if sesgo is None:
+        return corregido, None
+    if len(comun) < MIN_DIAS_CUANTILES:
+        return corregido, "media_mensual"
+    dia_comun = comun.index.dayofyear.to_numpy()
+    dia_era5 = era5.index.dayofyear.to_numpy()
+    minima = era5["tmin"].to_numpy(dtype=float).copy()
+    for dia in range(1, 367):
+        cerca = np.abs(dia_comun - dia)
+        cerca = np.minimum(cerca, 366 - cerca) <= VENTANA_CUANTILES_DIAS
+        indices = np.flatnonzero(dia_era5 == dia)
+        if cerca.sum() < 60 or not len(indices):
+            continue
+        origen = np.quantile(comun["tmin_e"].to_numpy()[cerca], CUANTILES_AJUSTE)
+        destino = np.quantile(comun["tmin"].to_numpy()[cerca], CUANTILES_AJUSTE)
+        x = era5["tmin"].to_numpy(dtype=float)[indices]
+        y = np.interp(x, origen, destino)
+        y = np.where(x < origen[0], x + destino[0] - origen[0], y)
+        minima[indices] = np.where(x > origen[-1], x + destino[-1] - origen[-1], y)
+    corregido = corregido.copy()
+    corregido["tmin"] = pd.Series(minima, index=era5.index)
+    corregido["tmin"] = corregido[["tmin", "tmax"]].min(axis=1).where(corregido["tmin"].notna())
+    return corregido, "cuantiles"
 
 
 def _corregir(bloque: pd.DataFrame, sesgo: dict | None) -> pd.DataFrame:
@@ -290,12 +381,12 @@ async def leer_clima_diario(session: AsyncSession, id_parcela: int, desde: date,
     La serie termina en el primer hueco de tmin/tmax que no se pueda cerrar interpolando
     3 dias -- pheno_engine.simular() se niega a correr sobre huecos. None si no hay nada."""
     hoy = hoy or date.today()
-    capas = [f"{p}_{v}" for p in ("cr2met", "power", "openmeteo") for v in ("tmin", "tmax", "lluvia", "rh")]
+    capas = [f"{p}_{v}" for p in ("cr2met", "power", "openmeteo", "daymet") for v in ("tmin", "tmax", "lluvia", "rh")]
     filas = (await session.execute(text("""
         SELECT periodo_inicio AS fecha, capa, valor, fecha_consulta::date AS consultado
         FROM cache_consulta_grilla
         WHERE id_parcela = :id AND capa = ANY(:capas) AND valor IS NOT NULL AND periodo_inicio >= :desde
-    """), {"id": id_parcela, "capas": capas, "desde": desde - timedelta(days=DIAS_ESTIMADOS_MAX + 1)})).mappings().all()
+    """), {"id": id_parcela, "capas": capas, "desde": min(desde - timedelta(days=DIAS_ESTIMADOS_MAX + 1), inicio_traslape_daymet(hoy))})).mappings().all()
     if not filas:
         return None
     crudo = pd.DataFrame(filas)
@@ -306,9 +397,15 @@ async def leer_clima_diario(session: AsyncSession, id_parcela: int, desde: date,
         return ancho[[f"{prefijo}_{v}" for v in ("tmin", "tmax", "lluvia", "rh")]].set_axis(
             ["tmin", "tmax", "lluvia", "rh"], axis=1)
 
-    cr2met, power, modelo = de("cr2met"), de("power"), de("openmeteo")
-    sesgo_power, sesgo_modelo = _sesgo_power(cr2met, power), _sesgo_modelo(cr2met, modelo)
+    corte = pd.Timestamp(desde - timedelta(days=DIAS_ESTIMADOS_MAX + 1))
+    cr2met, power, modelo, daymet = de("cr2met"), de("power"), de("openmeteo"), de("daymet")
+    origen, referencia = elegir_referencia(cr2met, daymet)
+    if origen != "daymet":
+        cr2met, power, modelo = (b[b.index >= corte] for b in (cr2met, power, modelo))   # con CR2MET, como siempre
+    sesgo_power = None if referencia is None else _sesgo_power(referencia, power)
+    sesgo_modelo = None if referencia is None else _sesgo_modelo(referencia, modelo)
     power, modelo = _corregir(power, sesgo_power), _corregir(modelo, sesgo_modelo)
+    power, modelo, cr2met = (b[b.index >= corte] for b in (power, modelo, cr2met))
     observado = cr2met.combine_first(power)       # CR2MET manda; POWER rellena dias y la rh
     observado["rh"] = power["rh"]
     hay_observado = observado[["tmin", "tmax"]].notna().all(axis=1)
@@ -333,7 +430,7 @@ async def leer_clima_diario(session: AsyncSession, id_parcela: int, desde: date,
         serie.loc[dias, ["tmin", "tmax", "lluvia", "rh"]] = bloque.loc[dias, ["tmin", "tmax", "lluvia", "rh"]]
         serie.loc[dias, "horizonte"] = horizonte
         if fuente is None:
-            respaldo = "power_corregido" if sesgo_power else "power"
+            respaldo = ("power_corregido_daymet" if origen == "daymet" else "power_corregido") if sesgo_power else "power"
             serie.loc[dias, "fuente"] = ["cr2met" if d in cr2met.index and pd.notna(cr2met.at[d, "tmin"]) else respaldo
                                          for d in dias]
         else:

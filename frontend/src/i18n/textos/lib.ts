@@ -151,6 +151,15 @@ export const textos: Record<string, { es: string; en: string }> = {
     es: 'NASA POWER y CR2MET (Chile) · todos los días, con unos días de atraso',
     en: 'NASA POWER and CR2MET (Chile) · every day, a few days behind',
   },
+  fuentesdato_daymet_titulo: { es: 'Clima de Norteamérica', en: 'North America climate' },
+  fuentesdato_daymet_detalle: {
+    es: 'Temperatura y lluvia a 1 km, para ajustar el clima global (Norteamérica, Hawái y Puerto Rico)',
+    en: 'Temperature and rain at 1 km, to adjust the global climate (North America, Hawaii and Puerto Rico)',
+  },
+  fuentesdato_daymet_nota: {
+    es: 'Daymet v4 R1, NASA ORNL DAAC. Thornton, M. M., Shrestha, R., Wei, Y., Thornton, P. E., & Kao, S.-C. (2022). Daymet: Daily Surface Weather Data on a 1-km Grid for North America, Version 4 R1 (Version 4.1). ORNL Distributed Active Archive Center. https://doi.org/10.3334/ORNLDAAC/2129',
+    en: 'Daymet v4 R1, NASA ORNL DAAC. Thornton, M. M., Shrestha, R., Wei, Y., Thornton, P. E., & Kao, S.-C. (2022). Daymet: Daily Surface Weather Data on a 1-km Grid for North America, Version 4 R1 (Version 4.1). ORNL Distributed Active Archive Center. https://doi.org/10.3334/ORNLDAAC/2129',
+  },
   fuentesdato_sol_titulo: { es: 'Sol', en: 'Sun' },
   fuentesdato_sol_detalle: { es: 'Cuánto sol llega a tu zona en cada mes', en: 'How much sun reaches your area each month' },
   fuentesdato_sol_nota: {

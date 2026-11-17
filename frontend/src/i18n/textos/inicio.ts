@@ -109,6 +109,10 @@ export const textos: Record<string, { es: string; en: string }> = {
     es: 'El clima de este terreno viene de datos globales, de menor resolución que los de Chile. Las heladas pueden estar subestimadas.',
     en: "This plot's climate comes from global data, at a lower resolution than the Chilean data. Frosts may be underestimated.",
   },
+  terreno_clima_daymet: {
+    es: 'El clima de este terreno viene de datos globales ajustados con Daymet, de la NASA, que mide a 1 km. Las temperaturas mínimas, y con ellas las heladas, están corregidas con lo observado en tu zona.',
+    en: "This plot's climate comes from global data adjusted with Daymet, from NASA, which measures at 1 km. Minimum temperatures, and with them frosts, are corrected with what was observed in your area.",
+  },
   terreno_suelo_titulo: { es: 'Cuéntanos de tu suelo', en: 'Tell us about your soil' },
   terreno_suelo_intro: {
     es: 'Esto no se ve desde el satélite. Responde lo que sepas: mejora la lista de qué sembrar. Toca una respuesta otra vez para quitarla.',

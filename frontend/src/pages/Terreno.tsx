@@ -241,6 +241,9 @@ export default function Terreno() {
         {sitio?.fuente_clima === 'power' ? (
           <p className="ps-nota" style={{ margin: '8px 4px 0 4px' }}>{t('terreno_clima_global')}</p>
         ) : null}
+        {sitio?.fuente_clima === 'power_daymet' ? (
+          <p className="ps-nota" style={{ margin: '8px 4px 0 4px' }}>{t('terreno_clima_daymet')}</p>
+        ) : null}
         {cargando ? <p className="ps-nota" style={{ marginTop: 8 }}>{t('cargando')}</p> : null}
       </section>
 

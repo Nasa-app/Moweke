@@ -429,7 +429,7 @@ export interface DatosSitio {
   lluvia_anual_mm: number | null
   ghi_mensual_kwh_m2_dia: number[] | null
   fuente_radiacion: string | null
-  fuente_clima: 'cr2met' | 'power' | null
+  fuente_clima: 'cr2met' | 'power' | 'power_daymet' | null
   ph: number | null
   agua_disponible_suelo_mm: number | null
   altitud_m: number | null
