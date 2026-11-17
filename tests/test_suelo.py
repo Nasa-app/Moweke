@@ -179,3 +179,56 @@ def test_la_materia_organica_se_acota_a_8_por_ciento():
     tope = rc.MATERIA_ORGANICA_MAX_PCT / 1.724 * 10
     assert rc.estimar_agua_disponible_mm(37.1, 17.4, 189) == rc.estimar_agua_disponible_mm(37.1, 17.4, tope)
     assert rc.estimar_agua_disponible_mm(37.1, 17.4, 70) == pytest.approx(314, abs=1)
+
+
+# ---------------------------------------------------------------- tope del puntaje segun lo que se sabe del suelo
+COMPLETO = {"drenaje": "well", "salinidad": "low", "profundidad": "deep", "fertilidad": "high"}
+
+
+def test_con_el_suelo_completo_no_hay_tope():
+    assert ce.tope_por_suelo(sitio_de("chiloe", suelo=COMPLETO)) is None
+
+
+def test_si_falta_una_respuesta_del_agricultor_el_tope_es_90():
+    assert ce.tope_por_suelo(sitio_de("chiloe", suelo={**COMPLETO, "salinidad": None})) == (0.90, "suelo_sin_declarar")
+    assert ce.tope_por_suelo(sitio_de("chiloe")) == (0.90, "suelo_sin_declarar")
+
+
+def test_sin_ph_ni_textura_de_satelite_el_tope_es_80_aunque_haya_respondido_todo():
+    sitio = sitio_de("chiloe", ph=False, textura=None, suelo=COMPLETO)
+    assert ce.tope_por_suelo(sitio) == (0.80, "sin_suelo_de_satelite")
+
+
+def test_con_solo_el_ph_ya_hay_base_de_satelite():
+    assert ce.tope_por_suelo(sitio_de("chiloe", textura=None, suelo=COMPLETO)) is None
+    assert ce.tope_por_suelo(sitio_de("chiloe", ph=False, suelo=COMPLETO)) is None     # queda la textura
+
+
+def _r(especie, puntaje, dificil=None):
+    return {"especie": especie, "apta": True, "puntaje": puntaje, "puntaje_ano_dificil": dificil}
+
+
+def test_el_tope_limita_el_puntaje_informa_el_motivo_y_conserva_el_orden():
+    rk = [_r("a", 1.0, 0.95), _r("b", 0.97, 0.5), _r("c", 0.6, 0.4), _r("d", 0.3)]
+    out = ce.aplicar_tope_suelo(rk, sitio_de("chiloe"))
+    assert [r["especie"] for r in out] == ["a", "b", "c", "d"]            # a y b empatan en 0,9: desempata el puntaje sin tope
+    assert [r["puntaje"] for r in out] == [0.9, 0.9, 0.6, 0.3]
+    assert out[0]["puntaje_ano_dificil"] == 0.9 and out[1]["puntaje_ano_dificil"] == 0.5
+    assert out[0]["tope_suelo"] == {"tope": 0.9, "motivo": "suelo_sin_declarar", "puntaje_sin_tope": 1.0}
+    assert "puntaje_sin_tope" not in out[2]["tope_suelo"]                  # el tope no lo bajo
+
+
+def test_con_el_suelo_completo_el_ranking_queda_igual():
+    rk = [_r("a", 1.0), _r("b", 0.5)]
+    assert ce.aplicar_tope_suelo(rk, sitio_de("chiloe", suelo=COMPLETO)) == [_r("a", 1.0), _r("b", 0.5)]
+
+
+def test_el_ranking_multianual_aplica_el_tope_en_las_dos_salidas():
+    from multianual import ranking_multianual
+    for suelo, esperado in ((None, 0.90), (COMPLETO, None)):
+        sitio = sitio_de("chiloe", suelo=suelo)
+        rk, _ = correr(ranking_multianual(sitio, repo_prueba(con_luz=False), None, None, None))
+        topes = {r.get("tope_suelo", {}).get("tope") for r in rk}
+        assert topes == {esperado}, (suelo, topes)
+        if esperado:
+            assert max(r["puntaje"] for r in rk if r["puntaje"] is not None) <= esperado
