@@ -85,7 +85,6 @@ DIAS_CLIMA_ATRAS_MAX = 120
 # Caja aproximada de Chile continental: CR2MET, CLSoilMaps y el Explorador Solar no
 # cubren nada fuera. Un punto dentro de la caja pero fuera de Chile (Argentina, mar)
 # pasa esta validacion y queda con sus fuentes en 'sin_cobertura'.
-_CHILE = {"lat_min": -56.0, "lat_max": -17.4, "lon_min": -76.0, "lon_max": -66.0}
 
 # La documentacion interactiva lista todos los endpoints, incluidos los de admin: solo se
 # publica si API_DOCS=1 (desarrollo). En produccion queda apagada.
@@ -473,7 +472,7 @@ async def _parcela_autorizada(id_parcela: int, usuario: dict, session: AsyncSess
 
 def _validar_perimetro(perimetro: dict) -> str:
     """Primera validacion del poligono dibujado, sin tocar la base: forma del GeoJSON,
-    tope de vertices y coordenadas dentro de Chile. Devuelve el GeoJSON normalizado (un
+    tope de vertices y coordenadas dentro de rango. Devuelve el GeoJSON normalizado (un
     solo anillo, cerrado, solo lon/lat) listo para ST_GeomFromGeoJSON. Levanta 422."""
     def rechazar(motivo: str):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Perímetro inválido: {motivo}")
@@ -492,8 +491,8 @@ def _validar_perimetro(perimetro: dict) -> str:
                            for v in punto[:2])):
             rechazar("cada vértice debe ser [longitud, latitud]")
         lon, lat = float(punto[0]), float(punto[1])
-        if not (_CHILE["lat_min"] <= lat <= _CHILE["lat_max"] and _CHILE["lon_min"] <= lon <= _CHILE["lon_max"]):
-            rechazar("queda fuera de la cobertura actual (Chile continental)")
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            rechazar("las coordenadas quedan fuera de rango")
         anillo.append([lon, lat])
     if anillo[0] != anillo[-1]:
         anillo.append(anillo[0])     # un dibujo sin cerrar se cierra aca
@@ -512,10 +511,9 @@ async def crear_parcela(datos: ParcelaNueva, tareas: BackgroundTasks, request: R
     del punto. En los dos casos deja encolada la ingesta y responde sin esperarla."""
     _frenar(_PARCELAS_POR_IP, _ip_cliente(request))
     dibujado = _validar_perimetro(datos.perimetro) if datos.perimetro is not None else None
-    if dibujado is None and not (_CHILE["lat_min"] <= datos.lat <= _CHILE["lat_max"]
-                                 and _CHILE["lon_min"] <= datos.lon <= _CHILE["lon_max"]):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
-                             "El punto queda fuera de la cobertura actual (Chile continental)")
+    if dibujado is None and not (abs(datos.lat) <= 80 and abs(datos.lon) <= 179):
+        # El cuadrado del punto se arma en UTM (80 S a 84 N) y no puede cruzar el antimeridiano.
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "El punto queda fuera de la zona donde se pueden crear terrenos")
     if usuario["rol"] != "admin":
         cantidad = (await session.execute(
             text("SELECT count(*) FROM parcela WHERE id_usuario = :u"), {"u": usuario["id"]})).scalar_one()
@@ -689,7 +687,7 @@ def _resumen_sitio(parcela: dict, sitio: dict, normales: dict, altitud, correcci
         "lluvia_mensual_mm": redondear(normales["lluvia"]),
         "lluvia_anual_mm": None if normales["lluvia"] is None else round(sum(normales["lluvia"]), 1),
         "ghi_mensual_kwh_m2_dia": redondear(sitio["ghi_mensual"]),
-        "fuente_radiacion": sitio["fuente_radiacion"],
+        "fuente_radiacion": sitio["fuente_radiacion"], "fuente_clima": sitio.get("fuente_clima"),
         "ph": sitio["ph"], "agua_disponible_suelo_mm": sitio["awc_mm"],
         "altitud_m": None if altitud is None else round(altitud),
         "altitud_celda_m": None if sitio["altitud_celda_m"] is None else round(sitio["altitud_celda_m"]),

@@ -198,3 +198,64 @@ def test_sin_humedad_del_suelo_no_se_inventa_nada():
 
 def test_el_endpoint_usa_el_lector_de_humedad():
     assert main.leer_humedad_suelo_nasa is rc.leer_humedad_suelo_nasa
+
+
+# ---------------------------------------------------------------- clima de la ventana: CR2MET o POWER
+def _filas_clima(prefijo, desde, hasta, tmin=5.0, tmax=15.0, lluvia=2.0):
+    dias = pd.date_range(desde, hasta, freq="D")
+    return [{"fecha": d.date(), "capa": f"{prefijo}_{v}", "valor": x}
+            for d in dias for v, x in (("tmin", tmin), ("tmax", tmax), ("lluvia", lluvia))]
+
+
+def _sitio_clima(filas_clima):
+    return correr(rc.leer_sitio(SesionFalsa(Resultado([]), Resultado(filas_clima), Resultado(escalar=None)),
+                                5, date(2026, 11, 15)))
+
+
+def test_fuera_de_chile_el_clima_de_la_ventana_sale_de_power():
+    sitio = _sitio_clima(_filas_clima("power", "2025-11-01", "2026-10-31"))
+    assert sitio["fuente_clima"] == "power"
+    assert len(sitio["clima"]) == 365
+    assert sitio["clima"].notna().all().all()
+
+
+def test_con_cr2met_completo_el_clima_no_cambia():
+    filas = _filas_clima("cr2met", "2025-11-01", "2026-10-31", tmin=3.0) \
+        + _filas_clima("power", "2025-11-01", "2026-10-31", tmin=6.0)
+    sitio = _sitio_clima(filas)
+    assert sitio["fuente_clima"] == "cr2met"
+    assert (sitio["clima"]["tmin"] == 3.0).all()
+
+
+def test_sin_ningun_clima_no_hay_fuente():
+    sitio = _sitio_clima([])
+    assert sitio["clima"] is None and sitio["fuente_clima"] is None
+
+
+def test_cr2met_parcial_rellena_con_power_y_se_marca_power():
+    filas = _filas_clima("cr2met", "2025-11-01", "2026-03-31") + _filas_clima("power", "2025-11-01", "2026-10-31")
+    sitio = _sitio_clima(filas)
+    assert sitio["fuente_clima"] == "power"
+    assert len(sitio["clima"]) == 365
+
+
+def test_el_perimetro_fuera_de_chile_se_acepta():
+    anillo = [[-123.16, 45.0], [-123.15, 45.0], [-123.15, 45.01], [-123.16, 45.01]]
+    assert '"Polygon"' in main._validar_perimetro({"type": "Polygon", "coordinates": [anillo]})
+
+
+@pytest.mark.parametrize("lon,lat", [(-123.15, 95.0), (-200.0, 45.0)])
+def test_el_perimetro_con_coordenadas_fuera_de_rango_se_rechaza(lon, lat):
+    anillo = [[lon, lat], [lon + 0.01, lat], [lon + 0.01, lat - 0.01]]
+    with pytest.raises(main.HTTPException) as e:
+        main._validar_perimetro({"type": "Polygon", "coordinates": [anillo]})
+    assert "fuera de rango" in e.value.detail
+
+
+@pytest.mark.parametrize("lat,lon", [(45.0, 179.9), (45.0, -179.9), (85.0, 10.0)])
+def test_un_punto_en_el_antimeridiano_o_los_polos_se_rechaza_antes_de_tocar_la_base(lat, lon):
+    nuevo = main.ParcelaNueva(lat=lat, lon=lon, hectareas=1.0)
+    pedido = SimpleNamespace(headers={}, client=SimpleNamespace(host="10.9.9.9"))
+    with pytest.raises(main.HTTPException) as e:
+        correr(main.crear_parcela(nuevo, SimpleNamespace(), pedido, None, {"id": 1, "nombre": "x", "rol": "agricultor"}))
+    assert e.value.status_code == 422

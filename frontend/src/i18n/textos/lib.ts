@@ -283,7 +283,6 @@ export const textos: Record<string, { es: string; en: string }> = {
   servidor_demasiados_intentos: { es: 'Demasiados intentos. Espera unos minutos e intenta otra vez.', en: 'Too many attempts. Wait a few minutes and try again.' },
   servidor_sin_base: { es: 'Base de datos no disponible', en: 'Database not available' },
   servidor_parcela_no_existe: { es: 'Parcela no existe', en: 'Plot does not exist' },
-  servidor_fuera_cobertura: { es: 'El punto queda fuera de la cobertura actual (Chile continental)', en: 'The point is outside current coverage (mainland Chile)' },
   servidor_perimetro_cruzado: { es: 'El perímetro se cruza a sí mismo; dibújalo de nuevo sin cruzar líneas', en: 'The outline crosses itself; draw it again without crossing lines' },
   servidor_especie_no_catalogo: { es: 'La especie no está en el catálogo', en: 'This species is not in the catalog' },
   servidor_cultivo_no_existe: { es: 'Cultivo no existe', en: 'Crop does not exist' },

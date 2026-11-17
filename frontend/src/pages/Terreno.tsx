@@ -238,6 +238,9 @@ export default function Terreno() {
             {t(sitio.correccion_temperatura_c > 0 ? 'terreno_ajuste_calida' : 'terreno_ajuste_fria', { alt: numero(sitio.altitud_m), dif: numero(Math.abs(sitio.correccion_temperatura_c), 1) })}
           </p>
         ) : null}
+        {sitio?.fuente_clima === 'power' ? (
+          <p className="ps-nota" style={{ margin: '8px 4px 0 4px' }}>{t('terreno_clima_global')}</p>
+        ) : null}
         {cargando ? <p className="ps-nota" style={{ marginTop: 8 }}>{t('cargando')}</p> : null}
       </section>
 

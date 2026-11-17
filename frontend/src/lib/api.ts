@@ -46,7 +46,6 @@ const MENSAJES_SERVIDOR: Record<string, string> = {
   'Demasiados intentos. Espera unos minutos e intenta otra vez.': 'servidor_demasiados_intentos',
   'Base de datos no disponible': 'servidor_sin_base',
   'Parcela no existe': 'servidor_parcela_no_existe',
-  'El punto queda fuera de la cobertura actual (Chile continental)': 'servidor_fuera_cobertura',
   'El perímetro se cruza a sí mismo; dibújalo de nuevo sin cruzar líneas': 'servidor_perimetro_cruzado',
   'La especie no está en el catálogo': 'servidor_especie_no_catalogo',
   'Cultivo no existe': 'servidor_cultivo_no_existe',
@@ -430,6 +429,7 @@ export interface DatosSitio {
   lluvia_anual_mm: number | null
   ghi_mensual_kwh_m2_dia: number[] | null
   fuente_radiacion: string | null
+  fuente_clima: 'cr2met' | 'power' | null
   ph: number | null
   agua_disponible_suelo_mm: number | null
   altitud_m: number | null

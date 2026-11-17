@@ -84,6 +84,8 @@ FUENTE_RADIACION_EXPLORADOR = "Explorador Solar (Chile)"
 # ingesta_predio._clima_historico. Enero = mes 1.
 CAPAS_ET0_FACTOR_MENSUAL = tuple(f"et0_factor_hargreaves_mes_{m:02d}" for m in range(1, 13))
 _CAPAS_CLIMA = {"cr2met_tmin": "tmin", "cr2met_tmax": "tmax", "cr2met_lluvia": "lluvia"}
+_CAPAS_POWER = {"power_tmin": "tmin", "power_tmax": "tmax", "power_lluvia": "lluvia"}
+COBERTURA_CR2MET_MIN = 0.9   # fraccion de dias de la ventana con CR2MET para llamar al clima "cr2met"
 
 
 async def leer_historia(session: AsyncSession, id_parcela: int) -> dict[int, pd.DataFrame]:
@@ -151,12 +153,26 @@ async def leer_sitio(session: AsyncSession, id_parcela: int, hoy: date | None = 
         WHERE id_parcela = :id AND capa = ANY(:capas) AND valor IS NOT NULL
           AND periodo_inicio BETWEEN :inicio AND :fin
         ORDER BY periodo_inicio
-    """), {"id": id_parcela, "capas": list(_CAPAS_CLIMA), "inicio": inicio, "fin": fin})).mappings().all()
-    clima = None
+    """), {"id": id_parcela, "capas": [*_CAPAS_CLIMA, *_CAPAS_POWER], "inicio": inicio, "fin": fin})).mappings().all()
+    clima, fuente_clima = None, None
     if filas_clima:
-        clima = pd.DataFrame(filas_clima).pivot(index="fecha", columns="capa", values="valor")
-        clima.index = pd.to_datetime(clima.index)
-        clima = clima.rename(columns=_CAPAS_CLIMA).reindex(columns=["tmin", "tmax", "lluvia"])
+        ancho = pd.DataFrame(filas_clima).pivot(index="fecha", columns="capa", values="valor")
+        ancho.index = pd.to_datetime(ancho.index)
+
+        def de(capas: dict) -> pd.DataFrame:
+            return ancho.reindex(columns=list(capas)).rename(columns=capas)[["tmin", "tmax", "lluvia"]]
+
+        cr2met, power = de(_CAPAS_CLIMA), de(_CAPAS_POWER)
+        # Donde CR2MET existe manda; POWER (global, celda de ~55 km) rellena lo que falte, corregido contra
+        # CR2MET cuando ambos se solapan (igual que leer_clima_diario).
+        power = _corregir(power, _sesgo_power(cr2met, power))
+        clima = cr2met.combine_first(power).dropna(how="all")
+        if not clima.empty:
+            dias_ventana = (fin - inicio).days + 1
+            dias_cr2met = int(cr2met[["tmin", "tmax"]].notna().all(axis=1).sum())
+            fuente_clima = "cr2met" if dias_cr2met >= COBERTURA_CR2MET_MIN * dias_ventana else "power"
+        else:
+            clima = None
 
     # Altura media de la parcela segun el mismo DEM con que se calculo la de la celda de CR2MET:
     # la diferencia entre ambas es la correccion de temperatura por altitud.
@@ -169,7 +185,7 @@ async def leer_sitio(session: AsyncSession, id_parcela: int, hoy: date | None = 
             "altitud_dem_m": None if altitud_dem is None else float(altitud_dem),
             "ghi_mensual": ghi if all(v is not None for v in ghi) else None, "fuente_radiacion": fuente_radiacion,
             "et0_factor_mensual": et0_factor if all(v is not None for v in et0_factor) else None,
-            "clima": clima, "periodo_clima": (inicio, fin)}
+            "clima": clima, "fuente_clima": fuente_clima, "periodo_clima": (inicio, fin)}
 
 
 DIAS_ESTIMADOS_MAX = 365  # hasta donde se extiende la serie con el ano anterior

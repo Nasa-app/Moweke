@@ -149,7 +149,7 @@ export default function Preparando() {
 
       {climaSinCobertura ? (
         <p className="ps-pad ps-nota" role="alert" style={{ margin: '12px 0 0 0', color: 'var(--riesgo-texto)' }}>
-          {t('preparando_solo_continental')}
+          {t('preparando_clima_global')}
         </p>
       ) : null}
       {hayFallos ? (

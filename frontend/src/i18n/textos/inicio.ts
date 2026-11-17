@@ -105,6 +105,10 @@ export const textos: Record<string, { es: string; en: string }> = {
     es: 'La temperatura está ajustada a la altura de tu parcela ({alt} m): es {dif}° más fría que el promedio de su zona de 5 km.',
     en: "The temperature is adjusted to your plot's height ({alt} m): it is {dif}° colder than the average of its 5 km area.",
   },
+  terreno_clima_global: {
+    es: 'El clima de este terreno viene de datos globales, de menor resolución que los de Chile. Las heladas pueden estar subestimadas.',
+    en: "This plot's climate comes from global data, at a lower resolution than the Chilean data. Frosts may be underestimated.",
+  },
   terreno_suelo_titulo: { es: 'Cuéntanos de tu suelo', en: 'Tell us about your soil' },
   terreno_suelo_intro: {
     es: 'Esto no se ve desde el satélite. Responde lo que sepas: mejora la lista de qué sembrar. Toca una respuesta otra vez para quitarla.',

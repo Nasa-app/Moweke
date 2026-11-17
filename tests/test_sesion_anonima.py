@@ -127,11 +127,11 @@ def test_la_ruta_anonima_no_exige_sesion_y_los_endpoints_de_admin_si():
 def test_crear_predios_se_acota_por_ip(monkeypatch):
     """Con cuentas anonimas baratas, el tope por usuario no basta: cada predio dispara descargas externas."""
     monkeypatch.setattr(main, "_PARCELAS_POR_IP", main.LimiteIntentos(2, 60))
-    fuera_de_chile = main.ParcelaNueva(lat=10.0, lon=-70.0, hectareas=1.0)     # se rechaza antes de tocar la base
+    invalido = main.ParcelaNueva(perimetro={"type": "Point", "coordinates": [0, 0]})  # se rechaza antes de tocar la base
     usuario = {"id": 1, "nombre": "x", "rol": "agricultor"}
 
     def intentar(ip):
-        return correr(main.crear_parcela(fuera_de_chile, SimpleNamespace(), pedido(ip), None, usuario))
+        return correr(main.crear_parcela(invalido, SimpleNamespace(), pedido(ip), None, usuario))
 
     for _ in range(2):
         with pytest.raises(HTTPException) as error:
