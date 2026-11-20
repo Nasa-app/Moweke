@@ -116,7 +116,7 @@ export default function Perimetro() {
         </p>
       ) : null}
 
-      <div className="ps-pad-16" style={{ marginTop: 14, position: 'relative' }}>
+      <div className="ps-pad-16" style={{ marginTop: elegida ? 14 : 8, position: 'relative' }}>
         <MapaDibujo centro={vista.centro} zoom={vista.zoom} esquinas={esquinas} onCambio={setEsquinas} />
       </div>
 
