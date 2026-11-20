@@ -379,6 +379,18 @@ async def clima_zona(nombre: str, request: Request):
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "El pronóstico no está disponible por ahora")
 
 
+@app.get("/api/clima")
+async def clima_en_punto(request: Request, lat: float = Query(..., ge=-90, le=90), lon: float = Query(..., ge=-180, le=180)):
+    """El tiempo de ahora y la primera helada pronosticada en el punto donde esta la persona, sin cuenta ni lista de
+    comunas. Las coordenadas se redondean a 0,1 grado antes de consultar (ver services.zonas). Pronostico de modelo
+    (Open-Meteo), no medicion."""
+    _frenar(_ZONAS_POR_IP, _ip_cliente(request))
+    try:
+        return await asyncio.to_thread(zonas.clima_en_punto, lat, lon)
+    except Exception:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "El pronóstico no está disponible por ahora")
+
+
 @app.post("/api/auth/registro", response_model=TokenOut)
 async def registro_agricultor(datos: RegistroAgricultor, request: Request,
                                session: AsyncSession = Depends(obtener_sesion)):

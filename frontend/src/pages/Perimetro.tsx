@@ -1,11 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Screen, BarraSuperior, Titulo } from '../components/Screen'
 import { MapaDibujo } from '../components/Mapa'
-import { COMUNA_POR_DEFECTO, ZOOM_COMUNA, centroDeComuna, guardarComunaDeParcela, leerBorrador, comunasGuardadas, useComunas } from '../lib/comunas'
 import { aPoligono, hectareasDe, type Punto } from '../lib/geometria'
 import { IconoUbicacion } from '../components/icons'
-import { crearParcela, mensajeDeError, type ZonaComuna } from '../lib/api'
+import { crearParcela, mensajeDeError } from '../lib/api'
 import { numero } from '../lib/formato'
 import { usePredio } from '../state/PredioContext'
 import { guardar, leer } from '../state/storage'
@@ -22,15 +21,9 @@ interface Vista {
   zoom: number
 }
 
-// Dónde abre el mapa. Al venir del registro, en la comuna que la persona acaba de elegir. Si no, donde quedó la
-// último predio, y si no hay ninguno, en la comuna elegida o en la comuna piloto. El centro de una comuna llega
-// del API: mientras no esté, la vista queda en null.
-function vistaInicial(enOnboarding: boolean, comunas: ZonaComuna[]): Vista | null {
-  const ultima = leer<Punto | null>('mapa_centro', null)
-  if (!enOnboarding && ultima) return { centro: ultima, zoom: ZOOM_PARCELA }
-  const centro = centroDeComuna(comunas, leerBorrador().comuna) ?? centroDeComuna(comunas, COMUNA_POR_DEFECTO)
-  return centro ? { centro, zoom: ZOOM_COMUNA } : null
-}
+// Sin ubicación todavía el mapa abre mostrando el mundo: no se supone ningún país. Con ubicación, o con un predio
+// ya marcado antes, abre sobre el predio.
+const VISTA_MUNDO: Vista = { centro: [20, 0], zoom: 2 }
 
 export default function Perimetro() {
   const { t } = useI18n()
@@ -38,15 +31,9 @@ export default function Perimetro() {
   const [params] = useSearchParams()
   const enOnboarding = params.get('desde') === 'onboarding'
   const { idParcela, setParcelaActiva, setCultivoActivo } = usePredio()
-  // Fuera del registro, con un predio anterior o con la lista ya guardada, el mapa abre sin consultar las comunas.
-  const [pedirComunas] = useState(() => enOnboarding || (!leer<Punto | null>('mapa_centro', null) && comunasGuardadas().length === 0))
-  const { comunas, cargando: cargandoComunas } = useComunas(pedirComunas)
+  const ultima = leer<Punto | null>('mapa_centro', null)
   const [elegida, setVista] = useState<Vista | null>(null)
-  // La vista inicial se calcula una vez (y de nuevo solo si llegan las comunas): si cambiara en cada pintado, el mapa
-  // volvería al centro de la comuna con cada esquina marcada.
-  const inicial = useMemo(() => vistaInicial(enOnboarding, comunas), [enOnboarding, comunas])
-  const vista = elegida ?? inicial
-  const comunaElegida = enOnboarding ? leerBorrador().comuna : null
+  const vista = elegida ?? (ultima ? { centro: ultima, zoom: ZOOM_PARCELA } : VISTA_MUNDO)
   const [esquinas, setEsquinas] = useState<Punto[]>([])
   const [nombre, setNombre] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -55,6 +42,21 @@ export default function Perimetro() {
   const hectareas = hectareasDe(esquinas)
   const medidaValida = hectareas >= HECTAREAS_MIN && hectareas <= HECTAREAS_MAX
   const listo = esquinas.length >= 3 && medidaValida
+
+  // El mapa intenta abrir donde está la persona; si no da permiso o no hay señal, queda la vista de arriba y el botón
+  // de ubicación sigue disponible.
+  useEffect(() => {
+    if (!('geolocation' in navigator)) return
+    let vigente = true
+    navigator.geolocation.getCurrentPosition(
+      (pos) => vigente && setVista({ centro: [pos.coords.latitude, pos.coords.longitude], zoom: ZOOM_PARCELA }),
+      () => undefined,
+      { timeout: 8000, maximumAge: 300000 },
+    )
+    return () => {
+      vigente = false
+    }
+  }, [])
 
   function usarUbicacion() {
     if (!('geolocation' in navigator)) {
@@ -77,7 +79,6 @@ export default function Perimetro() {
     try {
       const parcela = await crearParcela(aPoligono(esquinas), nombre)
       guardar('mapa_centro', [parcela.lat, parcela.lon])
-      if (comunaElegida) guardarComunaDeParcela(parcela.id, comunaElegida)
       setParcelaActiva(parcela.id)
       setCultivoActivo(null)
       navigate(`/terreno/preparando${enOnboarding ? '?desde=onboarding' : ''}`)
@@ -91,24 +92,12 @@ export default function Perimetro() {
   return (
     <Screen>
       <BarraSuperior volverA={enOnboarding ? '/onboarding/predio' : idParcela ? '/terreno' : '/hoy'} />
-      <Titulo
-        sub={
-          comunaElegida
-            ? t('perimetro_sub_comuna', { comuna: comunaElegida })
-            : t('perimetro_sub')
-        }
-      >
+      <Titulo sub={t('perimetro_sub')}>
         {t('perimetro_titulo')}
       </Titulo>
 
       <div className="ps-pad-16" style={{ marginTop: 14, position: 'relative' }}>
-        {vista ? (
-          <MapaDibujo centro={vista.centro} zoom={vista.zoom} esquinas={esquinas} onCambio={setEsquinas} />
-        ) : (
-          <p className="ps-nota" role="status" style={{ margin: 0, minHeight: 240 }}>
-            {cargandoComunas ? t('cargando') : t('api_sin_conexion')}
-          </p>
-        )}
+        <MapaDibujo centro={vista.centro} zoom={vista.zoom} esquinas={esquinas} onCambio={setEsquinas} />
         <button
           type="button"
           aria-label={t('perimetro_usar_ubicacion')}

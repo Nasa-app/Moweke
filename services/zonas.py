@@ -54,3 +54,23 @@ def clima_de_zona(nombre: str, ahora: float | None = None) -> dict:
     resumen = resumir(cliente_openmeteo.consultar_hoy(lat, lon))
     _cache[nombre] = (ahora, resumen)
     return resumen
+
+
+MAX_PUNTOS_EN_MEMORIA = 500
+
+
+def clima_en_punto(lat: float, lon: float, ahora: float | None = None) -> dict:
+    """El resumen del tiempo en cualquier punto del mundo. Las coordenadas se redondean a 0,1 grado (unos 11 km): el
+    pronostico no cambia a esa escala, el servidor no guarda ni consulta la ubicacion exacta, y los vecinos comparten
+    la misma consulta en memoria."""
+    ahora = time.time() if ahora is None else ahora
+    lat, lon = round(lat, 1), round(lon, 1)
+    clave = f"{lat},{lon}"
+    guardado = _cache.get(clave)
+    if guardado and ahora - guardado[0] < VIGENCIA_S:
+        return guardado[1]
+    resumen = resumir(cliente_openmeteo.consultar_hoy(lat, lon))
+    if len(_cache) >= MAX_PUNTOS_EN_MEMORIA:
+        _cache.pop(next(iter(_cache)))
+    _cache[clave] = (ahora, resumen)
+    return resumen

@@ -14,7 +14,10 @@ export const textos: Record<string, { es: string; en: string }> = {
   explorar_helada_dia: { es: 'Posible el {dia}', en: 'Possible on {dia}' },
   explorar_helada_ninguna: { es: 'Sin heladas esta semana', en: 'No frost this week' },
   explorar_pronostico: { es: 'Pronóstico', en: 'Forecast' },
-  explorar_sin_datos: { es: 'No pudimos traer el tiempo de {comuna}. Prueba de nuevo en un rato.', en: 'We could not get the weather for {comuna}. Try again in a while.' },
+  explorar_sin_datos: { es: 'No pudimos traer el tiempo de tu zona. Prueba de nuevo en un rato.', en: 'We could not get the weather for your area. Try again in a while.' },
+  explorar_tu_ubicacion: { es: 'Tu ubicación', en: 'Your location' },
+  explorar_sin_ubicacion: { es: 'Permite la ubicación para ver el tiempo donde estás.', en: 'Allow location access to see the weather where you are.' },
+  explorar_reintentar_ubicacion: { es: 'Usar mi ubicación', en: 'Use my location' },
   explorar_alertas_titulo: { es: 'Alertas de tu predio', en: 'Alerts for your plot' },
   explorar_alertas_ver: { es: 'Ver todas', en: 'See all' },
   explorar_alertas_ninguna: { es: 'Sin cambios fuertes de clima hasta el {fecha}.', en: 'No strong weather changes until {fecha}.' },
@@ -34,13 +37,13 @@ export const textos: Record<string, { es: string; en: string }> = {
   // onboarding: datos
   onb_datos_titulo: { es: '¿Dónde está tu predio?', en: 'Where is your plot?' },
   onb_datos_sub: {
-    es: 'Elige tu comuna. Después marcarás tu predio sobre el mapa, tocando cada esquina.',
-    en: 'Choose your municipality. Then you will mark your plot on the map by tapping each corner.',
+    es: 'Marcarás tu predio sobre el mapa, tocando cada esquina.',
+    en: 'You will mark your plot on the map by tapping each corner.',
   },
   onb_datos_sigue_titulo: { es: 'Lo que sigue: marcar tu predio', en: 'Next: mark your plot' },
   onb_datos_sigue_texto: {
-    es: 'Verás el mapa de {comuna}. Acércalo hasta tu predio y toca cada esquina para dibujar su contorno. Toma un par de minutos.',
-    en: 'You will see the map of {comuna}. Zoom in to your plot and tap each corner to draw its outline. It takes a couple of minutes.',
+    es: 'El mapa se abrirá donde estás, si das permiso de ubicación. Acércalo hasta tu predio y toca cada esquina para dibujar su contorno. Toma un par de minutos.',
+    en: 'The map will open where you are, if you allow location access. Zoom in to your plot and tap each corner to draw its outline. It takes a couple of minutes.',
   },
 
   // onboarding: qué sembraste antes
@@ -97,10 +100,6 @@ export const textos: Record<string, { es: string; en: string }> = {
   onb_listo_analizando_detalle: { es: 'Buscando qué se da bien en tu predio', en: 'Looking for what grows well on your plot' },
 
   // perímetro
-  perimetro_sub_comuna: {
-    es: 'El mapa muestra {comuna}. Acércalo hasta tu predio y toca cada esquina para dibujar su contorno. Puedes arrastrar una esquina para corregirla.',
-    en: 'The map shows {comuna}. Zoom in to your plot and tap each corner to draw its outline. You can drag a corner to fix it.',
-  },
   perimetro_sub: {
     es: 'Mueve el mapa hasta tu predio y toca cada esquina. Puedes arrastrar una esquina para corregirla.',
     en: 'Move the map to your plot and tap each corner. You can drag a corner to fix it.',

@@ -1,46 +1,24 @@
-import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Screen, BarraSuperior, Titulo } from '../../components/Screen'
 import { StepDots } from '../../components/StepDots'
 import { IconoUbicacion } from '../../components/icons'
-import { guardarBorrador, leerBorrador, useComunas } from '../../lib/comunas'
+import { guardarBorrador, leerBorrador } from '../../lib/comunas'
 import { usePredio } from '../../state/PredioContext'
 import { useI18n } from '../../i18n'
 
 const IR_AL_MAPA = '/terreno/perimetro?desde=onboarding'
 
-// Primer paso: solo la comuna, para abrir el mapa cerca del predio. El sector y el tipo de terreno se
+// Primer paso: privacidad. El mapa abre en la ubicación del dispositivo; el sector y el tipo de terreno se
 // preguntan después (paso 2), cuando el predio ya está marcado.
 export default function OnbDatos() {
   const { t } = useI18n()
   const navigate = useNavigate()
   const { idParcela } = usePredio()
-  const { comunas } = useComunas()
-  const [comuna, setComuna] = useState(() => leerBorrador().comuna)
 
   return (
     <Screen>
       <BarraSuperior volverA="/explorar" derecha={<StepDots paso={1} total={3} />} />
       <Titulo sub={t('onb_datos_sub')}>{t('onb_datos_titulo')}</Titulo>
-
-      <div className="ps-pad-16" style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <label htmlFor="comuna" style={{ fontSize: 16, fontWeight: 800, padding: '0 4px' }}>
-          {t('onb_comuna')}
-        </label>
-        <select
-          id="comuna"
-          value={comuna}
-          onChange={(e) => {
-            setComuna(e.target.value)
-            guardarBorrador({ comuna: e.target.value })
-          }}
-          style={{ minHeight: 56, padding: '0 14px', borderRadius: 16, border: '2px solid var(--borde-control)', background: 'var(--blanco)', font: "700 18px 'Alegreya Sans', sans-serif", color: 'var(--carbon)' }}
-        >
-          {(comunas.some((c) => c.nombre === comuna) ? comunas : [{ nombre: comuna }, ...comunas]).map((c) => (
-            <option key={c.nombre}>{c.nombre}</option>
-          ))}
-        </select>
-      </div>
 
       <section className="ps-card-plana" style={{ margin: '16px 16px 0 16px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
         <span aria-hidden="true" style={{ flex: 'none', width: 44, height: 44, borderRadius: 22, background: 'var(--verde)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -49,7 +27,7 @@ export default function OnbDatos() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.2 }}>{t('onb_datos_sigue_titulo')}</span>
           <span style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.35, color: 'var(--texto-tenue)' }}>
-            {t('onb_datos_sigue_texto', { comuna })}
+            {t('onb_datos_sigue_texto')}
           </span>
         </div>
       </section>

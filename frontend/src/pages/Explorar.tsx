@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Screen } from '../components/Screen'
-import { alertasClimaParcela, climaZona, type AlertasClima, type ClimaZona } from '../lib/api'
-import { COMUNA_POR_DEFECTO, useComunas } from '../lib/comunas'
+import { alertasClimaParcela, climaEnPunto, type AlertasClima, type ClimaZona } from '../lib/api'
 import { diaSemana, fechaCorta, numero, textoAlertaClima } from '../lib/formato'
 import { cieloDelDia } from '../lib/tiempo'
 import { Chip } from '../components/Chip'
@@ -10,29 +9,48 @@ import { useAuth } from '../state/AuthContext'
 import { usePredio } from '../state/PredioContext'
 import { useI18n } from '../i18n'
 
-// El tiempo de la comuna sin necesidad de registro: comunas y pronóstico vienen del API (/api/zonas).
+// El tiempo donde está la persona, sin necesidad de registro: se pide la ubicación del dispositivo y no se supone ningún país.
 export default function Explorar() {
   const { t } = useI18n()
   const { autenticado } = useAuth()
   const { idParcela } = usePredio()
   const [alertas, setAlertas] = useState<AlertasClima | null>(null)
   const [alertasFallan, setAlertasFallan] = useState(false)
-  const [comuna, setComuna] = useState(COMUNA_POR_DEFECTO)
-  const { comunas } = useComunas()
+  const [lugar, setLugar] = useState<[number, number] | null>(null)
+  const [sinUbicacion, setSinUbicacion] = useState(false)
+  const [intento, setIntento] = useState(0)
   const [clima, setClima] = useState<ClimaZona | null>(null)
   const [falla, setFalla] = useState(false)
 
   useEffect(() => {
+    setSinUbicacion(false)
+    if (!('geolocation' in navigator)) {
+      setSinUbicacion(true)
+      return
+    }
+    let vigente = true
+    navigator.geolocation.getCurrentPosition(
+      (pos) => vigente && setLugar([pos.coords.latitude, pos.coords.longitude]),
+      () => vigente && setSinUbicacion(true),
+      { timeout: 10000, maximumAge: 300000 },
+    )
+    return () => {
+      vigente = false
+    }
+  }, [intento])
+
+  useEffect(() => {
+    if (!lugar) return
     let vigente = true
     setClima(null)
     setFalla(false)
-    climaZona(comuna)
+    climaEnPunto(lugar[0], lugar[1])
       .then((c) => vigente && setClima(c))
       .catch(() => vigente && setFalla(true))
     return () => {
       vigente = false
     }
-  }, [comuna])
+  }, [lugar])
 
   useEffect(() => {
     if (!idParcela || !autenticado) return
@@ -51,16 +69,7 @@ export default function Explorar() {
     <Screen>
       <section aria-labelledby="zona" style={{ padding: '48px 16px 16px 16px', borderRadius: '0 0 32px 32px', background: 'var(--verde)', color: '#fff', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <label style={{ minHeight: 44, padding: '0 12px 0 10px', borderRadius: 22, background: 'rgba(255,255,255,.14)', display: 'flex', alignItems: 'center', gap: 6, fontSize: 16, fontWeight: 800, cursor: 'pointer' }}>
-            <span className="visually-hidden">{t('onb_comuna')}</span>
-            <select value={comuna} onChange={(e) => setComuna(e.target.value)} style={{ appearance: 'none', border: 'none', background: 'transparent', color: '#fff', font: "800 16px 'Alegreya Sans', sans-serif", cursor: 'pointer' }}>
-              {(comunas.some((z) => z.nombre === comuna) ? comunas : [{ nombre: comuna }, ...comunas]).map(({ nombre: c }) => (
-                <option key={c} value={c} style={{ color: '#000' }}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
+          <span style={{ fontSize: 16, fontWeight: 800 }}>{t('explorar_tu_ubicacion')}</span>
           <span style={{ fontSize: 15, fontWeight: 700, opacity: 0.9 }}>{clima ? t('explorar_hoy_fecha', { fecha: fechaCorta(clima.hoy) }) : ''}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -68,7 +77,7 @@ export default function Explorar() {
             <h1 id="zona" style={{ margin: 0, fontSize: 56, fontWeight: 800, lineHeight: 1 }}>
               {clima ? `${numero(clima.temperatura_c)}°` : '—'}
             </h1>
-            <span style={{ fontSize: 17, fontWeight: 700 }}>{cielo?.texto ?? (falla ? t('explorar_sin_datos', { comuna }) : '')}</span>
+            <span style={{ fontSize: 17, fontWeight: 700 }}>{cielo?.texto ?? (sinUbicacion ? t('explorar_sin_ubicacion') : falla ? t('explorar_sin_datos') : '')}</span>
           </div>
         </div>
         <dl style={{ margin: 0, padding: '10px 6px', borderRadius: 20, background: 'rgba(255,255,255,.12)', display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', textAlign: 'center' }}>
@@ -85,6 +94,11 @@ export default function Explorar() {
             <dd style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>{clima ? `${numero(clima.viento_kmh)} km/h` : '—'}</dd>
           </div>
         </dl>
+        {sinUbicacion ? (
+          <button type="button" onClick={() => setIntento((n) => n + 1)} className="ps-btn-secundario" style={{ alignSelf: 'flex-start' }}>
+            {t('explorar_reintentar_ubicacion')}
+          </button>
+        ) : null}
       </section>
 
       <h2 className="ps-h2" style={{ margin: '20px 20px 0 20px' }}>

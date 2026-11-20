@@ -290,13 +290,7 @@ export interface ClimaPredio {
   estado_ingesta: EstadoIngesta
 }
 
-export interface ZonaComuna {
-  nombre: string
-  lat: number
-  lon: number
-}
-
-// El tiempo de ahora en una comuna (pronóstico de modelo de Open-Meteo, no medición).
+// El tiempo de ahora en un punto (pronóstico de modelo de Open-Meteo, no medición).
 export interface ClimaZona {
   hoy: string
   temperatura_c: number
@@ -659,13 +653,11 @@ export async function sitioParcela(idParcela: number, fresco = false): Promise<S
   }
 }
 
-// Comunas que se pueden mirar sin predio, y su tiempo. Públicos: no piden cuenta.
-export function zonas() {
-  return conMemoria('zonas', () => peticion<ZonaComuna[]>('/api/zonas'))
-}
-
-export function climaZona(nombre: string) {
-  return conMemoria(`zona:${nombre}`, () => peticion<ClimaZona>(`/api/zonas/${encodeURIComponent(nombre)}/clima`))
+// El tiempo donde está la persona. Las coordenadas se redondean a 0,1° (unos 11 km) antes de salir del dispositivo.
+export function climaEnPunto(lat: number, lon: number) {
+  const la = lat.toFixed(1)
+  const lo = lon.toFixed(1)
+  return conMemoria(`clima:${la},${lo}`, () => peticion<ClimaZona>(`/api/clima?lat=${la}&lon=${lo}`))
 }
 
 export function alertasClimaParcela(idParcela: number) {

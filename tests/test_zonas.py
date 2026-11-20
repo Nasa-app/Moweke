@@ -31,6 +31,24 @@ def test_reusa_la_consulta_dentro_de_la_vigencia(monkeypatch):
     assert len(llamadas) == 2
 
 
+def test_clima_en_punto_redondea_y_comparte_la_consulta(monkeypatch):
+    zonas._cache.clear()
+    llamadas = []
+    monkeypatch.setattr(zonas.cliente_openmeteo, "consultar_hoy", lambda lat, lon: llamadas.append((lat, lon)) or CRUDO)
+    zonas.clima_en_punto(-42.14391, -73.47512, ahora=1000.0)
+    zonas.clima_en_punto(-42.1401, -73.4799, ahora=1001.0)
+    assert llamadas == [(-42.1, -73.5)]
+
+
+def test_clima_en_punto_limita_la_memoria(monkeypatch):
+    zonas._cache.clear()
+    monkeypatch.setattr(zonas.cliente_openmeteo, "consultar_hoy", lambda lat, lon: CRUDO)
+    monkeypatch.setattr(zonas, "MAX_PUNTOS_EN_MEMORIA", 3)
+    for i in range(6):
+        zonas.clima_en_punto(float(i), 0.0, ahora=1000.0)
+    assert len(zonas._cache) == 3
+
+
 def test_resumen_sitio_redondea_y_trae_lo_que_ve_tu_terreno():
     from datetime import date
 

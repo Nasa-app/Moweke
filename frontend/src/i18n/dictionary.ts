@@ -67,7 +67,6 @@ const base: Record<string, { es: string; en: string }> = {
 
   // onboarding
   onb_predio_titulo: { es: 'Tu predio', en: 'Your plot' },
-  onb_comuna: { es: 'Comuna', en: 'Municipality' },
   onb_sector: { es: 'Sector', en: 'Sector' },
   onb_terreno: { es: 'Terreno', en: 'Land' },
   onb_marcar_parcela: { es: 'Marcar mi predio', en: 'Mark my plot' },
