@@ -273,6 +273,7 @@ export const textos: Record<string, { es: string; en: string }> = {
   mapa_atribucion_satelite: { es: 'Imagen: Esri, Maxar, Earthstar Geographics', en: 'Imagery: Esri, Maxar, Earthstar Geographics' },
   mapa_aria_dibujo: { es: 'Mapa para marcar las esquinas de tu predio', en: 'Map to mark the corners of your plot' },
   mapa_aria_celdas: { es: 'Mapa de tu predio dividido en cuadros', en: 'Map of your plot divided into squares' },
+  mapa_listo_marcar: { es: 'Ya puedes marcar: toca cada esquina', en: 'Ready: tap each corner' },
   mapa_acerca: {
     es: 'Acerca el mapa hasta tu predio para marcar sus esquinas',
     en: 'Zoom in to your plot to mark its corners',

@@ -122,6 +122,7 @@ export function MapaDibujo({
     if (!contenedor.current) return
     const nuevo = crearMapa(contenedor.current)
     capa.current = L.layerGroup().addTo(nuevo)
+    L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(nuevo)
     nuevo.on('click', (evento: L.LeafletMouseEvent) => {
       if (nuevo.getZoom() < ZOOM_MINIMO_PARA_MARCAR) return
       alCambiar.current([...actuales.current, [evento.latlng.lat, evento.latlng.lng]])
@@ -180,7 +181,14 @@ export function MapaDibujo({
     <div style={{ position: 'relative' }}>
       <div ref={contenedor} className={`ps-mapa ${cerca ? 'ps-mapa-marcando' : ''}`} role="application" aria-label={t('mapa_aria_dibujo')} />
       <SelectorBase base={base} onCambio={cambiarBase} />
-      {cerca ? null : (
+      {cerca ? (
+        <p
+          role="status"
+          style={{ position: 'absolute', left: 12, right: 12, bottom: 34, zIndex: 500, margin: '0 auto', width: 'fit-content', maxWidth: 'calc(100% - 24px)', padding: '8px 14px', borderRadius: 14, background: 'var(--verde)', color: 'var(--sobre-verde)', fontSize: 15, fontWeight: 800, textAlign: 'center', pointerEvents: 'none', boxShadow: 'var(--sombra-1)' }}
+        >
+          {t('mapa_listo_marcar')}
+        </p>
+      ) : (
         <p
           role="status"
           style={{ position: 'absolute', left: 12, right: 12, bottom: 34, zIndex: 500, margin: 0, padding: '10px 14px', borderRadius: 14, background: 'rgba(255,255,255,0.94)', color: 'var(--carbon)', fontSize: 16, fontWeight: 800, textAlign: 'center', pointerEvents: 'none', boxShadow: 'var(--sombra-1)' }}

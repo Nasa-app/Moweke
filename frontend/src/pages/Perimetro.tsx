@@ -6,24 +6,25 @@ import { aPoligono, hectareasDe, type Punto } from '../lib/geometria'
 import { IconoUbicacion } from '../components/icons'
 import { crearParcela, mensajeDeError } from '../lib/api'
 import { numero } from '../lib/formato'
+import { paisDelNavegador, vistaDePais } from '../lib/paises'
 import { usePredio } from '../state/PredioContext'
-import { guardar, leer } from '../state/storage'
 import { useI18n } from '../i18n'
 
 // Los mismos límites que valida POST /api/parcelas.
 const HECTAREAS_MIN = 0.05
 const HECTAREAS_MAX = 1000
-// Zoom con el que se ve un predio (se usa con la ubicación del dispositivo y con un predio ya marcado).
-const ZOOM_PARCELA = 17
+// Zoom con el que se ve un predio (se usa con la ubicación del dispositivo).
+const ZOOM_PARCELA = 18
 
 interface Vista {
   centro: Punto
   zoom: number
 }
 
-// Sin ubicación todavía el mapa abre mostrando el mundo: no se supone ningún país. Con ubicación, o con un predio
-// ya marcado antes, abre sobre el predio.
+// Sin ubicación el mapa abre en el país del idioma del navegador (o en el mundo si no se sabe cuál): no se supone un país
+// fijo ni se reusa el lugar de un predio anterior.
 const VISTA_MUNDO: Vista = { centro: [20, 0], zoom: 2 }
+const VISTA_INICIAL: Vista = vistaDePais(paisDelNavegador()) ?? VISTA_MUNDO
 
 export default function Perimetro() {
   const { t } = useI18n()
@@ -31,54 +32,59 @@ export default function Perimetro() {
   const [params] = useSearchParams()
   const enOnboarding = params.get('desde') === 'onboarding'
   const { idParcela, setParcelaActiva, setCultivoActivo } = usePredio()
-  const ultima = leer<Punto | null>('mapa_centro', null)
   const [elegida, setVista] = useState<Vista | null>(null)
-  const vista = elegida ?? (ultima ? { centro: ultima, zoom: ZOOM_PARCELA } : VISTA_MUNDO)
+  const vista = elegida ?? VISTA_INICIAL
   const [esquinas, setEsquinas] = useState<Punto[]>([])
   const [nombre, setNombre] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [errorGps, setErrorGps] = useState<string | null>(null)
+  const [buscando, setBuscando] = useState(false)
 
   const hectareas = hectareasDe(esquinas)
   const medidaValida = hectareas >= HECTAREAS_MIN && hectareas <= HECTAREAS_MAX
   const listo = esquinas.length >= 3 && medidaValida
 
-  // El mapa intenta abrir donde está la persona; si no da permiso o no hay señal, queda la vista de arriba y el botón
-  // de ubicación sigue disponible.
-  useEffect(() => {
-    if (!('geolocation' in navigator)) return
-    let vigente = true
+  function pedirUbicacion() {
+    if (!('geolocation' in navigator)) {
+      setErrorGps(t('perimetro_sin_gps'))
+      return
+    }
+    setBuscando(true)
+    setErrorGps(null)
     navigator.geolocation.getCurrentPosition(
-      (pos) => vigente && setVista({ centro: [pos.coords.latitude, pos.coords.longitude], zoom: ZOOM_PARCELA }),
-      () => undefined,
-      { timeout: 8000, maximumAge: 300000 },
+      (pos) => {
+        setBuscando(false)
+        setVista({ centro: [pos.coords.latitude, pos.coords.longitude], zoom: ZOOM_PARCELA })
+      },
+      (fallo) => {
+        setBuscando(false)
+        setErrorGps(fallo.code === fallo.PERMISSION_DENIED ? t('perimetro_gps_bloqueado') : t('perimetro_gps_fallo'))
+      },
+      { timeout: 15000, maximumAge: 300000, enableHighAccuracy: true },
     )
+  }
+
+  // Si el permiso ya estaba dado el mapa abre solo en la ubicación. Si no, el navegador solo muestra su aviso tras un
+  // toque (Safari y varios móviles ignoran el pedido al abrir la pantalla): por eso el botón de arriba del mapa.
+  useEffect(() => {
+    if (!('permissions' in navigator)) return
+    let vigente = true
+    navigator.permissions
+      .query({ name: 'geolocation' })
+      .then((estado) => vigente && estado.state === 'granted' && pedirUbicacion())
+      .catch(() => undefined)
     return () => {
       vigente = false
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  function usarUbicacion() {
-    if (!('geolocation' in navigator)) {
-      setError(t('perimetro_sin_gps'))
-      return
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setError(null)
-        setVista({ centro: [pos.coords.latitude, pos.coords.longitude], zoom: ZOOM_PARCELA })
-      },
-      () => setError(t('perimetro_gps_fallo')),
-      { timeout: 8000 },
-    )
-  }
 
   async function analizar() {
     setEnviando(true)
     setError(null)
     try {
       const parcela = await crearParcela(aPoligono(esquinas), nombre)
-      guardar('mapa_centro', [parcela.lat, parcela.lon])
       setParcelaActiva(parcela.id)
       setCultivoActivo(null)
       navigate(`/terreno/preparando${enOnboarding ? '?desde=onboarding' : ''}`)
@@ -96,16 +102,22 @@ export default function Perimetro() {
         {t('perimetro_titulo')}
       </Titulo>
 
+      {elegida ? null : (
+        <div className="ps-pad-16" style={{ marginTop: 14 }}>
+          <button type="button" onClick={pedirUbicacion} disabled={buscando} className="ps-btn" style={{ gap: 8 }}>
+            <IconoUbicacion stroke="#fff" />
+            {buscando ? t('cargando') : t('perimetro_usar_ubicacion')}
+          </button>
+        </div>
+      )}
+      {errorGps ? (
+        <p className="ps-pad-16 ps-nota" role="alert" style={{ margin: '8px 0 0 0', color: 'var(--riesgo-texto)' }}>
+          {errorGps}
+        </p>
+      ) : null}
+
       <div className="ps-pad-16" style={{ marginTop: 14, position: 'relative' }}>
         <MapaDibujo centro={vista.centro} zoom={vista.zoom} esquinas={esquinas} onCambio={setEsquinas} />
-        <button
-          type="button"
-          aria-label={t('perimetro_usar_ubicacion')}
-          onClick={usarUbicacion}
-          style={{ position: 'absolute', right: 28, top: 12, width: 48, height: 48, borderRadius: 24, border: 'none', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: 'var(--sombra-1)' }}
-        >
-          <IconoUbicacion stroke="var(--agua)" />
-        </button>
       </div>
 
       <div className="ps-pad-16" style={{ marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>

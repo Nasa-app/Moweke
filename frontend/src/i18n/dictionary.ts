@@ -201,6 +201,10 @@ const base: Record<string, { es: string; en: string }> = {
   perimetro_paso_perimetro: { es: 'Esquinas', en: 'Corners' },
   perimetro_toca_esquinas: { es: 'Toca las esquinas de tu predio', en: "Tap your plot's corners" },
   perimetro_usar_ubicacion: { es: 'Usar mi ubicación', en: 'Use my location' },
+  perimetro_gps_bloqueado: {
+    es: 'El permiso de ubicación está bloqueado. Actívalo en el candado de la barra del navegador, o mueve el mapa hasta tu predio.',
+    en: 'Location access is blocked. Turn it on from the lock icon in the browser bar, or move the map to your plot.',
+  },
   perimetro_analizar: { es: 'Analizar mi predio', en: 'Analyse my plot' },
   zonas_titulo: { es: 'Mapa de tu predio', en: 'Map of your plot' },
   zonas_conviene: { es: 'conviene', en: 'works well' },
